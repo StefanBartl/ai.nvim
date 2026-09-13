@@ -1,0 +1,201 @@
+---@module 'ai.providers.claude'
+--- Provider backend for the Anthropic Messages API. Streaming uses
+--- server-sent events; `lib.nvim.net.curl.fetch_stream` hands this module
+--- one raw line at a time and it is this file's job -- not the transport's
+--- -- to know that Anthropic's event stream carries a `content_block_delta`
+--- event per text chunk. The API key never reaches curl's argv: it goes
+--- through `secret_headers`, which is the reason this module exists at all
+--- (the two real bugs pdfport.nvim's original `claude.lua` backend had --
+--- broken JSON escaping and an argv-visible API key -- are what motivated
+--- ai.nvim in the first place).
+
+require("ai.@types")
+
+local curl = require("lib.nvim.net.curl")
+
+--- Declared as a class (not `---@type Ai.Provider`) so the `function M.*`
+--- methods defined below the literal count as fulfilling the interface --
+--- see pdfport.nvim's `backends/claude.lua` for the same idiom.
+---@class Ai.Providers.Claude : Ai.Provider
+local M = {
+  id = "claude",
+  name = "Anthropic Claude API",
+  capabilities = { streaming = true, vision = false },
+}
+
+local API_URL = "https://api.anthropic.com/v1/messages"
+local ANTHROPIC_VERSION = "2023-06-01"
+local DEFAULT_MODEL = "claude-opus-4-5"
+local DEFAULT_MAX_TOKENS = 4096
+
+---@return string|nil
+local function api_key()
+  local key = vim.env.ANTHROPIC_API_KEY
+  return (type(key) == "string" and key ~= "") and key or nil
+end
+
+---@return boolean
+function M.available()
+  return vim.fn.executable("curl") == 1 and api_key() ~= nil
+end
+
+---@internal
+---@param req Ai.Request
+---@param stream boolean
+---@return string json
+local function build_body(req, stream)
+  return vim.json.encode({
+    model = req.model or DEFAULT_MODEL,
+    max_tokens = DEFAULT_MAX_TOKENS,
+    system = req.system,
+    stream = stream or nil,
+    messages = { { role = "user", content = req.prompt } },
+  })
+end
+
+---@internal
+---@param decoded table Anthropic Messages API response body
+---@return Ai.Response
+local function to_response(decoded)
+  local text_parts = {}
+  for _, block in ipairs(decoded.content or {}) do
+    if block.type == "text" and type(block.text) == "string" then
+      text_parts[#text_parts + 1] = block.text
+    end
+  end
+  return {
+    text = table.concat(text_parts, ""),
+    usage = decoded.usage,
+    stop_reason = decoded.stop_reason,
+    provider = "claude",
+  }
+end
+
+---@param req Ai.Request
+---@param cb fun(ok: boolean, res_or_err: Ai.Response|string)
+function M.ask(req, cb)
+  local key = api_key()
+  if not key then
+    cb(false, "claude: ANTHROPIC_API_KEY not set")
+    return
+  end
+
+  curl.fetch_json(API_URL, {
+    method = "POST",
+    headers = { ["Content-Type"] = "application/json", ["anthropic-version"] = ANTHROPIC_VERSION },
+    secret_headers = { ["x-api-key"] = key },
+    body = build_body(req, false),
+    timeout_ms = req.timeout_ms or 60000,
+  }, function(ok, data)
+    if not ok then
+      cb(false, "claude: " .. tostring(data))
+      return
+    end
+    if type(data) == "table" and data.type == "error" then
+      cb(false, "claude API error: " .. tostring(data.error and data.error.message))
+      return
+    end
+    cb(true, to_response(data))
+  end)
+end
+
+---@param req Ai.Request
+---@param handlers Ai.StreamHandlers
+---@return vim.SystemObj|nil
+function M.stream(req, handlers)
+  local key = api_key()
+  if not key then
+    if handlers.on_error then
+      handlers.on_error("claude: ANTHROPIC_API_KEY not set")
+    end
+    return nil
+  end
+
+  local text_parts = {}
+  local usage, stop_reason
+  -- Lines that are not `data: ...` at all. A real auth/validation failure
+  -- does not come back as an SSE event -- it is a plain, pretty-printed
+  -- (multi-line!) JSON body, confirmed for this exact failure mode against
+  -- the OpenAI provider and applied defensively here too (same API shape:
+  -- curl exits cleanly, so only on_done -- once the whole body is in --
+  -- can tell a real error apart from an empty success).
+  local non_data_lines = {}
+
+  return curl.fetch_stream(API_URL, {
+    method = "POST",
+    headers = { ["Content-Type"] = "application/json", ["anthropic-version"] = ANTHROPIC_VERSION },
+    secret_headers = { ["x-api-key"] = key },
+    body = build_body(req, true),
+    timeout_ms = req.timeout_ms or 60000,
+  }, {
+    on_chunk = function(line)
+      -- Anthropic's SSE carries both `event: <type>` and `data: {...}` lines
+      -- per event; only the payload line is needed, `decoded.type` already
+      -- says what kind of event it is.
+      local payload = line:match("^data:%s*(.*)$")
+      if not payload then
+        if line ~= "" then
+          non_data_lines[#non_data_lines + 1] = line
+        end
+        return
+      end
+      if payload == "" or payload == "[DONE]" then
+        return
+      end
+      local ok, decoded = pcall(vim.json.decode, payload)
+      if not ok or type(decoded) ~= "table" then
+        return
+      end
+      if
+        decoded.type == "content_block_delta"
+        and decoded.delta
+        and decoded.delta.type == "text_delta"
+      then
+        local delta_text = decoded.delta.text or ""
+        text_parts[#text_parts + 1] = delta_text
+        if handlers.on_chunk then
+          handlers.on_chunk(delta_text)
+        end
+      elseif decoded.type == "message_delta" then
+        usage = decoded.usage
+        stop_reason = decoded.delta and decoded.delta.stop_reason
+      elseif decoded.type == "error" then
+        if handlers.on_error then
+          handlers.on_error(
+            "claude API error: " .. tostring(decoded.error and decoded.error.message)
+          )
+        end
+      end
+    end,
+    on_done = function(obj)
+      if obj.code ~= 0 then
+        if handlers.on_error then
+          handlers.on_error(string.format("claude: curl exited %d: %s", obj.code, obj.stderr or ""))
+        end
+        return
+      end
+      if #text_parts == 0 and #non_data_lines > 0 then
+        local ok_err, decoded_err = pcall(vim.json.decode, table.concat(non_data_lines, "\n"))
+        if ok_err and type(decoded_err) == "table" and decoded_err.type == "error" then
+          if handlers.on_error then
+            handlers.on_error(
+              "claude API error: " .. tostring(decoded_err.error and decoded_err.error.message)
+            )
+          end
+          return
+        end
+      end
+      if handlers.on_done then
+        handlers.on_done({
+          text = table.concat(text_parts, ""),
+          usage = usage,
+          stop_reason = stop_reason,
+          provider = "claude",
+        })
+      end
+    end,
+    on_error = handlers.on_error,
+  })
+end
+
+return M

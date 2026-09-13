@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  luacheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: leafo/gh-actions-lua@v13
+        with:
+          # luacheck 1.2.0 fails to load under Lua 5.5 (gh-actions-lua's
+          # default): "attempt to assign to const variable 'field_name'" in
+          # luacheck/standards.lua. 5.1 also matches this repo's own
+          # .luacheckrc (std = "lua51").
+          luaVersion: "5.1"
+      - uses: leafo/gh-actions-luarocks@v6
+
+      - name: Install luacheck
+        run: luarocks install luacheck 1.2.0
+
+      - name: Run luacheck
+        run: luacheck lua plugin TESTS
+
+  stylua:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: JohnnyMorganz/stylua-action@v4
+        with:
+          version: v2.5.2
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --check lua/ plugin/ TESTS/
+
+  test:
+    name: plenary tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: ai.nvim
+
+      - uses: actions/checkout@v5
+        with:
+          repository: nvim-lua/plenary.nvim
+          path: plenary.nvim
+
+      - uses: actions/checkout@v5
+        with:
+          repository: StefanBartl/lib.nvim
+          path: lib.nvim
+
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+
+      - name: Run plenary test suite
+        working-directory: ai.nvim
+        env:
+          PLENARY_DIR: ${{ github.workspace }}/plenary.nvim
+          LIB_NVIM_DIR: ${{ github.workspace }}/lib.nvim
+        run: scripts/test.sh

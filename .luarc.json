@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+  "runtime.version": "LuaJIT",
+  "runtime.path": [
+    "lua/?.lua",
+    "lua/?/init.lua"
+  ],
+  "diagnostics.globals": ["vim"],
+  "diagnostics.unusedLocalExclude": ["_*"],
+  "workspace.checkThirdParty": false,
+  "workspace.ignoreDir": [".deps", ".claude"],
+  "hint.enable": true,
+  "hint.paramName": "All",
+  "hint.paramType": true,
+  "hint.setType": true
+}
