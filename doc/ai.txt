@@ -1,0 +1,301 @@
+*ai.txt*  Provider-agnostic ask/stream layer for talking to an AI                *ai.nvim*
+
+==============================================================================
+CONTENTS                                                        *ai-contents*
+
+  1. Introduction ........................ |ai-intro|
+  2. Requirements ........................ |ai-requirements|
+  3. Setup ............................... |ai-setup|
+  4. Configuration ....................... |ai-config|
+  5. Commands ............................ |ai-commands|
+  6. Bindings ............................ |ai-bindings|
+  7. Lua API ............................. |ai-api|
+  8. Providers ............................ |ai-providers|
+  9. Context .............................. |ai-context|
+ 10. Scope ................................ |ai-scope|
+ 11. Health check ........................ |ai-health|
+
+==============================================================================
+1. INTRODUCTION                                                    *ai-intro*
+
+ai.nvim is a provider-agnostic ask/stream layer for talking to an AI from
+inside Neovim -- context assembly (buffer/selection/diagnostics), a
+streaming answer panel, and an `:Ai` composer command, built on
+`lib.nvim.net.curl` (SSE/NDJSON streaming, secrets kept out of curl's argv).
+
+It pairs well with pdfport.nvim -- its `claude`/`ollama` extraction backends
+are the two real bugs (broken JSON escaping, an API key visible in the
+process list) that this plugin exists to fix at the transport layer, once
+and for every future caller.
+
+==============================================================================
+2. REQUIREMENTS                                              *ai-requirements*
+
+- Neovim >= 0.10 (needs `vim.system`, which `lib.nvim.net.curl` requires).
+- lib.nvim (github.com/StefanBartl/lib.nvim) -- hard dependency.
+  `fetch_stream`/`secret_headers` on `lib.nvim.net.curl` must be present; a
+  too-old checkout is flagged by |:checkhealth| ai.
+- `curl` on `PATH` -- every provider shells out to it.
+- At least one provider actually usable:
+  - claude:  `ANTHROPIC_API_KEY` set in the environment.
+  - openai:  `OPENAI_API_KEY` set in the environment.
+  - ollama:  the `ollama` binary on `PATH`, with the daemon running
+             (default http://127.0.0.1:11434, override with `OLLAMA_HOST`).
+
+No provider is required at install time -- |:checkhealth| ai reports which
+ones are usable on this machine, and `provider = "auto"` (the default) picks
+the first available one in `provider_order`.
+
+==============================================================================
+3. SETUP                                                           *ai-setup*
+
+With lazy.nvim: >lua
+  {
+    "StefanBartl/ai.nvim",
+    dependencies = { "StefanBartl/lib.nvim" },
+    cmd  = "Ai",
+    keys = { "<leader>a" },
+    config = function()
+      require("ai").setup()
+    end,
+  }
+<
+
+Manual: >lua
+  require("ai").setup()
+<
+
+`cmd`/`keys` are lazy-load triggers -- ai.nvim does nothing until `:Ai` is
+run or one of the default `<leader>a*` keymaps is pressed.
+
+==============================================================================
+4. CONFIGURATION                                                  *ai-config*
+
+Pass a table to |ai.setup()|. All keys are optional; `lua/ai/config/
+DEFAULTS.lua` is the source of truth. >lua
+  require("ai").setup({
+    provider = "auto",                        -- "auto"|"claude"|"ollama"|"openai"|custom id
+    provider_order = { "claude", "ollama", "openai" },  -- "auto" resolution order
+    model = {},                               -- e.g. { claude = "claude-opus-4-5" }
+    timeout_ms = 60000,
+
+    ui = {
+      enable = true,
+      progress_style = "auto",                -- "auto"|"notify"|"statusline"|"fidget"|"float"
+      panel_theme = "rounded",
+      badge_timeout_ms = 6000,
+    },
+
+    keymaps = {
+      enable = true,
+      prefix = "<leader>a",
+      -- Per-action overrides, keyed by action id (ask/quick/explain):
+      --   keymaps = { quick = "<leader>xs" }    -- move just one
+      --   keymaps = { explain = false }         -- disable just one
+    },
+
+    which_key = { enable = true },
+    usercmds = { enable = true },
+
+    -- Default context for the quick-action keymaps (<leader>as/<leader>ae).
+    -- :Ai ask/stream build no context of their own -- only what a caller
+    -- passes to require("ai").ask()/stream() directly.
+    context = {
+      buffer = false,
+      selection = true,
+      diagnostics = false,
+      cwd = false,          -- expensive (a full cwd sweep); off by default
+    },
+
+    log_level = vim.log.levels.WARN,
+  })
+<
+
+`provider_order`'s default never includes "loomai" -- see |ai-scope|.
+
+==============================================================================
+5. COMMANDS                                                     *ai-commands*
+
+                                                                       *:Ai*
+:Ai [prompt?]                    Same as `:Ai ask [prompt?]`.
+
+:Ai ask [prompt?]                                                 *:Ai-ask*
+  Ask once, non-streaming. Prompts for text if `prompt` is omitted.
+
+:Ai stream [prompt?]                                            *:Ai-stream*
+  Like `ask`, but the answer panel opens and fills in live as it streams.
+
+:Ai provider {name}                                           *:Ai-provider*
+  Switch the active provider. `<Tab>`-completes registered ids.
+
+:Ai info                                                          *:Ai-info*
+  Show the active provider, resolution order, and per-provider
+  availability.
+
+None of these build any context automatically -- they only send the literal
+prompt text. The quick-action keymaps (|ai-bindings|) are what wire in the
+current buffer/selection/diagnostics via `config.context`.
+
+==============================================================================
+6. BINDINGS                                                     *ai-bindings*
+
+All keymaps sit under one configurable prefix (`config.keymaps.prefix`,
+default `<leader>a`) and are individually overridable/disableable via
+`config.keymaps[id]` (see |ai-config|).
+
+  Mode  Default        Action id  Does ~
+  n, v  <leader>aa     ask        Ask once, non-streaming (prompts for
+                                   text; v: about the selection)
+  n, v  <leader>as     quick      Send context + a typed task, stream
+                                   the answer
+  n, v  <leader>ae     explain    Explain the current context in a small
+                                   badge, no panel
+
+Autocmds: a `VimLeavePre` handler in the `ai_nvim` augroup kills every
+still-running stream, so quitting Neovim never leaves an orphaned curl
+process behind.
+
+==============================================================================
+7. LUA API                                                          *ai-api*
+
+                                                                *ai.setup()*
+require("ai").setup({opts})
+  Set up ai.nvim: merges {opts} over the defaults, registers the built-in
+  providers, and (unless disabled) installs the default keymaps/usercmds.
+  Calling it a second time is a no-op (warns and returns false).
+
+                                                               *ai.config()*
+require("ai").config()
+  Returns the active `Ai.Config` table.
+
+                                                                  *ai.ask()*
+require("ai").ask({req}, {cb})
+  Ask once, non-streaming. {req} fields:
+
+    prompt       string     (required) the question/instruction
+    provider     string?    explicit provider id; default: config.provider
+    model        string?    overrides the resolved provider's default model
+    context      table?     `Ai.ContextDefaults`, see |ai-context|
+    timeout_ms   integer?   overrides config.timeout_ms
+    system       string?    system prompt, provider-dependent
+
+  {cb} is called as `cb(ok, res_or_err)`: `res_or_err` is an `Ai.Response`
+  table (`text`, `usage`, `stop_reason`, `provider`) on success, or a string
+  error message on failure.
+
+                                                               *ai.stream()*
+require("ai").stream({req}, {handlers})
+  Like |ai.ask()|, but streams the response. {handlers} fields:
+
+    on_chunk    function?  function(delta: string)
+    on_done     function?  function(res: Ai.Response)
+    on_error    function?  function(err: string)
+
+  Returns the running `vim.SystemObj` (or nil if no provider could be
+  resolved) so a caller can `:kill()` it to cancel -- `ai.ui.panel` already
+  does this for the built-in quick-actions (|ai-bindings|).
+
+                                                    *ai.providers.register()*
+require("ai.providers").register({provider})
+  Register a custom (or replacement) provider. Registering under an id that
+  already exists -- built-in or previously custom -- replaces it. {provider}
+  is an `Ai.Provider`: >lua
+    require("ai.providers").register({
+      id = "myproxy",
+      available = function() return true end,
+      ask = function(req, cb) ... end,
+      stream = function(req, handlers) return process_handle_or_nil end,
+    })
+<
+  Add the id to `config.provider_order` to make it reachable through
+  `provider = "auto"`.
+
+                                                        *ai.context.assemble()*
+require("ai.context").assemble({opts})
+  Build the context block for {opts} (`Ai.ContextDefaults`: `buffer`,
+  `selection`, `diagnostics`, `cwd`, all boolean). Every section is
+  best-effort -- a scope that resolves to nothing (no visual selection
+  active, no diagnostics present) is silently omitted. Returns an empty
+  string if nothing was requested or resolved. See |ai-context|.
+
+==============================================================================
+8. PROVIDERS                                                   *ai-providers*
+
+  claude   Anthropic Messages API. Streaming via SSE. Requires
+           ANTHROPIC_API_KEY.
+  ollama   Local Ollama daemon. Streaming via NDJSON. Requires the `ollama`
+           binary and a running daemon.
+  openai   OpenAI Chat Completions API. Streaming via SSE. Requires
+           OPENAI_API_KEY.
+
+`provider = "auto"` (the default) walks `provider_order` and uses the first
+provider whose `available()` is true -- a cheap, synchronous check (an
+executable on PATH and/or an env var set), never a network round trip. Set
+`provider` to an explicit id to always use one provider; `:Ai provider
+{name}` switches it at runtime.
+
+API keys are read only from the environment (`vim.env.*`), never stored by
+this plugin, and never appear in curl's argv -- they go through
+`lib.nvim.net.curl`'s `secret_headers`, which is the reason ai.nvim exists
+at all (see |ai-intro|). |:checkhealth| ai and `:Ai info` show only whether
+a key is set, never its value.
+
+==============================================================================
+9. CONTEXT                                                       *ai-context*
+
+`Ai.ContextDefaults` fields, all boolean, independent (not mutually
+exclusive):
+
+  buffer        The current buffer, fenced and line-numbered.
+  selection     The last visual selection's range, same format.
+  diagnostics   `vim.diagnostic.get()` for the current buffer, formatted as
+                `file:line:[severity]:message`, sorted by line.
+  cwd           A full working-directory sweep via
+                `lib.nvim.harvest.scope`. Expensive; off by default.
+
+`require("ai").ask()`/`.stream()` prefix the request's `prompt` with the
+assembled context block, if any. The quick-action keymaps
+(|ai-bindings|) use `config.context` as their default; `:Ai ask`/`:Ai
+stream` build no context of their own.
+
+==============================================================================
+10. SCOPE                                                          *ai-scope*
+
+ai.nvim covers single-turn question/answer and streaming for one plugin
+call or one editor action: ask a question, get an answer; stream a longer
+one into a panel; send the current context along with a typed task.
+
+It does not cover anything that looks like an autonomous multi-step agent,
+a sandboxed execution environment, or tool-use/function-calling loops. That
+is a separate, deliberate boundary with a native, independent project (not
+a Neovim plugin, not a dependency of ai.nvim) -- see docs/scope.md in the
+repo for the full reasoning.
+
+The `Ai.Provider` interface (`id`, `available()`, `ask()`, `stream()`,
+`capabilities`) is deliberately narrow so that a future HTTP-backed
+provider pointing at such a system can be added as one registry entry, with
+no redesign -- but `provider = "auto"` only ever walks `provider_order`
+(default `{"claude", "ollama", "openai"}`), so nothing reachable through
+"auto" ever depends on that other system being installed, running, or
+reachable. It is only reachable by naming it explicitly.
+
+==============================================================================
+11. HEALTH CHECK                                                   *ai-health*
+
+:checkhealth ai
+
+Reports:
+  - core -- Neovim version (`vim.system` needs >= 0.10), curl on PATH.
+  - lib.nvim -- each required submodule (net.curl, harvest.scope, progress,
+    ui.kit, usercmd.composer, bindings.keymap), plus a specific check that
+    `lib.nvim.net.curl.fetch_stream` exists -- a too-old lib.nvim checkout
+    has every other module present but not this one.
+  - providers -- every registered provider id and whether `available()` is
+    currently true (missing binary and/or API key otherwise). Never shows a
+    key's value, only whether one is set.
+  - configuration -- the active `provider` and `provider_order`.
+  - composer route pre-flight -- `:Ai`'s own route table, validated by
+    `lib.nvim.usercmd.composer`.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
