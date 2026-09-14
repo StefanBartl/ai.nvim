@@ -10,6 +10,11 @@
   `lua/ai/ui/badge.lua`, `lua/ai/bindings/actions.lua`). All lazy-loaded (no
   cost until an `:Ai` action actually runs), but none of them has another
   rendering path -- `ask`/`stream`/`explain`/`info` all fail without it.
+  Inline completion (`docs/configuration.md`'s `completion` table) is the
+  one exception: it renders through raw extmarks (`lua/ai/ui/ghost.lua`),
+  not `ui.kit`, so it still works even if `ui.nvim` is missing (Neovim >=
+  0.10 above is the only real requirement it adds, for
+  `virt_text_pos = "inline"`).
 - `curl` on `PATH` -- every provider shells out to it.
 - At least one provider actually usable:
   - **claude**: `ANTHROPIC_API_KEY` set in the environment.

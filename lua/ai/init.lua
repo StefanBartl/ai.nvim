@@ -62,6 +62,16 @@ function M.setup(opts)
     end
   end
 
+  if cfg.completion and cfg.completion.enable then
+    local ok, err = pcall(function()
+      require("ai.completion").setup(cfg)
+      require("ai.bindings.keymaps").setup_completion(cfg)
+    end)
+    if not ok then
+      require("lib.nvim.notify").create("[ai]").warn("Completion setup failed: " .. tostring(err))
+    end
+  end
+
   local autocmds_ok, autocmds_err = pcall(function()
     require("ai.bindings.autocmds").setup()
   end)

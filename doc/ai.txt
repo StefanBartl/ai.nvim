@@ -9,11 +9,12 @@ CONTENTS                                                        *ai-contents*
   4. Configuration ....................... |ai-config|
   5. Commands ............................ |ai-commands|
   6. Bindings ............................ |ai-bindings|
-  7. Lua API ............................. |ai-api|
-  8. Providers ............................ |ai-providers|
-  9. Context .............................. |ai-context|
- 10. Scope ................................ |ai-scope|
- 11. Health check ........................ |ai-health|
+  7. Completion ........................... |ai-completion|
+  8. Lua API ............................. |ai-api|
+  9. Providers ............................ |ai-providers|
+ 10. Context .............................. |ai-context|
+ 11. Scope ................................ |ai-scope|
+ 12. Health check ........................ |ai-health|
 
 ==============================================================================
 1. INTRODUCTION                                                    *ai-intro*
@@ -113,6 +114,21 @@ DEFAULTS.lua` is the source of truth. >lua
       cwd = false,          -- expensive (a full cwd sweep); off by default
     },
 
+    -- Inline completion (ghost text at the cursor), see |ai-completion|.
+    completion = {
+      enable = true,
+      trigger = "manual",        -- "manual"|"auto"
+      idle_ms = 500,              -- auto-mode idle debounce
+      max_context_lines = 60,
+      provider = nil,              -- overrides `provider`, completion only
+      model = nil,
+      keymap = {
+        trigger = "<C-\\><C-a>",  -- insert mode; manual mode only
+        accept = "<Tab>",
+        dismiss = "<C-]>",
+      },
+    },
+
     log_level = vim.log.levels.WARN,
   })
 <
@@ -164,7 +180,48 @@ still-running stream, so quitting Neovim never leaves an orphaned curl
 process behind.
 
 ==============================================================================
-7. LUA API                                                          *ai-api*
+7. COMPLETION                                                *ai-completion*
+
+Inline "ghost text" suggestions at the cursor, insert mode only. A
+suggestion is exactly one |ai.ask()| call framed as a fill-in-the-middle
+prompt (the buffer text before/after the cursor) -- not a true FIM API, so
+quality/latency vary by provider/model. See |ai-scope| for why this counts
+as the same single-turn interaction the rest of the plugin covers, just
+with a different trigger and renderer.
+
+  Mode  Default        Action id  Does ~
+  i     <C-\><C-a>     trigger    Request a suggestion at the cursor
+                                   (manual mode only)
+  i     <Tab>          accept     Insert the shown suggestion; falls
+                                   through to normal `<Tab>` when nothing
+                                   is shown or a completion-menu popup is
+                                   open (`pumvisible()`)
+  i     <C-]>          dismiss    Clear the shown suggestion without
+                                   inserting it
+
+`config.completion.trigger`:
+  "manual" (default)  Only the `trigger` keymap fires a suggestion.
+  "auto"              Also fires one after `completion.idle_ms` (default
+                       500) of no typing. An explicit opt-in: this means an
+                       API call -- possibly against a paid cloud provider
+                       -- on every idle pause, not just on deliberate
+                       action. |:checkhealth| ai warns if `trigger = "auto"`
+                       is combined with a cloud provider.
+
+`config.completion.provider`/`.model` override `config.provider`/`.model`
+for completion requests only, e.g. to always complete against a local
+Ollama model regardless of what `:Ai ask` uses.
+
+Typing or moving the cursor dismisses a shown, unaccepted suggestion (its
+context no longer matches reality). A response that arrives after the
+buffer or cursor has since changed is discarded rather than rendered, for
+the same reason.
+
+Set `completion.keymap.<name> = false` to drop just that one key, or
+`completion.enable = false` to disable the feature entirely.
+
+==============================================================================
+8. LUA API                                                          *ai-api*
 
                                                                 *ai.setup()*
 require("ai").setup({opts})
@@ -227,7 +284,7 @@ require("ai.context").assemble({opts})
   string if nothing was requested or resolved. See |ai-context|.
 
 ==============================================================================
-8. PROVIDERS                                                   *ai-providers*
+9. PROVIDERS                                                   *ai-providers*
 
   claude   Anthropic Messages API. Streaming via SSE. Requires
            ANTHROPIC_API_KEY.
@@ -254,7 +311,7 @@ at all (see |ai-intro|). |:checkhealth| ai and `:Ai info` show only whether
 a key is set, never its value.
 
 ==============================================================================
-9. CONTEXT                                                       *ai-context*
+10. CONTEXT                                                      *ai-context*
 
 `Ai.ContextDefaults` fields, all boolean, independent (not mutually
 exclusive):
@@ -272,11 +329,15 @@ assembled context block, if any. The quick-action keymaps
 stream` build no context of their own.
 
 ==============================================================================
-10. SCOPE                                                          *ai-scope*
+11. SCOPE                                                          *ai-scope*
 
-ai.nvim covers single-turn question/answer and streaming for one plugin
-call or one editor action: ask a question, get an answer; stream a longer
-one into a panel; send the current context along with a typed task.
+ai.nvim covers single-turn question/answer and streaming: ask a question,
+get an answer; stream a longer one into a panel; send the current context
+along with a typed task. This includes more than one *trigger* for that
+same single-turn call -- an explicit `:Ai`/keymap action is one; an
+editor-triggered inline completion suggestion (|ai-completion|) is another.
+Both are exactly one |ai.ask()| round-trip under the hood, just with a
+different trigger source and renderer, not a new kind of interaction.
 
 It does not cover anything that looks like an autonomous multi-step agent,
 a sandboxed execution environment, or tool-use/function-calling loops. That
@@ -296,7 +357,7 @@ not yet added to `provider_order` -- stays reachable only by naming it
 explicitly (`provider = "<name>"`), never through `"auto"` by accident.
 
 ==============================================================================
-11. HEALTH CHECK                                                   *ai-health*
+12. HEALTH CHECK                                                   *ai-health*
 
 :checkhealth ai
 
@@ -310,6 +371,9 @@ Reports:
     currently true (missing binary and/or API key otherwise). Never shows a
     key's value, only whether one is set.
   - configuration -- the active `provider` and `provider_order`.
+  - completion -- enabled?, `trigger` mode, the resolved
+    `completion.provider`. Warns if `trigger = "auto"` resolves to a paid
+    cloud provider, since that means an API call on every idle pause.
   - composer route pre-flight -- `:Ai`'s own route table, validated by
     `lib.nvim.usercmd.composer`.
 

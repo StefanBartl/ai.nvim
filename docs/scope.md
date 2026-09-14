@@ -1,9 +1,15 @@
 # Scope: what this plugin does, and what it deliberately doesn't
 
-`ai.nvim` covers **single-turn question/answer and streaming for one plugin
-call or one editor action**: ask a question, get an answer; stream a longer
-one into a panel; send the current context (buffer/selection/diagnostics)
-along with a typed task.
+`ai.nvim` covers **single-turn question/answer and streaming**: ask a
+question, get an answer; stream a longer one into a panel; send the current
+context (buffer/selection/diagnostics) along with a typed task. This
+includes more than one *trigger* for that same single-turn call -- an
+explicit `:Ai`/keymap action is one; an editor-triggered inline completion
+suggestion (`lua/ai/completion/`) is another. Both are still exactly one
+`ask()` round-trip under the hood, just with a different trigger source
+(explicit command vs. idle-while-typing) and a different renderer (panel/
+badge vs. inline ghost text) -- not a new kind of interaction this plugin
+supports.
 
 It does **not** cover anything that looks like an autonomous multi-step
 agent, a sandboxed execution environment, or tool-use/function-calling loops.
