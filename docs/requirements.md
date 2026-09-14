@@ -14,8 +14,11 @@
 - At least one provider actually usable:
   - **claude**: `ANTHROPIC_API_KEY` set in the environment.
   - **openai**: `OPENAI_API_KEY` set in the environment.
+  - **gemini**: `GEMINI_API_KEY` set in the environment.
   - **ollama**: the `ollama` binary on `PATH`, with the daemon running
-    (default `http://127.0.0.1:11434`, override with `OLLAMA_HOST`).
+    (default `http://127.0.0.1:11434`, override with `AI_OLLAMA_HOST` --
+    deliberately not `OLLAMA_HOST`, which is Ollama's own env var for the
+    *server*'s bind address, not a client target).
   - **loomai**: a loomAI server reachable at `http://127.0.0.1:8080` (default,
     override with `LOOMAI_HOST`). Last in the default `provider_order`, see
     `docs/scope.md`.

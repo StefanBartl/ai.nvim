@@ -24,8 +24,8 @@ shared library to one model/endpoint's shape.
 
 ## Provider registry
 
-`lua/ai/providers/init.lua` lazy-loads four built-ins (`claude`, `ollama`,
-`openai`, `loomai`) behind the same proxy pattern
+`lua/ai/providers/init.lua` lazy-loads five built-ins (`claude`, `ollama`,
+`openai`, `gemini`, `loomai`) behind the same proxy pattern
 [`pdfport.nvim`](https://github.com/StefanBartl/pdfport.nvim) uses for its
 extraction backends: the real module only loads once one of its fields is
 actually touched. `M.register(provider)` lets a user (or a future built-in)
@@ -56,8 +56,8 @@ running in the background.
 
 ## Error handling: real API errors, not just transport errors
 
-Both SSE-based cloud providers (`claude`, `openai`) had to learn one
-non-obvious thing the hard way while building this: an auth/validation
+Two of the three SSE-based cloud providers (`claude`, `openai`) had to learn
+one non-obvious thing the hard way while building this: an auth/validation
 failure on a *streaming* request does not come back as an SSE event -- it is
 a plain, pretty-printed (multi-line) JSON error body, and curl itself still
 exits 0. Naive line-by-line parsing that only recognizes `data: ...` lines
@@ -65,6 +65,13 @@ silently drops that body and reports an empty success. Both providers instead
 collect every non-`data:` line and, once the stream ends with no actual
 content having arrived, try to parse the joined block as one JSON error
 object -- confirmed against the real APIs, not assumed.
+
+`gemini` applies the same `non_data_lines`/`recover_error_body` handling
+(`ai.providers.sse`) by analogy, since it is the same SSE transport with a
+different response schema -- but this one is **not yet confirmed against a
+real Gemini error response** (no `GEMINI_API_KEY` was available while writing
+it). Verify this during the next live test pass, see `docs/ROADMAP/reports/
+ai/live-testing-plan.md` in the nvim config repo.
 
 `loomai` is SSE too, but deliberately does not need any of that: its server
 (a project this collection also controls) was specified and implemented so

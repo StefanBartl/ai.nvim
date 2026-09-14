@@ -24,9 +24,15 @@ local M = {
 local DEFAULT_HOST = "http://127.0.0.1:11434"
 local DEFAULT_MODEL = "llama3.2"
 
+--- Deliberately AI_OLLAMA_HOST, not OLLAMA_HOST: the latter is already
+--- Ollama's own env var for the *server*'s bind address (commonly something
+--- like "0.0.0.0:11434", with no scheme and not a valid client target) --
+--- reusing it here as a client override would silently break on any machine
+--- that already sets it for that purpose. Same reasoning loomai.lua applies
+--- with LOOMAI_HOST vs. LOOMAI_OLLAMA_HOST.
 ---@return string
 local function host()
-  return util.env_value("OLLAMA_HOST", DEFAULT_HOST)
+  return util.env_value("AI_OLLAMA_HOST", DEFAULT_HOST)
 end
 
 ---No network round trip here on purpose -- `available()` runs on every

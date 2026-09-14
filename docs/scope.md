@@ -31,7 +31,7 @@ decision-queue machinery through this interface.
 ## Fallback guarantee
 
 `provider = "auto"` only ever walks `provider_order` (default `{"claude",
-"ollama", "openai", "loomai"}`, `loomai` listed last so it never shadows a
+"ollama", "openai", "gemini", "loomai"}`, `loomai` listed last so it never shadows a
 cloud/CLI provider that is already configured and working). A provider not
 listed there -- a custom one registered under its own id, or any future
 agent-framework-backed one -- is reachable only by naming it explicitly

@@ -5,7 +5,7 @@
 
 ---@class Ai.Config
 ---@field provider? string Active provider id, or `"auto"` (default) to pick the first available id in `provider_order`
----@field provider_order? string[] `"auto"` resolution order (default `{"claude","ollama","openai","loomai"}`) -- `"loomai"` is last since it needs a local server the user must run themselves; see `ai.providers`'s module doc
+---@field provider_order? string[] `"auto"` resolution order (default `{"claude","ollama","openai","gemini","loomai"}`) -- `"loomai"` is last since it needs a local server the user must run themselves; see `ai.providers`'s module doc
 ---@field model? table<string, string> Default model per provider id, e.g. `{ claude = "claude-opus-4-5" }`
 ---@field timeout_ms? integer Request timeout in ms, passed through to lib.nvim.net.curl (default 60000)
 ---@field ui? Ai.UiOptions

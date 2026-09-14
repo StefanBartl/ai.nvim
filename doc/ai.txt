@@ -39,8 +39,11 @@ and for every future caller.
 - At least one provider actually usable:
   - claude:  `ANTHROPIC_API_KEY` set in the environment.
   - openai:  `OPENAI_API_KEY` set in the environment.
+  - gemini:  `GEMINI_API_KEY` set in the environment.
   - ollama:  the `ollama` binary on `PATH`, with the daemon running
-             (default http://127.0.0.1:11434, override with `OLLAMA_HOST`).
+             (default http://127.0.0.1:11434, override with
+             `AI_OLLAMA_HOST` -- deliberately not `OLLAMA_HOST`, which is
+             Ollama's own env var for the *server*'s bind address).
   - loomai:  a loomAI server reachable at http://127.0.0.1:8080 (default,
              override with `LOOMAI_HOST`). Last in the default
              `provider_order` -- see |ai-scope|.
@@ -77,8 +80,8 @@ run or one of the default `<leader>a*` keymaps is pressed.
 Pass a table to |ai.setup()|. All keys are optional; `lua/ai/config/
 DEFAULTS.lua` is the source of truth. >lua
   require("ai").setup({
-    provider = "auto",                        -- "auto"|"claude"|"ollama"|"openai"|"loomai"|custom id
-    provider_order = { "claude", "ollama", "openai", "loomai" },  -- "auto" resolution order
+    provider = "auto",                        -- "auto"|"claude"|"ollama"|"openai"|"gemini"|"loomai"|custom id
+    provider_order = { "claude", "ollama", "openai", "gemini", "loomai" },  -- "auto" resolution order
     model = {},                               -- e.g. { claude = "claude-opus-4-5" }
     timeout_ms = 60000,
 
@@ -232,6 +235,7 @@ require("ai.context").assemble({opts})
            binary and a running daemon.
   openai   OpenAI Chat Completions API. Streaming via SSE. Requires
            OPENAI_API_KEY.
+  gemini   Google Gemini API. Streaming via SSE. Requires GEMINI_API_KEY.
   loomai   Local loomAI server (`POST /ask`, `POST /ask/stream`). Streaming
            via SSE. Requires a running loomAI instance (default
            http://127.0.0.1:8080, override with `LOOMAI_HOST`). Last in the
@@ -286,7 +290,7 @@ pointing at such a system can be added as one registry entry, with no
 redesign. `loomai` is exactly that (a thin client for loomAI's own
 `/ask`/`/ask/stream`, nothing more -- see |ai-providers|) and is, unlike a
 hypothetical deeper integration, in the default `provider_order` (default
-`{"claude", "ollama", "openai", "loomai"}`, `loomai` last). Any *other*
+`{"claude", "ollama", "openai", "gemini", "loomai"}`, `loomai` last). Any *other*
 provider -- a custom one registered under its own id, or a future built-in
 not yet added to `provider_order` -- stays reachable only by naming it
 explicitly (`provider = "<name>"`), never through `"auto"` by accident.
