@@ -26,6 +26,24 @@ local function format_source(source)
   return table.concat(parts, "\n")
 end
 
+---@internal
+---Resolve a `lib.nvim.harvest.scope` kind and append every source it
+---returns, formatted, to `sections`. A scope that errors or resolves to
+---nothing is silently skipped -- see `M.assemble`'s own doc for why.
+---@param sections string[]
+---@param scope Lib.Harvest.Scope
+---@param kind string
+---@param args table|nil
+local function add_scope(sections, scope, kind, args)
+  local ok, sources = pcall(scope.resolve, kind, args)
+  if not ok or not sources then
+    return
+  end
+  for _, s in ipairs(sources) do
+    sections[#sections + 1] = format_source(s)
+  end
+end
+
 ---Build the context block for `opts`. Every section is best-effort: a scope
 ---that resolves to nothing (no visual selection active, no diagnostics
 ---present) is silently omitted rather than padding the prompt with an empty
@@ -40,12 +58,7 @@ function M.assemble(opts)
   local sections = {}
 
   if opts.buffer then
-    local ok, sources = pcall(scope.resolve, "buffer")
-    if ok and sources then
-      for _, s in ipairs(sources) do
-        sections[#sections + 1] = format_source(s)
-      end
-    end
+    add_scope(sections, scope, "buffer")
   end
 
   if opts.selection then
@@ -54,12 +67,7 @@ function M.assemble(opts)
     local line1 = vim.fn.getpos("'<")[2]
     local line2 = vim.fn.getpos("'>")[2]
     if line1 > 0 and line2 >= line1 then
-      local ok, sources = pcall(scope.resolve, "range", { line1 = line1, line2 = line2 })
-      if ok and sources then
-        for _, s in ipairs(sources) do
-          sections[#sections + 1] = format_source(s)
-        end
-      end
+      add_scope(sections, scope, "range", { line1 = line1, line2 = line2 })
     end
   end
 
@@ -72,12 +80,7 @@ function M.assemble(opts)
   end
 
   if opts.cwd then
-    local ok, sources = pcall(scope.resolve, "cwd")
-    if ok and sources then
-      for _, s in ipairs(sources) do
-        sections[#sections + 1] = format_source(s)
-      end
-    end
+    add_scope(sections, scope, "cwd")
   end
 
   return table.concat(sections, "\n\n")

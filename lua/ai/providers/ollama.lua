@@ -9,6 +9,7 @@
 require("ai.@types")
 
 local curl = require("lib.nvim.net.curl")
+local util = require("ai.providers.util")
 
 --- Declared as a class (not `---@type Ai.Provider`) so the `function M.*`
 --- methods defined below the literal count as fulfilling the interface --
@@ -25,8 +26,7 @@ local DEFAULT_MODEL = "llama3.2"
 
 ---@return string
 local function host()
-  local h = vim.env.OLLAMA_HOST
-  return (type(h) == "string" and h ~= "") and h or DEFAULT_HOST
+  return util.env_value("OLLAMA_HOST", DEFAULT_HOST)
 end
 
 ---No network round trip here on purpose -- `available()` runs on every
@@ -125,7 +125,7 @@ function M.stream(req, handlers)
     on_done = function(obj)
       if obj.code ~= 0 then
         if handlers.on_error then
-          handlers.on_error(string.format("ollama: curl exited %d: %s", obj.code, obj.stderr or ""))
+          handlers.on_error(util.curl_exit_error("ollama", obj))
         end
         return
       end

@@ -98,6 +98,17 @@ function M.ids()
   return ids
 end
 
+---@internal
+---A lazy proxy's `__index` returns `nil` for every field once its module has
+---failed to `require` (see `make_lazy`/`load_failed` above) -- including
+---`available` itself, so calling `p.available()` unguarded would raise
+---"attempt to call a nil value" instead of the intended "not available".
+---@param p Ai.Provider
+---@return boolean
+local function is_available(p)
+  return type(p.available) == "function" and p.available() or false
+end
+
 ---Resolve `id` to a concrete, available provider. `id == "auto"` walks
 ---`order` in sequence and returns the first entry whose `available()` is
 ---true; an explicit `id` is looked up directly and must itself be
@@ -114,7 +125,7 @@ function M.resolve(id, order)
     if not p then
       return nil, string.format("ai: unknown provider '%s'", id)
     end
-    if not p.available() then
+    if not is_available(p) then
       return nil, string.format("ai: provider '%s' is not available", id)
     end
     return p, nil
@@ -122,7 +133,7 @@ function M.resolve(id, order)
 
   for _, candidate_id in ipairs(order or {}) do
     local p = registered[candidate_id]
-    if p and p.available() then
+    if p and is_available(p) then
       return p, nil
     end
   end

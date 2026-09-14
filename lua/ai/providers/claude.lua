@@ -12,6 +12,8 @@
 require("ai.@types")
 
 local curl = require("lib.nvim.net.curl")
+local sse = require("ai.providers.sse")
+local util = require("ai.providers.util")
 
 --- Declared as a class (not `---@type Ai.Provider`) so the `function M.*`
 --- methods defined below the literal count as fulfilling the interface --
@@ -30,8 +32,7 @@ local DEFAULT_MAX_TOKENS = 4096
 
 ---@return string|nil
 local function api_key()
-  local key = vim.env.ANTHROPIC_API_KEY
-  return (type(key) == "string" and key ~= "") and key or nil
+  return util.env_value("ANTHROPIC_API_KEY")
 end
 
 ---@return boolean
@@ -113,12 +114,9 @@ function M.stream(req, handlers)
 
   local text_parts = {}
   local usage, stop_reason
-  -- Lines that are not `data: ...` at all. A real auth/validation failure
-  -- does not come back as an SSE event -- it is a plain, pretty-printed
-  -- (multi-line!) JSON body, confirmed for this exact failure mode against
-  -- the OpenAI provider and applied defensively here too (same API shape:
-  -- curl exits cleanly, so only on_done -- once the whole body is in --
-  -- can tell a real error apart from an empty success).
+  -- Lines that are not `data: ...` at all -- see ai.providers.sse's module
+  -- doc for why (a real auth/validation failure comes back as a plain,
+  -- pretty-printed JSON body, not an SSE event, and curl still exits 0).
   local non_data_lines = {}
 
   return curl.fetch_stream(API_URL, {
@@ -132,7 +130,7 @@ function M.stream(req, handlers)
       -- Anthropic's SSE carries both `event: <type>` and `data: {...}` lines
       -- per event; only the payload line is needed, `decoded.type` already
       -- says what kind of event it is.
-      local payload = line:match("^data:%s*(.*)$")
+      local payload = sse.data_payload(line)
       if not payload then
         if line ~= "" then
           non_data_lines[#non_data_lines + 1] = line
@@ -170,13 +168,13 @@ function M.stream(req, handlers)
     on_done = function(obj)
       if obj.code ~= 0 then
         if handlers.on_error then
-          handlers.on_error(string.format("claude: curl exited %d: %s", obj.code, obj.stderr or ""))
+          handlers.on_error(util.curl_exit_error("claude", obj))
         end
         return
       end
-      if #text_parts == 0 and #non_data_lines > 0 then
-        local ok_err, decoded_err = pcall(vim.json.decode, table.concat(non_data_lines, "\n"))
-        if ok_err and type(decoded_err) == "table" and decoded_err.type == "error" then
+      if #text_parts == 0 then
+        local decoded_err = sse.recover_error_body(non_data_lines)
+        if decoded_err and decoded_err.type == "error" then
           if handlers.on_error then
             handlers.on_error(
               "claude API error: " .. tostring(decoded_err.error and decoded_err.error.message)

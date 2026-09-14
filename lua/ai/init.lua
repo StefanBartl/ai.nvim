@@ -62,9 +62,14 @@ function M.setup(opts)
     end
   end
 
-  pcall(function()
+  local autocmds_ok, autocmds_err = pcall(function()
     require("ai.bindings.autocmds").setup()
   end)
+  if not autocmds_ok then
+    require("lib.nvim.notify")
+      .create("[ai]")
+      .warn("Autocmd setup failed: " .. tostring(autocmds_err))
+  end
 
   M._initialized = true
   vim.g.loaded_ai = true

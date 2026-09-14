@@ -7,6 +7,8 @@
 require("ai.@types")
 
 local curl = require("lib.nvim.net.curl")
+local sse = require("ai.providers.sse")
+local util = require("ai.providers.util")
 
 --- Declared as a class (not `---@type Ai.Provider`) so the `function M.*`
 --- methods defined below the literal count as fulfilling the interface --
@@ -23,8 +25,7 @@ local DEFAULT_MODEL = "gpt-4o"
 
 ---@return string|nil
 local function api_key()
-  local key = vim.env.OPENAI_API_KEY
-  return (type(key) == "string" and key ~= "") and key or nil
+  return util.env_value("OPENAI_API_KEY")
 end
 
 ---@return boolean
@@ -103,12 +104,9 @@ function M.stream(req, handlers)
 
   local text_parts = {}
   local finish_reason
-  -- Lines that are not `data: ...` at all. A real 401 does not come back as
-  -- an SSE event -- it is a plain, pretty-printed (multi-line!) JSON body,
-  -- verified against the live API. Individual lines like `{` or
-  -- `  "error": {` are not valid JSON on their own, so this collects them
-  -- and only tries to parse the joined block once the stream ends -- see
-  -- `on_done` below.
+  -- Lines that are not `data: ...` at all -- see ai.providers.sse's module
+  -- doc for why (a real 401 comes back as a plain, pretty-printed JSON body,
+  -- not an SSE event, and curl still exits 0; verified against the live API).
   local non_data_lines = {}
 
   return curl.fetch_stream(API_URL, {
@@ -119,7 +117,7 @@ function M.stream(req, handlers)
     timeout_ms = req.timeout_ms or 60000,
   }, {
     on_chunk = function(line)
-      local payload = line:match("^data:%s*(.*)$")
+      local payload = sse.data_payload(line)
       if not payload then
         if line ~= "" then
           non_data_lines[#non_data_lines + 1] = line
@@ -154,7 +152,7 @@ function M.stream(req, handlers)
     on_done = function(obj)
       if obj.code ~= 0 then
         if handlers.on_error then
-          handlers.on_error(string.format("openai: curl exited %d: %s", obj.code, obj.stderr or ""))
+          handlers.on_error(util.curl_exit_error("openai", obj))
         end
         return
       end
@@ -162,9 +160,9 @@ function M.stream(req, handlers)
       -- exactly the plain-JSON-error-body case above. curl itself exited
       -- cleanly, so without this check on_done would report an empty
       -- success and the failure would vanish silently.
-      if #text_parts == 0 and #non_data_lines > 0 then
-        local ok_err, decoded_err = pcall(vim.json.decode, table.concat(non_data_lines, "\n"))
-        if ok_err and type(decoded_err) == "table" and decoded_err.error then
+      if #text_parts == 0 then
+        local decoded_err = sse.recover_error_body(non_data_lines)
+        if decoded_err and decoded_err.error then
           if handlers.on_error then
             handlers.on_error("openai API error: " .. tostring(decoded_err.error.message))
           end

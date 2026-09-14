@@ -108,6 +108,37 @@ describe("ai.providers", function()
     assert.is_string(err)
   end)
 
+  it(
+    "resolve(explicit_id) treats a provider with no .available field as unavailable, not a crash",
+    function()
+      -- Stands in for a lazy proxy whose module failed to require(): every
+      -- field, including `available`, comes back nil (see providers/init.lua's
+      -- `make_lazy`). resolve() must not call a nil field.
+      local providers = require("ai.providers")
+      providers.register({ id = "broken" })
+      local p, err = providers.resolve("broken", {})
+      assert.is_nil(p)
+      assert.is_string(err)
+    end
+  )
+
+  it(
+    "resolve('auto', order) skips a provider with no .available field instead of crashing",
+    function()
+      local providers = require("ai.providers")
+      providers.register({ id = "broken" })
+      providers.register({
+        id = "fine",
+        available = function()
+          return true
+        end,
+      })
+      local p, err = providers.resolve("auto", { "broken", "fine" })
+      assert.is_nil(err)
+      assert.are.equal("fine", p.id)
+    end
+  )
+
   it("'auto' never reaches a provider absent from order, even if registered", function()
     local providers = require("ai.providers")
     -- Stands in for "loomai": present in the registry, but never listed in
