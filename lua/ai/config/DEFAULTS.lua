@@ -8,10 +8,10 @@
 local DEFAULTS = {
   provider = "auto",
 
-  -- "auto" resolution order. Deliberately does not include "loomai" -- see
-  -- ai.providers's module doc for why; adding it here later is a one-line
-  -- opt-in, not a redesign.
-  provider_order = { "claude", "ollama", "openai" },
+  -- "auto" resolution order. "loomai" is last: it needs a local server the
+  -- user must run themselves (see lua/ai/providers/loomai.lua), so it should
+  -- not shadow a cloud/CLI provider that is already configured and working.
+  provider_order = { "claude", "ollama", "openai", "loomai" },
 
   -- Per-provider default model, e.g. { claude = "claude-opus-4-5" }. Empty
   -- means each provider module's own built-in default.

@@ -42,7 +42,7 @@ and for every future caller.
   - ollama:  the `ollama` binary on `PATH`, with the daemon running
              (default http://127.0.0.1:11434, override with `OLLAMA_HOST`).
   - loomai:  a loomAI server reachable at http://127.0.0.1:8080 (default,
-             override with `LOOMAI_HOST`). Registered but not in the default
+             override with `LOOMAI_HOST`). Last in the default
              `provider_order` -- see |ai-scope|.
 
 No provider is required at install time -- |:checkhealth| ai reports which
@@ -78,7 +78,7 @@ Pass a table to |ai.setup()|. All keys are optional; `lua/ai/config/
 DEFAULTS.lua` is the source of truth. >lua
   require("ai").setup({
     provider = "auto",                        -- "auto"|"claude"|"ollama"|"openai"|"loomai"|custom id
-    provider_order = { "claude", "ollama", "openai" },  -- "auto" resolution order
+    provider_order = { "claude", "ollama", "openai", "loomai" },  -- "auto" resolution order
     model = {},                               -- e.g. { claude = "claude-opus-4-5" }
     timeout_ms = 60000,
 
@@ -115,8 +115,8 @@ DEFAULTS.lua` is the source of truth. >lua
 <
 
 "loomai" is a registered built-in provider (a local loomAI server, see
-|ai-providers|), but `provider_order`'s default never includes it -- see
-|ai-scope|.
+|ai-providers|) and is in `provider_order`'s default, listed last since it
+needs a local server the user must run themselves -- see |ai-scope|.
 
 ==============================================================================
 5. COMMANDS                                                     *ai-commands*
@@ -234,8 +234,8 @@ require("ai.context").assemble({opts})
            OPENAI_API_KEY.
   loomai   Local loomAI server (`POST /ask`, `POST /ask/stream`). Streaming
            via SSE. Requires a running loomAI instance (default
-           http://127.0.0.1:8080, override with `LOOMAI_HOST`). Registered
-           but not in the default `provider_order` -- see |ai-scope|.
+           http://127.0.0.1:8080, override with `LOOMAI_HOST`). Last in the
+           default `provider_order` -- see |ai-scope|.
 
 `provider = "auto"` (the default) walks `provider_order` and uses the first
 provider whose `available()` is true -- a cheap, synchronous check (an
@@ -281,12 +281,15 @@ a Neovim plugin, not a dependency of ai.nvim) -- see docs/scope.md in the
 repo for the full reasoning.
 
 The `Ai.Provider` interface (`id`, `available()`, `ask()`, `stream()`,
-`capabilities`) is deliberately narrow so that a future HTTP-backed
-provider pointing at such a system can be added as one registry entry, with
-no redesign -- but `provider = "auto"` only ever walks `provider_order`
-(default `{"claude", "ollama", "openai"}`), so nothing reachable through
-"auto" ever depends on that other system being installed, running, or
-reachable. It is only reachable by naming it explicitly.
+`capabilities`) is deliberately narrow so that an HTTP-backed provider
+pointing at such a system can be added as one registry entry, with no
+redesign. `loomai` is exactly that (a thin client for loomAI's own
+`/ask`/`/ask/stream`, nothing more -- see |ai-providers|) and is, unlike a
+hypothetical deeper integration, in the default `provider_order` (default
+`{"claude", "ollama", "openai", "loomai"}`, `loomai` last). Any *other*
+provider -- a custom one registered under its own id, or a future built-in
+not yet added to `provider_order` -- stays reachable only by naming it
+explicitly (`provider = "<name>"`), never through `"auto"` by accident.
 
 ==============================================================================
 11. HEALTH CHECK                                                   *ai-health*

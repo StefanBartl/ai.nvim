@@ -31,7 +31,9 @@ decision-queue machinery through this interface.
 ## Fallback guarantee
 
 `provider = "auto"` only ever walks `provider_order` (default `{"claude",
-"ollama", "openai"}`). A provider not listed there -- including any future
+"ollama", "openai", "loomai"}`, `loomai` listed last so it never shadows a
+cloud/CLI provider that is already configured and working). A provider not
+listed there -- a custom one registered under its own id, or any future
 agent-framework-backed one -- is reachable only by naming it explicitly
 (`provider = "<name>"` or `:Ai provider <name>`). Nothing in this plugin ever
 depends on that other system being installed, running, or reachable.

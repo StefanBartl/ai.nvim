@@ -5,12 +5,14 @@
 --- `pdfport.nvim/lua/pdfport/backends/init.lua` uses for its extraction
 --- backends.
 ---
---- `"loomai"` IS in `BUILTIN` (loomAI now exposes `/ask`/`/ask/stream`, see
---- `lua/ai/providers/loomai.lua`), but deliberately NOT in `DEFAULTS.lua`'s
---- `provider_order`: `resolve("auto", order)` only ever walks `order`, so
---- `loomai` stays opt-in even though it is registered -- it has to be added
---- to `provider_order` explicitly to be reachable through `"auto"`, exactly
---- like a user's own custom provider, until it has seen real-world use.
+--- `"loomai"` is in both `BUILTIN` and `DEFAULTS.lua`'s `provider_order`
+--- (loomAI exposes `/ask`/`/ask/stream`, see `lua/ai/providers/loomai.lua`)
+--- -- listed last, since it needs a local server the user must run
+--- themselves and should not shadow a cloud/CLI provider that is already
+--- configured and working. `resolve("auto", order)` only ever walks `order`,
+--- so a *custom* provider a caller registers under its own id still stays
+--- opt-in exactly the same way -- it has to be added to `provider_order`
+--- explicitly to be reachable through `"auto"`.
 
 require("ai.@types")
 

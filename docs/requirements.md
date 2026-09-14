@@ -11,9 +11,8 @@
   - **ollama**: the `ollama` binary on `PATH`, with the daemon running
     (default `http://127.0.0.1:11434`, override with `OLLAMA_HOST`).
   - **loomai**: a loomAI server reachable at `http://127.0.0.1:8080` (default,
-    override with `LOOMAI_HOST`). Registered but not in the default
-    `provider_order` -- reachable only via `provider = "loomai"` until it has
-    seen real-world use, see `docs/scope.md`.
+    override with `LOOMAI_HOST`). Last in the default `provider_order`, see
+    `docs/scope.md`.
 
 No provider is required at install time -- `:checkhealth ai` reports which
 ones are usable on this machine, and `provider = "auto"` (the default) picks
