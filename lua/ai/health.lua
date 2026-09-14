@@ -83,6 +83,30 @@ function M.check()
   vim.health.info("provider = " .. cfg.provider)
   vim.health.info("provider_order = " .. table.concat(cfg.provider_order, ", "))
 
+  -- ── Completion ──────────────────────────────────────────────────────────
+  vim.health.start("ai.nvim: completion")
+  if not cfg.completion or not cfg.completion.enable then
+    vim.health.info("disabled (config.completion.enable = false)")
+  else
+    vim.health.info("trigger = " .. tostring(cfg.completion.trigger))
+    local resolved_provider = cfg.completion.provider or cfg.provider
+    vim.health.info(
+      "provider = "
+        .. tostring(resolved_provider)
+        .. " (completion.provider, falling back to provider)"
+    )
+    if cfg.completion.trigger == "auto" then
+      vim.health.warn(
+        "auto-trigger fires a request on every idle pause while typing, "
+          .. "not just on deliberate action -- if `completion.provider` "
+          .. "resolves to a paid cloud provider, this has a real cost",
+        {
+          'Set completion.provider = "ollama" (or similar) for auto mode, or use trigger = "manual"',
+        }
+      )
+    end
+  end
+
   -- ── composer route pre-flight ────────────────────────────────────────────
   require("lib.nvim.usercmd.composer").checkhealth("Ai")
 end

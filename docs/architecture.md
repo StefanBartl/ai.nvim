@@ -78,3 +78,45 @@ ai/live-testing-plan.md` in the nvim config repo.
 that a stream-time error is always a regular `data: {"error":...}` event,
 never a raw non-SSE body -- see `nvim/docs/ROADMAP/reports/
 loomai-ai-nvim-integration.md`, Aufgabe C/D.
+
+## Inline completion
+
+`lua/ai/completion/` is a separate module tree, not a bolt-on to the
+existing quick-actions (`bindings/actions.lua`): those are one-shot calls
+sharing no state between invocations, while completion is inherently
+stateful (an in-flight request, a shown-but-unaccepted suggestion, an
+optional idle timer) and needs its own lifecycle, not another action body.
+It still calls straight into `require("ai").ask()` like everything else --
+no changes to the provider layer or the registry -- see [scope.md](scope.md)
+for why an editor-triggered suggestion is the same single-turn interaction
+the rest of this plugin covers, just with a different trigger and renderer.
+
+Three small modules do the actual work, kept separate because each is
+independently testable/replaceable: `completion/context.lua` (cursor-
+relative prefix/suffix, built on the same `lib.nvim.harvest.scope`
+`"range"` kind `ai/context/init.lua` already uses -- no new harvest-scope
+kind was needed), `completion/prompt.lua` (pure functions: frame the
+fill-in-the-middle task as a chat prompt, then strip a markdown fence a
+model adds despite being told not to), and `ui/ghost.lua` (the actual
+rendering, `virt_text_pos = "inline"` extmarks -- Neovim >= 0.10, already
+this plugin's minimum). `completion/init.lua` is the only one that ties
+them together and holds state.
+
+**Stale-response guard.** A request records the buffer id, cursor
+position, and `changedtick` at fire time; a response is rendered only if
+none of those changed by the time it arrives, and a generation counter
+discards a response superseded by a newer trigger before it arrives --
+`ask()` exposes no handle to actually cancel an in-flight non-streaming
+request, so this is what makes a stale one a no-op instead of misplacing
+text. The same buffer/cursor check dismisses an already-shown suggestion
+reactively (`TextChangedI`/`CursorMovedI`) the moment it stops matching
+where the cursor actually is.
+
+**Two trigger modes, one shared pipeline.** `config.completion.trigger`
+picks what calls into that pipeline: `"manual"` (default) wires only the
+`trigger` keymap; `"auto"` additionally owns a `vim.uv.new_timer()` reset
+on every `TextChangedI`, deliberately not `CursorHoldI`/`updatetime` --
+that setting is shared with (and often fought over by) other plugins, an
+owned timer is not. `"auto"` is opt-in specifically because it means an
+API call -- possibly a paid cloud one -- on every idle pause, not just on
+deliberate action.

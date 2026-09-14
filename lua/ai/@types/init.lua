@@ -13,6 +13,7 @@
 ---@field which_key? Ai.WhichKeyOptions
 ---@field usercmds? Ai.UsercmdOptions
 ---@field context? Ai.ContextDefaults Default context assembly for the quick-action keymaps
+---@field completion? Ai.CompletionOptions Inline completion suggestions (ghost text)
 ---@field log_level? integer vim.log.levels
 
 ---@class Ai.UiOptions
@@ -36,6 +37,20 @@
 ---@field selection? boolean Include the current visual selection (range), if any
 ---@field diagnostics? boolean Include `vim.diagnostic.get()` for the current buffer
 ---@field cwd? boolean Include a harvest.scope("cwd") sweep -- expensive, off by default
+
+---@class Ai.CompletionOptions
+---@field enable boolean
+---@field trigger? "manual"|"auto" `"manual"` (default): only an explicit keymap fires a suggestion. `"auto"`: an idle-while-typing timer fires one too -- pick this deliberately, it means an API call (possibly a paid cloud one) on every typing pause, not just on deliberate action.
+---@field idle_ms? integer Auto-mode idle debounce before firing, in ms (default 500). Unused in `"manual"` mode.
+---@field max_context_lines? integer Lines of buffer context to include before/after the cursor (default 60)
+---@field provider? string Overrides `config.provider` for completion requests only
+---@field model? string Overrides the resolved provider's default model for completion requests only
+---@field keymap? Ai.CompletionKeymapOptions
+
+---@class Ai.CompletionKeymapOptions
+---@field trigger? string Insert-mode: request a suggestion at the cursor (manual mode only)
+---@field accept? string Insert-mode: insert the currently shown suggestion
+---@field dismiss? string Insert-mode: clear the currently shown suggestion without inserting it
 
 ---@class Ai.Request
 ---@field prompt string

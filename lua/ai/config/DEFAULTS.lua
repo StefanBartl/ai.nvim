@@ -48,6 +48,24 @@ local DEFAULTS = {
     cwd = false,
   },
 
+  -- Inline completion (ghost text). "manual" (default): only the trigger
+  -- keymap fires a suggestion. "auto" is an explicit opt-in -- it means an
+  -- API call (possibly a paid cloud one) on every typing pause, not just on
+  -- deliberate action, so it is never the default.
+  completion = {
+    enable = true,
+    trigger = "manual",
+    idle_ms = 500,
+    max_context_lines = 60,
+    provider = nil,
+    model = nil,
+    keymap = {
+      trigger = "<C-\\><C-a>",
+      accept = "<Tab>",
+      dismiss = "<C-]>",
+    },
+  },
+
   log_level = vim.log.levels.WARN,
 }
 

@@ -38,9 +38,58 @@ require("ai").setup({
     cwd = false,           -- expensive (a full cwd sweep); off by default
   },
 
+  -- Inline completion (ghost text at the cursor). "manual" (default): only
+  -- the trigger keymap fires a suggestion. "auto" additionally fires one
+  -- after an idle pause while typing -- an explicit opt-in, since that
+  -- means an API call (possibly a paid cloud one) on every typing pause,
+  -- not just on deliberate action.
+  completion = {
+    enable = true,
+    trigger = "manual",          -- "manual" | "auto"
+    idle_ms = 500,                -- auto-mode idle debounce; unused in "manual"
+    max_context_lines = 60,       -- buffer lines included before/after the cursor
+    provider = nil,                -- overrides `provider` for completion requests only
+    model = nil,
+    keymap = {
+      trigger = "<C-\\><C-a>",    -- insert mode; manual mode only
+      accept = "<Tab>",            -- insert mode; falls through to normal Tab when nothing is shown
+      dismiss = "<C-]>",           -- insert mode
+    },
+  },
+
   log_level = vim.log.levels.WARN,
 })
 ```
+
+## Inline completion
+
+A suggestion is a single `ask()` call framed as a fill-in-the-middle prompt
+(prefix/suffix around the cursor) -- not a true FIM API, so quality varies
+by provider/model. `completion.provider`/`completion.model` override the
+regular `provider`/`model` resolution for completion requests only, e.g. to
+always use a local Ollama model for completion regardless of what `:Ai ask`
+uses:
+
+```lua
+completion = { provider = "ollama", model = "qwen2.5-coder:7b-q5_K_M" }
+```
+
+The `accept` keymap (`<Tab>` by default) is an `expr` mapping: it steps
+aside while a completion-menu plugin's own popup is open (`pumvisible()`),
+and falls through to that key's normal behavior when no suggestion is
+shown. It cannot know whether another plugin *also* claims the same key
+when no popup is open -- change `completion.keymap.accept` if that
+conflicts with an existing binding.
+
+Set `completion.keymap.<name> = false` to drop just that one key, or
+`completion.enable = false` to disable the feature entirely.
+
+**A note on `trigger = "auto"`:** this fires a request on every idle pause
+while typing, not just on deliberate action. Against a paid cloud provider
+(Claude/OpenAI/Gemini) that is a real, ongoing cost, not a one-time one --
+consider setting `completion.provider = "ollama"` (or similar) alongside
+`trigger = "auto"` if that matters to you. `:checkhealth ai` warns about
+this combination.
 
 ## Provider selection
 
