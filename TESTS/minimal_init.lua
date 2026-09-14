@@ -15,11 +15,18 @@
 vim.opt.rtp:append(vim.fn.getcwd())
 
 --- lib.nvim is a runtime dependency (net.curl, harvest.scope, progress,
---- ui.kit, usercmd.composer, notify, ...), not an optional one -- ai.nvim's
---- own modules `require("lib.*")` directly, so the specs cannot run without
---- it on the rtp. plenary.nvim is the busted-compatible test harness the
---- specs under TESTS/ai are already written against (describe/it/before_each,
+--- usercmd.composer, notify, ...), not an optional one -- ai.nvim's own
+--- modules `require("lib.*")` directly, so the specs cannot run without it
+--- on the rtp. plenary.nvim is the busted-compatible test harness the specs
+--- under TESTS/ai are already written against (describe/it/before_each,
 --- busted assertions).
+---
+--- ui.nvim (ui.kit) is NOT added here: none of the specs under TESTS/ai
+--- touch ai.ui.panel/ai.ui.badge/ai.bindings.actions, the only modules that
+--- require it, and every one of those requires is lazy (inside a handler
+--- function, never at module load) -- so the suite genuinely does not need
+--- it on the rtp. Add it the same way as lib.nvim above if a future spec
+--- starts exercising one of those modules directly.
 ---
 --- Three ways each can be found, in descending order of explicitness: an
 --- explicit env var (`LIB_NVIM_DIR`/`PLENARY_DIR`), a `.deps/<name>` checkout

@@ -34,9 +34,22 @@ function M.check()
     "error",
     advice
   )
-  lib_health.check_require("lib.nvim.ui.kit", "ui.kit (answer panel + badge)", "error", advice)
   lib_health.check_require("lib.nvim.usercmd.composer", "usercmd.composer (:Ai)", "error", advice)
   lib_health.check_require("lib.nvim.bindings.keymap", "bindings.keymap (keymaps)", "error", advice)
+
+  -- ── ui.nvim dependency ────────────────────────────────────────────────
+  -- Moved out of the lib.nvim section above: ui.kit lives in ui.nvim now,
+  -- not lib.nvim -- a stale "Update lib.nvim" hint here would point at the
+  -- wrong repo for anyone missing it. No fallback anywhere it is used
+  -- (ask/stream/explain/info all render through kit.popup/kit.surface), so
+  -- it stays error-level like the lib.nvim submodules above.
+  vim.health.start("ai.nvim: ui.nvim")
+  lib_health.check_require(
+    "ui.kit",
+    "ui.kit (answer panel + badge)",
+    "error",
+    { 'Install "StefanBartl/ui.nvim"' }
+  )
 
   local ok_curl, curl = pcall(require, "lib.nvim.net.curl")
   if ok_curl then

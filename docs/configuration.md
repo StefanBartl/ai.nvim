@@ -13,7 +13,7 @@ require("ai").setup({
   ui = {
     enable = true,
     progress_style = "auto",                  -- "auto" | "notify" | "statusline" | "fidget" | "float"
-    panel_theme = "rounded",                   -- lib.nvim.ui.kit theme/preset for the streaming panel
+    panel_theme = "rounded",                   -- ui.kit theme/preset for the streaming panel
     badge_timeout_ms = 6000,
   },
 

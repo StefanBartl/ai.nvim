@@ -5,7 +5,7 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 ```lua
 {
   "StefanBartl/ai.nvim",
-  dependencies = { "StefanBartl/lib.nvim" },
+  dependencies = { "StefanBartl/lib.nvim", "StefanBartl/ui.nvim" },
   cmd = "Ai",
   keys = { "<leader>a" },
   config = function()

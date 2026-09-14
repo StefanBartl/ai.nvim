@@ -9,7 +9,7 @@ local M = {}
 ---@param opts { title?: string, message: string, timeout_ms?: integer }
 ---@return nil
 function M.show(opts)
-  local kit = require("lib.nvim.ui.kit")
+  local kit = require("ui.kit")
   kit.popup({
     type = "note",
     title = opts.title or "AI",

@@ -11,7 +11,7 @@ local M = {}
 ---@internal
 ---@param cb fun(text: string)
 local function prompt_for_text(cb)
-  require("lib.nvim.ui.kit").popup({
+  require("ui.kit").popup({
     type = "input",
     prompt = "Ai prompt",
     on_submit = function(text)
@@ -36,7 +36,7 @@ function M.ask_prompt(prompt)
         notify.error(tostring(res))
         return
       end
-      require("lib.nvim.ui.kit").popup({
+      require("ui.kit").popup({
         type = "viewer",
         title = "AI",
         lines = vim.split(res.text, "\n", { plain = true }),
@@ -151,7 +151,7 @@ function M.info()
     lines[#lines + 1] = string.format("  %s: %s", id, avail and "available" or "not available")
   end
 
-  require("lib.nvim.ui.kit").popup({ type = "viewer", title = "Ai info", lines = lines })
+  require("ui.kit").popup({ type = "viewer", title = "Ai info", lines = lines })
 end
 
 return M

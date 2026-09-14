@@ -18,7 +18,7 @@
 ---@class Ai.UiOptions
 ---@field enable boolean
 ---@field progress_style? "auto"|"notify"|"statusline"|"fidget"|"float" Passed straight to `lib.nvim.progress`
----@field panel_theme? string `lib.nvim.ui.kit` theme/preset for the streaming answer panel
+---@field panel_theme? string `ui.kit` theme/preset for the streaming answer panel
 ---@field badge_timeout_ms? integer Auto-dismiss delay for the explain badge (`kit.popup({type="note"})`)
 
 ---@class Ai.KeymapOptions

@@ -4,6 +4,12 @@
 - [`lib.nvim`](https://github.com/StefanBartl/lib.nvim) -- hard dependency.
   `fetch_stream`/`secret_headers` on `lib.nvim.net.curl` must be present; a
   too-old checkout is flagged by `:checkhealth ai`.
+- [`ui.nvim`](https://github.com/StefanBartl/ui.nvim) -- also a hard
+  dependency: `ui.kit` backs the streaming answer panel, the explain badge,
+  the non-streaming viewer and the prompt popup (`lua/ai/ui/panel.lua`,
+  `lua/ai/ui/badge.lua`, `lua/ai/bindings/actions.lua`). All lazy-loaded (no
+  cost until an `:Ai` action actually runs), but none of them has another
+  rendering path -- `ask`/`stream`/`explain`/`info` all fail without it.
 - `curl` on `PATH` -- every provider shells out to it.
 - At least one provider actually usable:
   - **claude**: `ANTHROPIC_API_KEY` set in the environment.

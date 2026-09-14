@@ -46,7 +46,7 @@ model parses that shape more reliably) is the one piece specific enough to
 
 ## Streaming panel and cancellation
 
-`lua/ai/ui/panel.lua` pairs a `lib.nvim.ui.kit.surface` (the answer text)
+`lua/ai/ui/panel.lua` pairs a `ui.kit.surface` (the answer text)
 with a `lib.nvim.progress` handle (a "thinking…"/"streaming…" indicator).
 The panel holds the `vim.SystemObj` a provider's `stream()` returns and
 kills it both on an explicit cancel and when the panel window itself closes

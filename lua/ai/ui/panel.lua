@@ -1,5 +1,5 @@
 ---@module 'ai.ui.panel'
---- The streaming answer panel: a `lib.nvim.ui.kit.surface` that stays open
+--- The streaming answer panel: a `ui.kit.surface` that stays open
 --- while text streams in, plus a `lib.nvim.progress` "thinking..." /
 --- "streaming..." indicator. Owns the concept's open question
 --- ("Streaming-Cancel bei Panel-Schließen"): the panel holds the
@@ -11,7 +11,7 @@
 local M = {}
 
 ---@class Ai.Ui.Panel
----@field surface Lib.UI.Kit.Surface|nil
+---@field surface Ui.Kit.Surface|nil
 ---@field progress Lib.Progress.Handle|nil
 ---@field process vim.SystemObj|nil
 ---@field lines string[]
@@ -23,7 +23,7 @@ local active_panels = {}
 ---@return Ai.Ui.Panel
 function M.open(opts)
   opts = opts or {}
-  local kit = require("lib.nvim.ui.kit")
+  local kit = require("ui.kit")
 
   ---@type Ai.Ui.Panel
   local panel = { lines = { "" }, process = nil }
