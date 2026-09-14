@@ -77,8 +77,9 @@ function M.ask(req, cb)
       cb(false, "loomai: invalid response")
       return
     end
-    if type(data.error) == "table" then
-      cb(false, "loomai error: " .. tostring(data.error.message))
+    if data.error ~= nil then
+      local msg = type(data.error) == "table" and data.error.message or data.error
+      cb(false, "loomai error: " .. tostring(msg))
       return
     end
     cb(true, {
@@ -111,9 +112,10 @@ function M.stream(req, handlers)
       if not ok or type(decoded) ~= "table" then
         return
       end
-      if type(decoded.error) == "table" then
+      if decoded.error ~= nil then
         if handlers.on_error then
-          handlers.on_error("loomai error: " .. tostring(decoded.error.message))
+          local msg = type(decoded.error) == "table" and decoded.error.message or decoded.error
+          handlers.on_error("loomai error: " .. tostring(msg))
         end
         return
       end
