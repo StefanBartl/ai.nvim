@@ -38,6 +38,14 @@ local M = {
 local API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/"
 local DEFAULT_MODEL = "gemini-2.5-flash"
 
+-- Unlike claude.lua/openai.lua, `model` here is interpolated straight into
+-- the request URL's path (Gemini has no way to pass it in the JSON body
+-- instead). cpp-httplib on the loomAI side escapes `\r`/`\n` but not `/`, so
+-- an unchecked `model` could redirect the authenticated request to an
+-- arbitrary path on Google's host. Real model names are alphanumeric plus
+-- `.`/`-`/`_`; anything else is rejected before it ever reaches the URL.
+local MODEL_PATTERN = "^[%w%.%-_]+$"
+
 ---@return string|nil
 local function api_key()
   return util.env_value("GEMINI_API_KEY")
@@ -46,6 +54,13 @@ end
 ---@return boolean
 function M.available()
   return vim.fn.executable("curl") == 1 and api_key() ~= nil
+end
+
+---@internal
+---@param model string
+---@return boolean
+local function valid_model(model)
+  return type(model) == "string" and model:match(MODEL_PATTERN) ~= nil
 end
 
 ---@internal
@@ -78,6 +93,24 @@ local function candidate_text(decoded)
   return table.concat(text_parts, ""), candidate.finishReason
 end
 
+---@internal
+--- Gemini reports a safety/policy block as a normal 200 response with a
+--- `promptFeedback.blockReason` and no `candidates` at all -- there is no
+--- `error` field, so `candidate_text` alone would silently return `""` and
+--- look like an empty-but-successful answer instead of a blocked request.
+---@param decoded table Gemini `GenerateContentResponse` body
+---@return string|nil reason
+local function prompt_block_reason(decoded)
+  local feedback = decoded.promptFeedback
+  if not feedback or not feedback.blockReason then
+    return nil
+  end
+  if decoded.candidates and decoded.candidates[1] then
+    return nil
+  end
+  return feedback.blockReason
+end
+
 ---@param req Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|string)
 function M.ask(req, cb)
@@ -87,7 +120,13 @@ function M.ask(req, cb)
     return
   end
 
-  local url = API_BASE .. (req.model or DEFAULT_MODEL) .. ":generateContent"
+  local model = req.model or DEFAULT_MODEL
+  if not valid_model(model) then
+    cb(false, "gemini: invalid model name: " .. tostring(model))
+    return
+  end
+
+  local url = API_BASE .. model .. ":generateContent"
   curl.fetch_json(url, {
     method = "POST",
     headers = { ["Content-Type"] = "application/json" },
@@ -101,6 +140,11 @@ function M.ask(req, cb)
     end
     if type(data) == "table" and data.error then
       cb(false, "gemini API error: " .. tostring(data.error.message))
+      return
+    end
+    local block_reason = prompt_block_reason(data)
+    if block_reason then
+      cb(false, "gemini: prompt blocked (" .. tostring(block_reason) .. ")")
       return
     end
     local text, finish_reason = candidate_text(data)
@@ -125,13 +169,24 @@ function M.stream(req, handlers)
     return nil
   end
 
+  local model = req.model or DEFAULT_MODEL
+  if not valid_model(model) then
+    if handlers.on_error then
+      handlers.on_error("gemini: invalid model name: " .. tostring(model))
+    end
+    return nil
+  end
+
   local text_parts = {}
   local finish_reason, usage
   -- See module doc: applied defensively by analogy with claude.lua/
   -- openai.lua, not yet verified against a live Gemini error response.
   local non_data_lines = {}
+  -- Set once an error is reported mid-stream so `on_done` below doesn't
+  -- also fire with an empty-but-"successful" response afterwards.
+  local failed = false
 
-  local url = API_BASE .. (req.model or DEFAULT_MODEL) .. ":streamGenerateContent?alt=sse"
+  local url = API_BASE .. model .. ":streamGenerateContent?alt=sse"
   return curl.fetch_stream(url, {
     method = "POST",
     headers = { ["Content-Type"] = "application/json" },
@@ -155,8 +210,17 @@ function M.stream(req, handlers)
         return
       end
       if decoded.error then
+        failed = true
         if handlers.on_error then
           handlers.on_error("gemini API error: " .. tostring(decoded.error.message))
+        end
+        return
+      end
+      local block_reason = prompt_block_reason(decoded)
+      if block_reason then
+        failed = true
+        if handlers.on_error then
+          handlers.on_error("gemini: prompt blocked (" .. tostring(block_reason) .. ")")
         end
         return
       end
@@ -173,6 +237,9 @@ function M.stream(req, handlers)
       end
     end,
     on_done = function(obj)
+      if failed then
+        return
+      end
       if obj.code ~= 0 then
         if handlers.on_error then
           handlers.on_error(util.curl_exit_error("gemini", obj))
@@ -184,6 +251,13 @@ function M.stream(req, handlers)
         if decoded_err and decoded_err.error then
           if handlers.on_error then
             handlers.on_error("gemini API error: " .. tostring(decoded_err.error.message))
+          end
+          return
+        end
+        local recovered_block_reason = decoded_err and prompt_block_reason(decoded_err)
+        if recovered_block_reason then
+          if handlers.on_error then
+            handlers.on_error("gemini: prompt blocked (" .. tostring(recovered_block_reason) .. ")")
           end
           return
         end
