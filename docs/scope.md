@@ -23,6 +23,11 @@ meant to: a future HTTP-backed provider pointing at such a system is welcome
 framework itself stays a separate project with its own release cycle, not a
 mode of `ai.nvim`.
 
+`loomai` (`lua/ai/providers/loomai.lua`) is exactly that: a registered
+provider talking to loomAI's own `/ask`/`/ask/stream` endpoints, nothing more
+-- it does not expose, and will never expose, loomAI's dashboard, sandbox, or
+decision-queue machinery through this interface.
+
 ## Fallback guarantee
 
 `provider = "auto"` only ever walks `provider_order` (default `{"claude",

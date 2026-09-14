@@ -5,8 +5,8 @@ truth; this table mirrors it):
 
 ```lua
 require("ai").setup({
-  provider = "auto",                         -- "auto" | "claude" | "ollama" | "openai" | a custom id
-  provider_order = { "claude", "ollama", "openai" }, -- "auto" resolution order; never includes "loomai", see docs/scope.md
+  provider = "auto",                         -- "auto" | "claude" | "ollama" | "openai" | "loomai" | a custom id
+  provider_order = { "claude", "ollama", "openai" }, -- "auto" resolution order; never includes "loomai" (registered, but opt-in), see docs/scope.md
   model = {},                                 -- e.g. { claude = "claude-opus-4-5" }
   timeout_ms = 60000,
 

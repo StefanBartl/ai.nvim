@@ -41,6 +41,9 @@ and for every future caller.
   - openai:  `OPENAI_API_KEY` set in the environment.
   - ollama:  the `ollama` binary on `PATH`, with the daemon running
              (default http://127.0.0.1:11434, override with `OLLAMA_HOST`).
+  - loomai:  a loomAI server reachable at http://127.0.0.1:8080 (default,
+             override with `LOOMAI_HOST`). Registered but not in the default
+             `provider_order` -- see |ai-scope|.
 
 No provider is required at install time -- |:checkhealth| ai reports which
 ones are usable on this machine, and `provider = "auto"` (the default) picks
@@ -74,7 +77,7 @@ run or one of the default `<leader>a*` keymaps is pressed.
 Pass a table to |ai.setup()|. All keys are optional; `lua/ai/config/
 DEFAULTS.lua` is the source of truth. >lua
   require("ai").setup({
-    provider = "auto",                        -- "auto"|"claude"|"ollama"|"openai"|custom id
+    provider = "auto",                        -- "auto"|"claude"|"ollama"|"openai"|"loomai"|custom id
     provider_order = { "claude", "ollama", "openai" },  -- "auto" resolution order
     model = {},                               -- e.g. { claude = "claude-opus-4-5" }
     timeout_ms = 60000,
@@ -111,7 +114,9 @@ DEFAULTS.lua` is the source of truth. >lua
   })
 <
 
-`provider_order`'s default never includes "loomai" -- see |ai-scope|.
+"loomai" is a registered built-in provider (a local loomAI server, see
+|ai-providers|), but `provider_order`'s default never includes it -- see
+|ai-scope|.
 
 ==============================================================================
 5. COMMANDS                                                     *ai-commands*
@@ -227,6 +232,10 @@ require("ai.context").assemble({opts})
            binary and a running daemon.
   openai   OpenAI Chat Completions API. Streaming via SSE. Requires
            OPENAI_API_KEY.
+  loomai   Local loomAI server (`POST /ask`, `POST /ask/stream`). Streaming
+           via SSE. Requires a running loomAI instance (default
+           http://127.0.0.1:8080, override with `LOOMAI_HOST`). Registered
+           but not in the default `provider_order` -- see |ai-scope|.
 
 `provider = "auto"` (the default) walks `provider_order` and uses the first
 provider whose `available()` is true -- a cheap, synchronous check (an

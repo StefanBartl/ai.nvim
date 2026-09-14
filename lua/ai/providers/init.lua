@@ -5,14 +5,12 @@
 --- `pdfport.nvim/lua/pdfport/backends/init.lua` uses for its extraction
 --- backends.
 ---
---- `"loomai"` is deliberately NOT in `BUILTIN`: as of this writing, loomAI
---- (a separate, native multi-agent framework -- see the project's own notes)
---- exposes no ask/completion-shaped HTTP endpoint to build a provider
---- against. The `Ai.Provider` interface is cut so that adding it later is a
---- new file here, not a redesign -- and `resolve("auto", order)` only ever
---- walks `order`, so a future `loomai` entry stays opt-in even once
---- registered: it has to be added to `provider_order` explicitly to be
---- reachable through `"auto"`, exactly like a user's own custom provider.
+--- `"loomai"` IS in `BUILTIN` (loomAI now exposes `/ask`/`/ask/stream`, see
+--- `lua/ai/providers/loomai.lua`), but deliberately NOT in `DEFAULTS.lua`'s
+--- `provider_order`: `resolve("auto", order)` only ever walks `order`, so
+--- `loomai` stays opt-in even though it is registered -- it has to be added
+--- to `provider_order` explicitly to be reachable through `"auto"`, exactly
+--- like a user's own custom provider, until it has seen real-world use.
 
 require("ai.@types")
 
@@ -23,6 +21,7 @@ local BUILTIN = {
   { id = "claude", module = "ai.providers.claude" },
   { id = "ollama", module = "ai.providers.ollama" },
   { id = "openai", module = "ai.providers.openai" },
+  { id = "loomai", module = "ai.providers.loomai" },
 }
 
 ---@type table<string, Ai.Provider>

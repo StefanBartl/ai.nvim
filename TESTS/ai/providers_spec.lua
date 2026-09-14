@@ -139,6 +139,15 @@ describe("ai.providers", function()
     end
   )
 
+  it("load_builtin() registers loomai, but DEFAULTS.provider_order leaves it opt-in", function()
+    -- Registration and reachability-through-"auto" are deliberately
+    -- separate: see ai.providers's module doc. config_spec.lua's own
+    -- default-provider_order assertion is the other half of this contract.
+    local providers = require("ai.providers")
+    providers.load_builtin()
+    assert.is_true(vim.tbl_contains(providers.ids(), "loomai"))
+  end)
+
   it("'auto' never reaches a provider absent from order, even if registered", function()
     local providers = require("ai.providers")
     -- Stands in for "loomai": present in the registry, but never listed in
