@@ -55,7 +55,7 @@ function M.setup(opts)
 
   if cfg.usercmds.enable then
     local ok, err = pcall(function()
-      require("ai.bindings.usercmds").setup()
+      require("ai.bindings.usrcmds").setup()
     end)
     if not ok then
       require("lib.nvim.notify").create("[ai]").warn("Usercmd setup failed: " .. tostring(err))

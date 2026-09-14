@@ -1,4 +1,4 @@
----@module 'ai.bindings.usercmds'
+---@module 'ai.bindings.usrcmds'
 --- Registers `:Ai <subcommand>` via lib.nvim's composer (`:Verb sub ... +
 --- <Tab> completion + Markdown docgen`). Every action mirrors a default
 --- keymap 1:1 (see `ai.bindings.keymaps`) but is an independent entry point
