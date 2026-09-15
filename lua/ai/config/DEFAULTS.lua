@@ -46,6 +46,10 @@ local DEFAULTS = {
     selection = true,
     diagnostics = false,
     cwd = false,
+    -- Requires data.nvim (optional soft dep); silent no-op without it or
+    -- outside a json/yaml/xml block. Off by default like buffer/diagnostics/
+    -- cwd -- only selection is on out of the box.
+    structured_data = false,
   },
 
   -- Inline completion (ghost text). "manual" (default): only the trigger

@@ -67,3 +67,36 @@ end
 
 add_dep("LIB_NVIM_DIR", "lib.nvim", "lib.nvim.notify")
 add_dep("PLENARY_DIR", "plenary.nvim", "plenary")
+
+--- data.nvim is an OPTIONAL soft dependency (`ai.context`'s
+--- `structured_data` flag) -- unlike lib.nvim/plenary above, its absence
+--- must never fail the run: the spec that needs it checks
+--- `pcall(require, "data.detect")` itself and skips (registers zero `it`s)
+--- when missing, same convention data.nvim's own optional-dep specs use.
+--- Same search order as `add_dep`, just without the `os.exit(1)` on
+--- failure.
+---@param env_var string
+---@param deps_name string
+---@param marker string
+local function add_optional_dep(env_var, deps_name, marker)
+  if pcall(require, marker) then
+    return
+  end
+  local candidates = {}
+  local env_val = vim.env[env_var]
+  if env_val and env_val ~= "" then
+    candidates[#candidates + 1] = env_val
+  end
+  candidates[#candidates + 1] = vim.fn.getcwd() .. "/.deps/" .. deps_name
+  candidates[#candidates + 1] = vim.fs.dirname(vim.fn.getcwd()) .. "/" .. deps_name
+  for _, dir in ipairs(candidates) do
+    if dir and vim.fn.isdirectory(dir) == 1 then
+      vim.opt.rtp:append(dir)
+      if pcall(require, marker) then
+        return
+      end
+    end
+  end
+end
+
+add_optional_dep("DATA_NVIM_DIR", "data.nvim", "data.detect")

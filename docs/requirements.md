@@ -31,3 +31,15 @@
 No provider is required at install time -- `:checkhealth ai` reports which
 ones are usable on this machine, and `provider = "auto"` (the default) picks
 the first available one in `provider_order`.
+
+## Optional
+
+- [`data.nvim`](https://github.com/StefanBartl/data.nvim) -- backs
+  `context.structured_data` (see [configuration.md](configuration.md)):
+  when the cursor sits inside a json/yaml/xml block, the assembled prompt
+  context includes that block's flattened `path: value` form via
+  `data.nvim`'s own detect/scope/format pipeline, the same one `:Data` uses.
+  Called via `pcall(require, ...)`, same soft-dependency treatment as every
+  other integration here -- without it, `structured_data` is a silent
+  no-op and every other context flag still works. `:checkhealth ai` reports
+  whether it was found.

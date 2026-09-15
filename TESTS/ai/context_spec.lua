@@ -61,3 +61,42 @@ describe("ai.context", function()
     assert.are.equal("", block)
   end)
 end)
+
+describe("ai.context -- structured_data (data.nvim)", function()
+  -- Optional soft dependency: see TESTS/minimal_init.lua's DATA_NVIM_DIR.
+  -- Registering zero `it`s below (rather than failing) is the correct
+  -- "skipped" outcome when it isn't present in this test environment.
+  local data_ok = pcall(require, "data.detect")
+  if not data_ok then
+    return
+  end
+
+  it("includes the flattened form of a json buffer under the cursor", function()
+    vim.cmd("enew")
+    vim.bo.filetype = "json"
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { '{"a":1,"b":{"c":2}}' })
+
+    local block = require("ai.context").assemble({ structured_data = true })
+    assert.truthy(block:match("^Structured data %(json%) under cursor:"))
+    assert.truthy(block:match("a: 1"))
+    assert.truthy(block:match("b%.c: 2"))
+  end)
+
+  it("omits the section when the buffer isn't a recognizable json/yaml/xml block", function()
+    vim.cmd("enew")
+    vim.bo.filetype = "lua"
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { "local x = 1" })
+
+    local block = require("ai.context").assemble({ structured_data = true })
+    assert.are.equal("", block)
+  end)
+
+  it("omits the section when the format is detected but the content fails to decode", function()
+    vim.cmd("enew")
+    vim.bo.filetype = "json"
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { "not valid json" })
+
+    local block = require("ai.context").assemble({ structured_data = true })
+    assert.are.equal("", block)
+  end)
+end)

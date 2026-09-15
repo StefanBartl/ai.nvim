@@ -35,7 +35,8 @@ require("ai").setup({
     buffer = false,
     selection = true,
     diagnostics = false,
-    cwd = false,           -- expensive (a full cwd sweep); off by default
+    cwd = false,                 -- expensive (a full cwd sweep); off by default
+    structured_data = false,     -- flattened json/yaml/xml block under the cursor, via data.nvim (optional soft dep); off by default
   },
 
   -- Inline completion (ghost text at the cursor). "manual" (default): only

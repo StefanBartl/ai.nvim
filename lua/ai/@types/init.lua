@@ -37,6 +37,7 @@
 ---@field selection? boolean Include the current visual selection (range), if any
 ---@field diagnostics? boolean Include `vim.diagnostic.get()` for the current buffer
 ---@field cwd? boolean Include a harvest.scope("cwd") sweep -- expensive, off by default
+---@field structured_data? boolean Include the flattened JSON/YAML/XML block under the cursor, via `data.nvim` (optional soft dep) -- off by default
 
 ---@class Ai.CompletionOptions
 ---@field enable boolean
