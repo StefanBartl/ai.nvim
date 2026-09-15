@@ -70,7 +70,19 @@
 ---@class Ai.StreamHandlers
 ---@field on_chunk? fun(delta: string)
 ---@field on_done? fun(res: Ai.Response)
----@field on_error? fun(err: string)
+---@field on_error? fun(err: LibErrorValue) `err.kind` is one of: `"missing_api_key"`
+---(a provider's own API key env var is unset; `err.data = {env_var}`),
+---`"invalid_request"` (a client-side check rejected the request before it was
+---sent, e.g. an unsafe model name), `"network_error"` (curl itself failed or
+---exited non-zero; `err.data` is the raw `vim.SystemCompleted`/curl error
+---value where available), `"api_error"` (the provider's API returned a
+---structured error body; `err.data` is that body's own `error` field),
+---`"invalid_response"` (a 200 response whose body could not be understood),
+---`"blocked"` (a provider-side safety/policy block, not a hard API error),
+---or `"provider_resolution"` (`ai.providers.resolve()`/`require("ai").ask()`/
+---`.stream()` could not resolve a usable provider at all -- no provider
+---backend was ever reached). See `lib.lua.error` for the `LibErrorValue`
+---shape itself.
 
 ---A single AI backend. `available()` must be cheap and synchronous (it runs
 ---on every `"auto"` resolution) -- an executable-on-PATH / env-var check, not
@@ -79,6 +91,6 @@
 ---@field id string
 ---@field name? string
 ---@field available fun(): boolean
----@field ask fun(req: Ai.Request, cb: fun(ok: boolean, res_or_err: Ai.Response|string)): nil
+---@field ask fun(req: Ai.Request, cb: fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)): nil
 ---@field stream fun(req: Ai.Request, handlers: Ai.StreamHandlers): vim.SystemObj|nil returns the underlying process handle so a caller can `:kill()` it to cancel
 ---@field capabilities? { vision?: boolean, streaming?: boolean, max_tokens?: integer }

@@ -22,6 +22,7 @@
 require("ai.@types")
 
 local curl = require("lib.nvim.net.curl")
+local lib_error = require("lib.lua.error")
 local sse = require("ai.providers.sse")
 local util = require("ai.providers.util")
 
@@ -112,17 +113,31 @@ local function prompt_block_reason(decoded)
 end
 
 ---@param req Ai.Request
----@param cb fun(ok: boolean, res_or_err: Ai.Response|string)
+---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
   local key = api_key()
   if not key then
-    cb(false, "gemini: GEMINI_API_KEY not set")
+    cb(
+      false,
+      lib_error.new(
+        "missing_api_key",
+        "gemini: GEMINI_API_KEY not set",
+        { env_var = "GEMINI_API_KEY" }
+      )
+    )
     return
   end
 
   local model = req.model or DEFAULT_MODEL
   if not valid_model(model) then
-    cb(false, "gemini: invalid model name: " .. tostring(model))
+    cb(
+      false,
+      lib_error.new(
+        "invalid_request",
+        "gemini: invalid model name: " .. tostring(model),
+        { model = model }
+      )
+    )
     return
   end
 
@@ -135,19 +150,29 @@ function M.ask(req, cb)
     timeout_ms = req.timeout_ms or 60000,
   }, function(ok, data)
     if not ok then
-      cb(false, "gemini: " .. tostring(data))
+      cb(false, lib_error.new("network_error", "gemini: " .. tostring(data), data))
       return
     end
     if type(data) == "table" then
       data = util.denil(data)
     end
     if type(data) == "table" and data.error then
-      cb(false, "gemini API error: " .. tostring(data.error.message))
+      cb(
+        false,
+        lib_error.new("api_error", "gemini API error: " .. tostring(data.error.message), data.error)
+      )
       return
     end
     local block_reason = prompt_block_reason(data)
     if block_reason then
-      cb(false, "gemini: prompt blocked (" .. tostring(block_reason) .. ")")
+      cb(
+        false,
+        lib_error.new(
+          "blocked",
+          "gemini: prompt blocked (" .. tostring(block_reason) .. ")",
+          { block_reason = block_reason }
+        )
+      )
       return
     end
     local text, finish_reason = candidate_text(data)
@@ -167,7 +192,13 @@ function M.stream(req, handlers)
   local key = api_key()
   if not key then
     if handlers.on_error then
-      handlers.on_error("gemini: GEMINI_API_KEY not set")
+      handlers.on_error(
+        lib_error.new(
+          "missing_api_key",
+          "gemini: GEMINI_API_KEY not set",
+          { env_var = "GEMINI_API_KEY" }
+        )
+      )
     end
     return nil
   end
@@ -175,7 +206,13 @@ function M.stream(req, handlers)
   local model = req.model or DEFAULT_MODEL
   if not valid_model(model) then
     if handlers.on_error then
-      handlers.on_error("gemini: invalid model name: " .. tostring(model))
+      handlers.on_error(
+        lib_error.new(
+          "invalid_request",
+          "gemini: invalid model name: " .. tostring(model),
+          { model = model }
+        )
+      )
     end
     return nil
   end
@@ -216,7 +253,13 @@ function M.stream(req, handlers)
       if decoded.error then
         failed = true
         if handlers.on_error then
-          handlers.on_error("gemini API error: " .. tostring(decoded.error.message))
+          handlers.on_error(
+            lib_error.new(
+              "api_error",
+              "gemini API error: " .. tostring(decoded.error.message),
+              decoded.error
+            )
+          )
         end
         return
       end
@@ -224,7 +267,13 @@ function M.stream(req, handlers)
       if block_reason then
         failed = true
         if handlers.on_error then
-          handlers.on_error("gemini: prompt blocked (" .. tostring(block_reason) .. ")")
+          handlers.on_error(
+            lib_error.new(
+              "blocked",
+              "gemini: prompt blocked (" .. tostring(block_reason) .. ")",
+              { block_reason = block_reason }
+            )
+          )
         end
         return
       end
@@ -254,14 +303,26 @@ function M.stream(req, handlers)
         local decoded_err = sse.recover_error_body(non_data_lines)
         if decoded_err and decoded_err.error then
           if handlers.on_error then
-            handlers.on_error("gemini API error: " .. tostring(decoded_err.error.message))
+            handlers.on_error(
+              lib_error.new(
+                "api_error",
+                "gemini API error: " .. tostring(decoded_err.error.message),
+                decoded_err.error
+              )
+            )
           end
           return
         end
         local recovered_block_reason = decoded_err and prompt_block_reason(decoded_err)
         if recovered_block_reason then
           if handlers.on_error then
-            handlers.on_error("gemini: prompt blocked (" .. tostring(recovered_block_reason) .. ")")
+            handlers.on_error(
+              lib_error.new(
+                "blocked",
+                "gemini: prompt blocked (" .. tostring(recovered_block_reason) .. ")",
+                { block_reason = recovered_block_reason }
+              )
+            )
           end
           return
         end
@@ -275,7 +336,13 @@ function M.stream(req, handlers)
         })
       end
     end,
-    on_error = handlers.on_error,
+    -- See claude.lua's identical comment: `fetch_stream`'s own `on_error` is
+    -- `lib.nvim.net.curl`'s plain-string API, not `Ai.StreamHandlers`'s.
+    on_error = function(err)
+      if handlers.on_error then
+        handlers.on_error(lib_error.new("network_error", err))
+      end
+    end,
   })
 end
 

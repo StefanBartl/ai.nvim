@@ -6,6 +6,8 @@
 ---@diagnostic disable: missing-fields, need-check-nil
 
 describe("ai.providers", function()
+  local lib_error = require("lib.lua.error")
+
   before_each(function()
     -- Every test gets a fresh registry (module-local `registered` table),
     -- so a fake provider registered in one test never leaks into the next.
@@ -73,7 +75,8 @@ describe("ai.providers", function()
     })
     local p, err = providers.resolve("auto", { "nope" })
     assert.is_nil(p)
-    assert.is_string(err)
+    assert.is_true(lib_error.is(err))
+    assert.are.equal("provider_resolution", err.kind)
   end)
 
   it("resolve(explicit_id, order) checks that provider directly, ignoring order", function()
@@ -93,7 +96,8 @@ describe("ai.providers", function()
     local providers = require("ai.providers")
     local p, err = providers.resolve("does-not-exist", {})
     assert.is_nil(p)
-    assert.is_string(err)
+    assert.is_true(lib_error.is(err))
+    assert.are.equal("provider_resolution", err.kind)
   end)
 
   it("resolve(explicit_id) errors when that provider is registered but unavailable", function()
@@ -106,7 +110,8 @@ describe("ai.providers", function()
     })
     local p, err = providers.resolve("down", {})
     assert.is_nil(p)
-    assert.is_string(err)
+    assert.is_true(lib_error.is(err))
+    assert.are.equal("provider_resolution", err.kind)
   end)
 
   it(
@@ -119,7 +124,8 @@ describe("ai.providers", function()
       providers.register({ id = "broken" })
       local p, err = providers.resolve("broken", {})
       assert.is_nil(p)
-      assert.is_string(err)
+      assert.is_true(lib_error.is(err))
+      assert.are.equal("provider_resolution", err.kind)
     end
   )
 
@@ -160,6 +166,7 @@ describe("ai.providers", function()
     })
     local p, err = providers.resolve("auto", { "does-not-exist-either" })
     assert.is_nil(p)
-    assert.is_string(err)
+    assert.is_true(lib_error.is(err))
+    assert.are.equal("provider_resolution", err.kind)
   end)
 end)

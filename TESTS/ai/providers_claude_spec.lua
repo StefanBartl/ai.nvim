@@ -70,7 +70,8 @@ describe("ai.providers.claude", function()
         ok, err = a, b
       end)
       assert.is_false(ok)
-      assert.is_true(err:find("overloaded", 1, true) ~= nil)
+      assert.are.equal("api_error", err.kind)
+      assert.is_true(err.message:find("overloaded", 1, true) ~= nil)
     end)
 
     it("fails without calling curl when ANTHROPIC_API_KEY is unset", function()
@@ -88,7 +89,8 @@ describe("ai.providers.claude", function()
       end)
       assert.is_false(ok)
       assert.is_false(called)
-      assert.is_true(err:find("ANTHROPIC_API_KEY", 1, true) ~= nil)
+      assert.are.equal("missing_api_key", err.kind)
+      assert.is_true(err.message:find("ANTHROPIC_API_KEY", 1, true) ~= nil)
     end)
   end)
 
@@ -146,7 +148,8 @@ describe("ai.providers.claude", function()
           err = e
         end,
       })
-      assert.is_true(err:find("invalid x%-api%-key") ~= nil)
+      assert.are.equal("api_error", err.kind)
+      assert.is_true(err.message:find("invalid x%-api%-key") ~= nil)
     end)
 
     it("reports a non-zero curl exit as on_error", function()
@@ -162,7 +165,8 @@ describe("ai.providers.claude", function()
           err = e
         end,
       })
-      assert.is_true(err:find("curl exited 7", 1, true) ~= nil)
+      assert.are.equal("network_error", err.kind)
+      assert.is_true(err.message:find("curl exited 7", 1, true) ~= nil)
     end)
   end)
 end)

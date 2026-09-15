@@ -33,7 +33,8 @@ function M.ask_prompt(prompt)
     require("ai").ask({ prompt = text }, function(ok, res)
       progress:finish()
       if not ok then
-        notify.error(tostring(res))
+        ---@cast res LibErrorValue
+        notify.error(res.message)
         return
       end
       require("ui.kit").popup({
@@ -75,7 +76,7 @@ function M.stream_prompt(prompt, context)
         )
       end,
       on_error = function(err)
-        require("ai.ui.panel").append(panel, "\n\n[error] " .. tostring(err))
+        require("ai.ui.panel").append(panel, "\n\n[error] " .. err.message)
         require("ai.ui.panel").finish(panel, "error")
       end,
     })
@@ -118,9 +119,10 @@ function M.explain_badge(context)
     context = context,
   }, function(ok, res)
     if not ok then
+      ---@cast res LibErrorValue
       require("ai.ui.badge").show({
         title = "AI (error)",
-        message = tostring(res),
+        message = res.message,
         timeout_ms = cfg.ui.badge_timeout_ms,
       })
       return

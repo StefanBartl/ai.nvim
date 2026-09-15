@@ -3,6 +3,8 @@
 --- `ai.providers` (the registry) on purpose -- registration/resolution and
 --- these implementation-detail helpers are different responsibilities.
 
+local lib_error = require("lib.lua.error")
+
 local M = {}
 
 ---@type table<string, boolean>
@@ -46,15 +48,19 @@ function M.env_value(name, fallback)
   return (trimmed ~= "") and trimmed or fallback
 end
 
----Format the "curl exited non-zero" error every streaming provider's
+---Build the "curl exited non-zero" error every streaming provider's
 ---`on_done` reports identically once `fetch_stream` hands it a raw process
 ---object (see that function's doc comment: it never checks `obj.code`
 ---itself).
 ---@param id string provider id, e.g. "claude"
 ---@param obj vim.SystemCompleted
----@return string
+---@return LibErrorValue
 function M.curl_exit_error(id, obj)
-  return string.format("%s: curl exited %d: %s", id, obj.code, obj.stderr or "")
+  return lib_error.new(
+    "network_error",
+    string.format("%s: curl exited %d: %s", id, obj.code, obj.stderr or ""),
+    obj
+  )
 end
 
 ---Recursively replace `vim.NIL` with Lua `nil` in a decoded JSON value, in
