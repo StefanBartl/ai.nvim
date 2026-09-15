@@ -32,15 +32,17 @@ local M = {}
 --- so this is what makes a superseded response a no-op instead.
 local generation = 0
 
----@type integer|nil
-local auto_timer = nil
+---@type Lib.Debounce.Handle|nil
+--- Only ever built once, in `M.setup()`, when `cfg.completion.trigger ==
+--- "auto"` -- `lib.nvim.debounce` owns the actual `vim.uv` timer (idempotent
+--- stop/close, `vim.schedule`-wrapped callback) so this module doesn't hand-
+--- roll that lifecycle itself.
+local auto_debounce = nil
 
 ---@internal
-local function stop_auto_timer()
-  if auto_timer then
-    auto_timer:stop()
-    auto_timer:close()
-    auto_timer = nil
+local function cancel_auto_trigger()
+  if auto_debounce then
+    auto_debounce.cancel()
   end
 end
 
@@ -50,7 +52,7 @@ end
 ---cursor movement, leaving insert mode).
 local function reset()
   ghost.clear()
-  stop_auto_timer()
+  cancel_auto_trigger()
 end
 
 ---Request a completion suggestion at the cursor. Fired by the manual
@@ -178,20 +180,14 @@ function M.setup(cfg)
 
   if cfg.completion.trigger == "auto" then
     local idle_ms = cfg.completion.idle_ms or 500
+    auto_debounce = require("lib.nvim.debounce").new(function()
+      M.trigger()
+    end, idle_ms)
     vim.api.nvim_create_autocmd("TextChangedI", {
       group = group,
       desc = "ai.nvim: schedule an auto-trigger completion after an idle pause",
       callback = function()
-        stop_auto_timer()
-        auto_timer = vim.uv.new_timer()
-        auto_timer:start(
-          idle_ms,
-          0,
-          vim.schedule_wrap(function()
-            stop_auto_timer()
-            M.trigger()
-          end)
-        )
+        auto_debounce.call()
       end,
     })
   end

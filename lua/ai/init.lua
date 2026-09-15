@@ -44,8 +44,10 @@ function M.setup(opts)
 
   providers.load_builtin()
 
+  local safe_api = require("lib.nvim.safe_api")
+
   if cfg.keymaps.enable then
-    local ok, err = pcall(function()
+    local ok, _, err = safe_api.safe_call(function()
       require("ai.bindings.keymaps").setup(cfg)
     end)
     if not ok then
@@ -54,7 +56,7 @@ function M.setup(opts)
   end
 
   if cfg.usercmds.enable then
-    local ok, err = pcall(function()
+    local ok, _, err = safe_api.safe_call(function()
       require("ai.bindings.usrcmds").setup()
     end)
     if not ok then
@@ -63,7 +65,7 @@ function M.setup(opts)
   end
 
   if cfg.completion and cfg.completion.enable then
-    local ok, err = pcall(function()
+    local ok, _, err = safe_api.safe_call(function()
       require("ai.completion").setup(cfg)
       require("ai.bindings.keymaps").setup_completion(cfg)
     end)
@@ -72,7 +74,7 @@ function M.setup(opts)
     end
   end
 
-  local autocmds_ok, autocmds_err = pcall(function()
+  local autocmds_ok, _, autocmds_err = safe_api.safe_call(function()
     require("ai.bindings.autocmds").setup()
   end)
   if not autocmds_ok then

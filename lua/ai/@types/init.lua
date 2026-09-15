@@ -58,6 +58,7 @@
 ---@field context? Ai.ContextDefaults|table Explicit context flags for this request; a prebuilt context string can also be prepended into `prompt` by the caller
 ---@field provider? string Provider id, or `"auto"` (default: `require("ai").config().provider`)
 ---@field model? string Overrides the provider's default model for this request
+---@field max_tokens? integer Overrides the provider's default response-length cap for this request. Only the `claude` backend reads it today (Anthropic's Messages API requires `max_tokens` on every request); ignored by providers that don't need one.
 ---@field timeout_ms? integer
 
 ---@class Ai.Response
