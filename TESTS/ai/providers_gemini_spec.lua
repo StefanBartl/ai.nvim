@@ -1,6 +1,10 @@
 -- Same `package.loaded` stubbing approach as providers_claude_spec.lua --
 -- see that file's module doc for why the stub must land before each fresh
 -- `require("ai.providers.gemini")`.
+--
+-- Same need-check-nil suppression reasoning as that file: the test body
+-- itself is the guard.
+---@diagnostic disable: need-check-nil
 describe("ai.providers.gemini", function()
   local original_key
 

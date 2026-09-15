@@ -1,3 +1,6 @@
+-- The test body itself is the guard against a nil field, same reasoning as
+-- providers_claude_spec.lua.
+---@diagnostic disable: need-check-nil
 describe("ai.providers.sse", function()
   local sse = require("ai.providers.sse")
 

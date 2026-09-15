@@ -2,6 +2,11 @@
 -- `require("ai.providers.claude")` -- the module captures `curl` as a local
 -- upvalue at require-time, so the stub must be in place first and the
 -- module itself must be re-required fresh each time (see `before_each`).
+--
+-- The test body itself is the guard against a nil field (busted fails loudly
+-- on an actual nil-index error), so per-line need-check-nil noise on the
+-- stub tables/responses built above is suppressed file-wide.
+---@diagnostic disable: need-check-nil
 describe("ai.providers.claude", function()
   local original_key
 
