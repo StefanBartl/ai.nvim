@@ -12,6 +12,7 @@
 require("ai.@types")
 
 local curl = require("lib.nvim.net.curl")
+local lib_error = require("lib.lua.error")
 local sse = require("ai.providers.sse")
 local util = require("ai.providers.util")
 
@@ -58,7 +59,7 @@ local function build_body(req)
 end
 
 ---@param req Ai.Request
----@param cb fun(ok: boolean, res_or_err: Ai.Response|string)
+---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
   curl.fetch_json(host() .. "/ask", {
     method = "POST",
@@ -67,20 +68,20 @@ function M.ask(req, cb)
     timeout_ms = req.timeout_ms or 60000,
   }, function(ok, data)
     if not ok then
-      cb(false, "loomai: " .. tostring(data))
+      cb(false, lib_error.new("network_error", "loomai: " .. tostring(data), data))
       return
     end
     -- curl exits 0 regardless of HTTP status (see fetch_json's own doc), so
     -- a loomAI 4xx/5xx with a valid `{"error":{"message":...}}` body still
     -- decodes fine here and must be checked explicitly.
     if type(data) ~= "table" then
-      cb(false, "loomai: invalid response")
+      cb(false, lib_error.new("invalid_response", "loomai: invalid response", data))
       return
     end
     data = util.denil(data)
     if data.error ~= nil then
       local msg = type(data.error) == "table" and data.error.message or data.error
-      cb(false, "loomai error: " .. tostring(msg))
+      cb(false, lib_error.new("api_error", "loomai error: " .. tostring(msg), data.error))
       return
     end
     cb(true, {
@@ -117,7 +118,9 @@ function M.stream(req, handlers)
       if decoded.error ~= nil then
         if handlers.on_error then
           local msg = type(decoded.error) == "table" and decoded.error.message or decoded.error
-          handlers.on_error("loomai error: " .. tostring(msg))
+          handlers.on_error(
+            lib_error.new("api_error", "loomai error: " .. tostring(msg), decoded.error)
+          )
         end
         return
       end
@@ -143,7 +146,13 @@ function M.stream(req, handlers)
         })
       end
     end,
-    on_error = handlers.on_error,
+    -- See claude.lua's identical comment: `fetch_stream`'s own `on_error` is
+    -- `lib.nvim.net.curl`'s plain-string API, not `Ai.StreamHandlers`'s.
+    on_error = function(err)
+      if handlers.on_error then
+        handlers.on_error(lib_error.new("network_error", err))
+      end
+    end,
   })
 end
 

@@ -121,14 +121,17 @@ describe("ai.providers.util", function()
   end)
 
   describe("curl_exit_error", function()
-    it("formats the provider id, exit code and stderr", function()
-      local msg = util.curl_exit_error("claude", { code = 7, stderr = "connection refused" })
-      assert.are.equal("claude: curl exited 7: connection refused", msg)
+    it("formats the provider id, exit code and stderr into a network_error", function()
+      local obj = { code = 7, stderr = "connection refused" }
+      local err = util.curl_exit_error("claude", obj)
+      assert.are.equal("network_error", err.kind)
+      assert.are.equal("claude: curl exited 7: connection refused", err.message)
+      assert.are.equal(obj, err.data)
     end)
 
     it("handles a missing stderr", function()
-      local msg = util.curl_exit_error("claude", { code = 7 })
-      assert.are.equal("claude: curl exited 7: ", msg)
+      local err = util.curl_exit_error("claude", { code = 7 })
+      assert.are.equal("claude: curl exited 7: ", err.message)
     end)
   end)
 

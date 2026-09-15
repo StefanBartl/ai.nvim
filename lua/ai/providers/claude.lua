@@ -12,6 +12,7 @@
 require("ai.@types")
 
 local curl = require("lib.nvim.net.curl")
+local lib_error = require("lib.lua.error")
 local sse = require("ai.providers.sse")
 local util = require("ai.providers.util")
 
@@ -77,11 +78,18 @@ local function to_response(decoded)
 end
 
 ---@param req Ai.Request
----@param cb fun(ok: boolean, res_or_err: Ai.Response|string)
+---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
   local key = api_key()
   if not key then
-    cb(false, "claude: ANTHROPIC_API_KEY not set")
+    cb(
+      false,
+      lib_error.new(
+        "missing_api_key",
+        "claude: ANTHROPIC_API_KEY not set",
+        { env_var = "ANTHROPIC_API_KEY" }
+      )
+    )
     return
   end
 
@@ -93,14 +101,21 @@ function M.ask(req, cb)
     timeout_ms = req.timeout_ms or 60000,
   }, function(ok, data)
     if not ok then
-      cb(false, "claude: " .. tostring(data))
+      cb(false, lib_error.new("network_error", "claude: " .. tostring(data), data))
       return
     end
     if type(data) == "table" then
       data = util.denil(data)
     end
     if type(data) == "table" and data.type == "error" then
-      cb(false, "claude API error: " .. tostring(data.error and data.error.message))
+      cb(
+        false,
+        lib_error.new(
+          "api_error",
+          "claude API error: " .. tostring(data.error and data.error.message),
+          data.error
+        )
+      )
       return
     end
     cb(true, to_response(data))
@@ -114,7 +129,13 @@ function M.stream(req, handlers)
   local key = api_key()
   if not key then
     if handlers.on_error then
-      handlers.on_error("claude: ANTHROPIC_API_KEY not set")
+      handlers.on_error(
+        lib_error.new(
+          "missing_api_key",
+          "claude: ANTHROPIC_API_KEY not set",
+          { env_var = "ANTHROPIC_API_KEY" }
+        )
+      )
     end
     return nil
   end
@@ -168,7 +189,11 @@ function M.stream(req, handlers)
       elseif decoded.type == "error" then
         if handlers.on_error then
           handlers.on_error(
-            "claude API error: " .. tostring(decoded.error and decoded.error.message)
+            lib_error.new(
+              "api_error",
+              "claude API error: " .. tostring(decoded.error and decoded.error.message),
+              decoded.error
+            )
           )
         end
       end
@@ -185,7 +210,11 @@ function M.stream(req, handlers)
         if decoded_err and decoded_err.type == "error" then
           if handlers.on_error then
             handlers.on_error(
-              "claude API error: " .. tostring(decoded_err.error and decoded_err.error.message)
+              lib_error.new(
+                "api_error",
+                "claude API error: " .. tostring(decoded_err.error and decoded_err.error.message),
+                decoded_err.error
+              )
             )
           end
           return
@@ -200,7 +229,16 @@ function M.stream(req, handlers)
         })
       end
     end,
-    on_error = handlers.on_error,
+    -- `curl.fetch_stream`'s own `on_error` is `lib.nvim.net.curl`'s API
+    -- (a plain string, "the process itself could not be read from" -- see
+    -- `Lib.Net.Curl.StreamHandlers`'s doc comment), not `Ai.StreamHandlers`'s
+    -- -- it must be wrapped into the same `LibErrorValue` shape, not passed
+    -- through raw.
+    on_error = function(err)
+      if handlers.on_error then
+        handlers.on_error(lib_error.new("network_error", err))
+      end
+    end,
   })
 end
 

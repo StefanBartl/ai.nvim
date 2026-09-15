@@ -22,6 +22,7 @@
 
 require("ai.@types")
 
+local lib_error = require("lib.lua.error")
 local providers = require("ai.providers")
 
 local M = {}
@@ -113,7 +114,7 @@ end
 ---exactly why this cannot be one linear pass.
 ---@param req Ai.Request
 ---@return Ai.Provider|nil provider
----@return string|nil err
+---@return LibErrorValue|nil err
 ---@return Ai.Request resolved_req
 local function resolve(req)
   local cfg = M.config()
@@ -134,13 +135,13 @@ end
 
 ---Ask once, non-streaming.
 ---@param req Ai.Request
----@param cb fun(ok: boolean, res_or_err: Ai.Response|string)
+---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 ---@return nil
 function M.ask(req, cb)
   assert(type(req) == "table" and type(req.prompt) == "string", "ai.ask: req.prompt is required")
   local provider, err, resolved = resolve(req)
   if not provider then
-    cb(false, err or "ai: unknown error resolving a provider")
+    cb(false, err or lib_error.new("provider_resolution", "ai: unknown error resolving a provider"))
     return
   end
   provider.ask(resolved, cb)
@@ -155,7 +156,9 @@ function M.stream(req, handlers)
   local provider, err, resolved = resolve(req)
   if not provider then
     if handlers.on_error then
-      handlers.on_error(err or "ai: unknown error resolving a provider")
+      handlers.on_error(
+        err or lib_error.new("provider_resolution", "ai: unknown error resolving a provider")
+      )
     end
     return nil
   end

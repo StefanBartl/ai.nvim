@@ -7,6 +7,7 @@
 require("ai.@types")
 
 local curl = require("lib.nvim.net.curl")
+local lib_error = require("lib.lua.error")
 local sse = require("ai.providers.sse")
 local util = require("ai.providers.util")
 
@@ -51,11 +52,18 @@ local function build_body(req, stream)
 end
 
 ---@param req Ai.Request
----@param cb fun(ok: boolean, res_or_err: Ai.Response|string)
+---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
   local key = api_key()
   if not key then
-    cb(false, "openai: OPENAI_API_KEY not set")
+    cb(
+      false,
+      lib_error.new(
+        "missing_api_key",
+        "openai: OPENAI_API_KEY not set",
+        { env_var = "OPENAI_API_KEY" }
+      )
+    )
     return
   end
 
@@ -73,14 +81,17 @@ function M.ask(req, cb)
     timeout_ms = req.timeout_ms or 60000,
   }, function(ok, data)
     if not ok then
-      cb(false, "openai: " .. tostring(data))
+      cb(false, lib_error.new("network_error", "openai: " .. tostring(data), data))
       return
     end
     if type(data) == "table" then
       data = util.denil(data)
     end
     if type(data) == "table" and data.error then
-      cb(false, "openai API error: " .. tostring(data.error.message))
+      cb(
+        false,
+        lib_error.new("api_error", "openai API error: " .. tostring(data.error.message), data.error)
+      )
       return
     end
     local choice = data.choices and data.choices[1]
@@ -100,7 +111,13 @@ function M.stream(req, handlers)
   local key = api_key()
   if not key then
     if handlers.on_error then
-      handlers.on_error("openai: OPENAI_API_KEY not set")
+      handlers.on_error(
+        lib_error.new(
+          "missing_api_key",
+          "openai: OPENAI_API_KEY not set",
+          { env_var = "OPENAI_API_KEY" }
+        )
+      )
     end
     return nil
   end
@@ -137,7 +154,13 @@ function M.stream(req, handlers)
       decoded = util.denil(decoded)
       if decoded.error then
         if handlers.on_error then
-          handlers.on_error("openai API error: " .. tostring(decoded.error.message))
+          handlers.on_error(
+            lib_error.new(
+              "api_error",
+              "openai API error: " .. tostring(decoded.error.message),
+              decoded.error
+            )
+          )
         end
         return
       end
@@ -168,7 +191,13 @@ function M.stream(req, handlers)
         local decoded_err = sse.recover_error_body(non_data_lines)
         if decoded_err and decoded_err.error then
           if handlers.on_error then
-            handlers.on_error("openai API error: " .. tostring(decoded_err.error.message))
+            handlers.on_error(
+              lib_error.new(
+                "api_error",
+                "openai API error: " .. tostring(decoded_err.error.message),
+                decoded_err.error
+              )
+            )
           end
           return
         end
@@ -181,7 +210,13 @@ function M.stream(req, handlers)
         })
       end
     end,
-    on_error = handlers.on_error,
+    -- See claude.lua's identical comment: `fetch_stream`'s own `on_error` is
+    -- `lib.nvim.net.curl`'s plain-string API, not `Ai.StreamHandlers`'s.
+    on_error = function(err)
+      if handlers.on_error then
+        handlers.on_error(lib_error.new("network_error", err))
+      end
+    end,
   })
 end
 

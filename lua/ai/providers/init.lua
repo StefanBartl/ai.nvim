@@ -16,6 +16,8 @@
 
 require("ai.@types")
 
+local lib_error = require("lib.lua.error")
+
 local M = {}
 
 ---@type { id: string, module: string }[]
@@ -128,15 +130,25 @@ end
 ---@param id string
 ---@param order string[]
 ---@return Ai.Provider|nil provider
----@return string|nil err
+---@return LibErrorValue|nil err
 function M.resolve(id, order)
   if id ~= "auto" then
     local p = registered[id]
     if not p then
-      return nil, string.format("ai: unknown provider '%s'", id)
+      return nil,
+        lib_error.new(
+          "provider_resolution",
+          string.format("ai: unknown provider '%s'", id),
+          { id = id }
+        )
     end
     if not is_available(p) then
-      return nil, string.format("ai: provider '%s' is not available", id)
+      return nil,
+        lib_error.new(
+          "provider_resolution",
+          string.format("ai: provider '%s' is not available", id),
+          { id = id }
+        )
     end
     return p, nil
   end
@@ -147,7 +159,12 @@ function M.resolve(id, order)
       return p, nil
     end
   end
-  return nil, "ai: no provider available (checked: " .. table.concat(order or {}, ", ") .. ")"
+  return nil,
+    lib_error.new(
+      "provider_resolution",
+      "ai: no provider available (checked: " .. table.concat(order or {}, ", ") .. ")",
+      { order = order }
+    )
 end
 
 return M

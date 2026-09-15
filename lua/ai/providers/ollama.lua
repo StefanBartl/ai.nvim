@@ -9,6 +9,7 @@
 require("ai.@types")
 
 local curl = require("lib.nvim.net.curl")
+local lib_error = require("lib.lua.error")
 local util = require("ai.providers.util")
 
 --- Declared as a class (not `---@type Ai.Provider`) so the `function M.*`
@@ -62,7 +63,7 @@ local function build_body(req, stream)
 end
 
 ---@param req Ai.Request
----@param cb fun(ok: boolean, res_or_err: Ai.Response|string)
+---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
   curl.fetch_json(host() .. "/api/chat", {
     method = "POST",
@@ -71,16 +72,16 @@ function M.ask(req, cb)
     timeout_ms = req.timeout_ms or 60000,
   }, function(ok, data)
     if not ok then
-      cb(false, "ollama: " .. tostring(data))
+      cb(false, lib_error.new("network_error", "ollama: " .. tostring(data), data))
       return
     end
     if type(data) ~= "table" then
-      cb(false, "ollama: invalid response")
+      cb(false, lib_error.new("invalid_response", "ollama: invalid response", data))
       return
     end
     data = util.denil(data)
     if type(data.error) == "string" then
-      cb(false, "ollama error: " .. data.error)
+      cb(false, lib_error.new("api_error", "ollama error: " .. data.error, data.error))
       return
     end
     cb(true, {
@@ -115,7 +116,9 @@ function M.stream(req, handlers)
       decoded = util.denil(decoded)
       if type(decoded.error) == "string" then
         if handlers.on_error then
-          handlers.on_error("ollama error: " .. decoded.error)
+          handlers.on_error(
+            lib_error.new("api_error", "ollama error: " .. decoded.error, decoded.error)
+          )
         end
         return
       end
@@ -145,7 +148,13 @@ function M.stream(req, handlers)
         })
       end
     end,
-    on_error = handlers.on_error,
+    -- See claude.lua's identical comment: `fetch_stream`'s own `on_error` is
+    -- `lib.nvim.net.curl`'s plain-string API, not `Ai.StreamHandlers`'s.
+    on_error = function(err)
+      if handlers.on_error then
+        handlers.on_error(lib_error.new("network_error", err))
+      end
+    end,
   })
 end
 
