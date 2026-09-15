@@ -113,7 +113,7 @@ end
 ---@param panel Ai.Ui.Panel
 function M.cancel(panel)
   if panel.process then
-    pcall(function()
+    require("lib.nvim.safe_api").safe_call(function()
       panel.process:kill(15)
     end)
     panel.process = nil

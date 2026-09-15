@@ -28,6 +28,10 @@ local M = {
 local API_URL = "https://api.anthropic.com/v1/messages"
 local ANTHROPIC_VERSION = "2023-06-01"
 local DEFAULT_MODEL = "claude-opus-4-5"
+-- Anthropic's Messages API requires max_tokens on every request (unlike
+-- OpenAI/Ollama/Gemini, which default it server-side) -- this is that
+-- required value's default, overridable per-request via `req.max_tokens`
+-- the same way `req.model` overrides `DEFAULT_MODEL`.
 local DEFAULT_MAX_TOKENS = 4096
 
 ---@return string|nil
@@ -47,7 +51,7 @@ end
 local function build_body(req, stream)
   return vim.json.encode({
     model = req.model or DEFAULT_MODEL,
-    max_tokens = DEFAULT_MAX_TOKENS,
+    max_tokens = req.max_tokens or DEFAULT_MAX_TOKENS,
     system = req.system,
     stream = stream or nil,
     messages = { { role = "user", content = req.prompt } },

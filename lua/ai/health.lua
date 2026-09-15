@@ -73,7 +73,10 @@ function M.check()
     if available then
       vim.health.ok(id .. ": available")
     else
-      vim.health.info(id .. ": not available (missing binary and/or API key)")
+      -- "ℹ️ INFO " prefix: this is a real adapter/backend status list, the
+      -- case UI-61 calls out where the prefix earns its place (vs. a bare
+      -- info() for a plain fact like a version or a path).
+      vim.health.info("ℹ️ INFO " .. id .. ": not available (missing binary and/or API key)")
     end
   end
 

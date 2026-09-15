@@ -32,23 +32,30 @@ one `:Ai` command, instead of every plugin hand-rolling its own curl calls.
 
 ---
 
+## Table of contents
+
+- [Documentation](#documentation)
+- [License](#license)
+
+---
+
 ## Documentation
 
 Start at [docs/README.md](docs/README.md) -- what's where, and which question
 each page answers.
 
-**The Basics**
+### The Basics
 
 - [Requirements](docs/requirements.md) -- Neovim version, required plugins and CLI tools.
 - [Installation](docs/installation.md) -- plugin managers and load-trigger variants.
 - [Quickstart](docs/quickstart.md) -- the first thing to run after installing.
 
-**Configuration**
+### Configuration
 
 - [All options](docs/configuration.md) -- every `setup()` option and its default.
 - [Commands](docs/commands.md) / [Bindings cheatsheet](docs/BINDINGS.md)
 
-**The Rest**
+### The Rest
 
 - [What it does and what not](docs/scope.md) -- the boundary with `loomAI`.
 - [Why it does it that way](docs/architecture.md)
