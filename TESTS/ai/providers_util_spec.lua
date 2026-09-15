@@ -131,4 +131,63 @@ describe("ai.providers.util", function()
       assert.are.equal("claude: curl exited 7: ", msg)
     end)
   end)
+
+  describe("denil (property)", function()
+    -- Random nested-table generator: a mix of scalars, vim.NIL and further
+    -- nesting, both as array entries and named fields, to a bounded depth so
+    -- this terminates.
+    local function random_scalar()
+      local kind = math.random(4)
+      if kind == 1 then
+        return vim.NIL
+      elseif kind == 2 then
+        return math.random(1, 1000)
+      elseif kind == 3 then
+        return "s" .. math.random(1, 1000)
+      end
+      return math.random() > 0.5
+    end
+
+    local function random_value(depth)
+      if depth <= 0 or math.random() > 0.6 then
+        return random_scalar()
+      end
+      local t = {}
+      for i = 1, math.random(0, 4) do
+        t[i] = random_value(depth - 1)
+      end
+      for _, key in ipairs({ "a", "b", "c" }) do
+        if math.random() > 0.5 then
+          t[key] = random_value(depth - 1)
+        end
+      end
+      return t
+    end
+
+    ---@param value any
+    ---@return boolean
+    local function contains_nil(value)
+      if value == vim.NIL then
+        return true
+      end
+      if type(value) ~= "table" then
+        return false
+      end
+      for _, v in pairs(value) do
+        if contains_nil(v) then
+          return true
+        end
+      end
+      return false
+    end
+
+    it("never throws and leaves no vim.NIL anywhere, for arbitrary nested input", function()
+      for _ = 1, 200 do
+        local input = random_value(4)
+        local ok, result = pcall(util.denil, input)
+        assert.is_true(ok)
+        assert.is_false(contains_nil(result))
+      end
+    end)
+  end)
 end)

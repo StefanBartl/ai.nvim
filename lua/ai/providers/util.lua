@@ -69,6 +69,9 @@ end
 ---@param value any
 ---@return any value the same table, with every `vim.NIL` replaced by `nil`
 function M.denil(value)
+  if value == vim.NIL then
+    return nil
+  end
   if type(value) ~= "table" then
     return value
   end
