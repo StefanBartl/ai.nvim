@@ -1,8 +1,9 @@
 -- Test doubles below deliberately implement only the `Ai.Provider` fields
 -- each test actually exercises (usually just `id`/`available`) -- the
 -- registry itself never calls `ask`/`stream`, so completing them would only
--- add noise, not coverage.
----@diagnostic disable: missing-fields
+-- add noise, not coverage. need-check-nil is suppressed too: the test body
+-- itself is the guard against a nil field.
+---@diagnostic disable: missing-fields, need-check-nil
 
 describe("ai.providers", function()
   before_each(function()
