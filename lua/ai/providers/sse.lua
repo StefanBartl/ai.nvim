@@ -11,6 +11,8 @@
 --- module is the one place that dance lives, instead of two near-identical
 --- copies drifting apart.
 
+local util = require("ai.providers.util")
+
 local M = {}
 
 ---Extract the payload from an SSE `data: ...` line, if it is one.
@@ -34,7 +36,7 @@ function M.recover_error_body(non_data_lines)
   end
   local ok, decoded = pcall(vim.json.decode, table.concat(non_data_lines, "\n"))
   if ok and type(decoded) == "table" then
-    return decoded
+    return util.denil(decoded)
   end
   return nil
 end

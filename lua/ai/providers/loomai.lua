@@ -42,7 +42,7 @@ end
 ---unreachable Ollama daemon.
 ---@return boolean
 function M.available()
-  return vim.fn.executable("curl") == 1
+  return util.executable("curl")
 end
 
 ---@internal
@@ -77,6 +77,7 @@ function M.ask(req, cb)
       cb(false, "loomai: invalid response")
       return
     end
+    data = util.denil(data)
     if data.error ~= nil then
       local msg = type(data.error) == "table" and data.error.message or data.error
       cb(false, "loomai error: " .. tostring(msg))
@@ -112,6 +113,7 @@ function M.stream(req, handlers)
       if not ok or type(decoded) ~= "table" then
         return
       end
+      decoded = util.denil(decoded)
       if decoded.error ~= nil then
         if handlers.on_error then
           local msg = type(decoded.error) == "table" and decoded.error.message or decoded.error

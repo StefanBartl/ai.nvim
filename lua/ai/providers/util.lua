@@ -5,6 +5,28 @@
 
 local M = {}
 
+---@type table<string, boolean>
+local executable_cache = {}
+
+---Cached `vim.fn.executable(name) == 1`. `available()` runs on every
+---`"auto"` resolution (see `Ai.Provider`'s own doc comment) -- a
+---*successful* probe stops at the first PATH hit and is cheap, but a
+---*failing* one walks every PATH entry against every PATHEXT extension
+---uncached, and would otherwise re-run that full walk on every single
+---`:Ai ask`/`:Ai stream` call for as long as the tool stays missing. A
+---binary appearing/disappearing from PATH mid-session (without a Neovim
+---restart) is not a case this needs to track.
+---@param name string
+---@return boolean
+function M.executable(name)
+  local cached = executable_cache[name]
+  if cached == nil then
+    cached = vim.fn.executable(name) == 1
+    executable_cache[name] = cached
+  end
+  return cached
+end
+
 ---Read an environment variable, trimmed of leading/trailing whitespace
 ---(including a trailing newline, a common shape for a value sourced from a
 ---file or `.env` loader via e.g. `export KEY=$(cat key.txt)`). Returns
@@ -33,6 +55,31 @@ end
 ---@return string
 function M.curl_exit_error(id, obj)
   return string.format("%s: curl exited %d: %s", id, obj.code, obj.stderr or "")
+end
+
+---Recursively replace `vim.NIL` with Lua `nil` in a decoded JSON value, in
+---place. `vim.json.decode` produces `vim.NIL` (a userdata sentinel) for a
+---JSON `null`, never a plain Lua `nil` -- indexing into it later (e.g.
+---`decoded.delta.stop_reason` when `decoded.delta` itself is JSON `null`)
+---throws "attempt to index a userdata value" instead of behaving like an
+---absent field the way every provider's `type(x) == "table"`/`x and
+---x.field` guards already assume. Every provider calls this once right
+---after decoding, rather than teaching each field access about the second
+---flavor of "missing" JSON can produce.
+---@param value any
+---@return any value the same table, with every `vim.NIL` replaced by `nil`
+function M.denil(value)
+  if type(value) ~= "table" then
+    return value
+  end
+  for k, v in pairs(value) do
+    if v == vim.NIL then
+      value[k] = nil
+    elseif type(v) == "table" then
+      M.denil(v)
+    end
+  end
+  return value
 end
 
 return M
