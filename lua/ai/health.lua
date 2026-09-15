@@ -110,6 +110,16 @@ function M.check()
     end
   end
 
+  -- ── Optional integrations ────────────────────────────────────────────────
+  vim.health.start("ai.nvim: optional integrations")
+  if pcall(require, "data.detect") then
+    vim.health.ok("data.nvim detected -- context.structured_data available")
+  else
+    vim.health.info(
+      "data.nvim not found (optional) -- context.structured_data is unavailable; every other context flag still works"
+    )
+  end
+
   -- ── composer route pre-flight ────────────────────────────────────────────
   require("lib.nvim.usercmd.composer").checkhealth("Ai")
 end
