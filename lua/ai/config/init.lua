@@ -36,4 +36,15 @@ function M.get()
   return _active
 end
 
+---Switch the active provider id directly, without a full `setup()` merge --
+---the one runtime write this module needs to support (`:Ai provider
+---<name>`). `id` is trusted here: the composer route already constrains it
+---to a known provider id via its own `enum`, so no validation happens on
+---this side too.
+---@param id string
+---@return nil
+function M.set_provider(id)
+  M.get().provider = id
+end
+
 return M

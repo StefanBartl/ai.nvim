@@ -46,7 +46,7 @@ function M.setup()
         },
         desc = "Switch the active provider",
         run = function(ctx)
-          require("ai").config().provider = ctx.args.name
+          require("ai.config").set_provider(ctx.args.name)
           require("lib.nvim.notify").create("[ai]").info("provider set to " .. ctx.args.name)
         end,
       },

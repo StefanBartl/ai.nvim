@@ -19,6 +19,20 @@ local M = {}
 ---@type Ai.Ui.Panel[]
 local active_panels = {}
 
+---@internal
+---Drop `panel` from `active_panels`, if still present. A no-op the second
+---time (`M.cancel` is idempotent, see its own doc) -- keeps a long session
+---from accumulating one entry per `:Ai ask/stream` call forever.
+---@param panel Ai.Ui.Panel
+local function untrack(panel)
+  for i, p in ipairs(active_panels) do
+    if p == panel then
+      table.remove(active_panels, i)
+      return
+    end
+  end
+end
+
 ---@param opts { title?: string, theme?: string, progress_style?: string }
 ---@return Ai.Ui.Panel
 function M.open(opts)
@@ -95,7 +109,7 @@ end
 ---and finishes the progress indicator. Idempotent -- safe to call from both
 ---an explicit cancel action and the panel's own `on_close`/`on_cancel`
 ---callbacks (the progress handle's own `done` guard makes a second
----`cancel()`/`finish()` a no-op).
+---`cancel()`/`finish()` a no-op). Also untracks the panel -- see `untrack`.
 ---@param panel Ai.Ui.Panel
 function M.cancel(panel)
   if panel.process then
@@ -107,14 +121,17 @@ function M.cancel(panel)
   if panel.progress then
     panel.progress:cancel()
   end
+  untrack(panel)
 end
 
 ---Cancel every panel that still has a running stream -- called on
 ---`VimLeavePre` so quitting Neovim can never leave an orphaned curl request
----behind.
+---behind. Iterates a snapshot: `M.cancel` mutates `active_panels` itself
+---(via `untrack`), which `ipairs` over the live table would not survive.
 ---@return nil
 function M.cancel_all()
-  for _, panel in ipairs(active_panels) do
+  local panels = vim.list_extend({}, active_panels)
+  for _, panel in ipairs(panels) do
     M.cancel(panel)
   end
 end
