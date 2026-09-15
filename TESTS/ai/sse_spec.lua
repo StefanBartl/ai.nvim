@@ -41,4 +41,40 @@ describe("ai.providers.sse", function()
       assert.is_nil(sse.recover_error_body({ "42" }))
     end)
   end)
+
+  describe("recover_error_body (property)", function()
+    -- A grab-bag of fragments that show up across the real failure shapes
+    -- this module exists for: valid pretty-printed JSON lines, garbage
+    -- text, empty lines and stray punctuation -- shuffled into arbitrary
+    -- line lists to check the "never throws" contract the module doc
+    -- promises, independent of what the lines actually contain.
+    local fragments = {
+      "{",
+      "}",
+      '  "type": "error",',
+      '  "error": {"message": "bad request"}',
+      "",
+      "not json at all",
+      "42",
+      '{"a": 1',
+      "]}",
+      "data: {}",
+    }
+
+    local function random_lines()
+      local lines = {}
+      for i = 1, math.random(0, 8) do
+        lines[i] = fragments[math.random(#fragments)]
+      end
+      return lines
+    end
+
+    it("never throws for an arbitrary list of lines, and only returns nil or a table", function()
+      for _ = 1, 200 do
+        local ok, result = pcall(sse.recover_error_body, random_lines())
+        assert.is_true(ok)
+        assert.is_true(result == nil or type(result) == "table")
+      end
+    end)
+  end)
 end)
