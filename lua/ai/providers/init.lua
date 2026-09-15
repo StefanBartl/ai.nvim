@@ -54,7 +54,15 @@ local function make_lazy(entry)
   return setmetatable({ id = entry.id }, {
     __index = function(_, key)
       local mod = load()
-      return mod and mod[key] or nil
+      -- Not `mod and mod[key] or nil`: that form would silently turn a
+      -- legitimate `false` field value into `nil` (ERR-60's `a and b or c`
+      -- trap) -- currently inert since no `Ai.Provider` field is ever
+      -- boolean `false`, but there is no reason to keep the latent trap
+      -- around for a field that becomes one later.
+      if not mod then
+        return nil
+      end
+      return mod[key]
     end,
   })
 end

@@ -53,7 +53,7 @@ end
 
 ---@return boolean
 function M.available()
-  return vim.fn.executable("curl") == 1 and api_key() ~= nil
+  return util.executable("curl") and api_key() ~= nil
 end
 
 ---@internal
@@ -138,6 +138,9 @@ function M.ask(req, cb)
       cb(false, "gemini: " .. tostring(data))
       return
     end
+    if type(data) == "table" then
+      data = util.denil(data)
+    end
     if type(data) == "table" and data.error then
       cb(false, "gemini API error: " .. tostring(data.error.message))
       return
@@ -209,6 +212,7 @@ function M.stream(req, handlers)
       if not ok or type(decoded) ~= "table" then
         return
       end
+      decoded = util.denil(decoded)
       if decoded.error then
         failed = true
         if handlers.on_error then

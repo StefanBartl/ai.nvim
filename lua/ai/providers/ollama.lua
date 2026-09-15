@@ -41,7 +41,7 @@ end
 ---unreachable daemon still surfaces as a normal request failure.
 ---@return boolean
 function M.available()
-  return vim.fn.executable("curl") == 1 and vim.fn.executable("ollama") == 1
+  return util.executable("curl") and util.executable("ollama")
 end
 
 ---@internal
@@ -78,6 +78,7 @@ function M.ask(req, cb)
       cb(false, "ollama: invalid response")
       return
     end
+    data = util.denil(data)
     if type(data.error) == "string" then
       cb(false, "ollama error: " .. data.error)
       return
@@ -111,6 +112,7 @@ function M.stream(req, handlers)
       if not ok or type(decoded) ~= "table" then
         return
       end
+      decoded = util.denil(decoded)
       if type(decoded.error) == "string" then
         if handlers.on_error then
           handlers.on_error("ollama error: " .. decoded.error)

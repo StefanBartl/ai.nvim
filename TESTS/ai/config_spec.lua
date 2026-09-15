@@ -35,4 +35,58 @@ describe("ai.config", function()
     config.set_provider("ollama")
     assert.are.equal("ollama", config.get().provider)
   end)
+
+  describe("unknown key warnings", function()
+    local original_notify
+    local messages
+
+    before_each(function()
+      original_notify = vim.notify
+      messages = {}
+      ---@diagnostic disable-next-line: duplicate-set-field
+      vim.notify = function(msg, _level, _opts)
+        messages[#messages + 1] = msg
+      end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+    end)
+
+    it("warns about a typo'd nested key instead of silently dropping it", function()
+      local config = require("ai.config")
+      config.setup({ ui = { panel_them = "double" } })
+      assert.are.equal(1, #messages)
+      assert.is_true(messages[1]:find("ui.panel_them", 1, true) ~= nil)
+    end)
+
+    it("warns about an unknown top-level key", function()
+      local config = require("ai.config")
+      config.setup({ providr = "ollama" })
+      assert.are.equal(1, #messages)
+      assert.is_true(messages[1]:find("providr", 1, true) ~= nil)
+    end)
+
+    it("does not warn about a known key at any depth", function()
+      local config = require("ai.config")
+      config.setup({
+        provider = "ollama",
+        ui = { panel_theme = "double" },
+        completion = { keymap = { accept = "<Tab>" } },
+      })
+      assert.are.equal(0, #messages)
+    end)
+
+    it("does not warn about an arbitrary provider id under model", function()
+      local config = require("ai.config")
+      config.setup({ model = { ["my-custom-provider"] = "some-model" } })
+      assert.are.equal(0, #messages)
+    end)
+
+    it("does not warn about a custom provider_order entry", function()
+      local config = require("ai.config")
+      config.setup({ provider_order = { "my-custom-provider" } })
+      assert.are.equal(0, #messages)
+    end)
+  end)
 end)
