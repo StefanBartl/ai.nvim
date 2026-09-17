@@ -116,9 +116,10 @@ end
 ---`available` itself, so calling `p.available()` unguarded would raise
 ---"attempt to call a nil value" instead of the intended "not available".
 ---@param p Ai.Provider
+---@param req Ai.Request|nil the request being resolved, if any -- see `Ai.Provider`'s doc for why availability can depend on it
 ---@return boolean
-local function is_available(p)
-  return type(p.available) == "function" and p.available() or false
+local function is_available(p, req)
+  return type(p.available) == "function" and p.available(req) or false
 end
 
 ---Resolve `id` to a concrete, available provider. `id == "auto"` walks
@@ -129,9 +130,22 @@ end
 ---`"loomai"`.
 ---@param id string
 ---@param order string[]
+---@param req? Ai.Request the request being resolved -- passed on to each candidate's `available()`, so a per-request `api_key` counts towards availability the same way the provider's own env var does
 ---@return Ai.Provider|nil provider
 ---@return LibErrorValue|nil err
-function M.resolve(id, order)
+function M.resolve(id, order, req)
+  -- `load_builtin()` normally runs from `ai.setup()`, but ai.nvim is also a
+  -- library another plugin calls into (`pdfport.nvim`'s claude/ollama
+  -- extraction backends go through `require("ai").ask()`), and that plugin
+  -- cannot require its users to have called `ai.setup()` first. An empty
+  -- registry here means exactly that case -- not "the user deregistered
+  -- everything", which nothing can do -- so registering the built-ins is
+  -- right rather than reporting "unknown provider 'claude'" for a provider
+  -- that ships in this repo.
+  if next(registered) == nil then
+    M.load_builtin()
+  end
+
   if id ~= "auto" then
     local p = registered[id]
     if not p then
@@ -142,7 +156,7 @@ function M.resolve(id, order)
           { id = id }
         )
     end
-    if not is_available(p) then
+    if not is_available(p, req) then
       return nil,
         lib_error.new(
           "provider_resolution",
@@ -155,7 +169,7 @@ function M.resolve(id, order)
 
   for _, candidate_id in ipairs(order or {}) do
     local p = registered[candidate_id]
-    if p and is_available(p) then
+    if p and is_available(p, req) then
       return p, nil
     end
   end

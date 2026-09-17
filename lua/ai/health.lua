@@ -72,6 +72,28 @@ function M.check()
     local available = p and type(p.available) == "function" and p.available()
     if available then
       vim.health.ok(id .. ": available")
+      -- Which attachment kinds this provider's API has a slot for. Reported
+      -- only for an available provider, and as a plain fact rather than a
+      -- warning: "no attachments" is a correct state for a text-only
+      -- backend, not a defect. Worth surfacing because the failure it
+      -- explains happens at request time and names the provider, not the
+      -- config -- someone whose PDF request fails with "this provider's API
+      -- takes no document payload" should be able to find out here which
+      -- provider would have taken it.
+      local caps = p and p.capabilities or {}
+      local kinds = {}
+      if caps.vision then
+        kinds[#kinds + 1] = "image"
+      end
+      if caps.documents then
+        kinds[#kinds + 1] = "document"
+      end
+      vim.health.info(
+        ("  %s: attachments = %s"):format(
+          id,
+          #kinds > 0 and table.concat(kinds, ", ") or "none (text only)"
+        )
+      )
     else
       -- "ℹ️ INFO " prefix: this is a real adapter/backend status list, the
       -- case UI-61 calls out where the prefix earns its place (vs. a bare

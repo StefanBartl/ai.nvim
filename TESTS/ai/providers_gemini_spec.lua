@@ -12,12 +12,18 @@ describe("ai.providers.gemini", function()
     original_key = vim.env.GEMINI_API_KEY
     vim.env.GEMINI_API_KEY = "test-key"
     package.loaded["ai.providers.gemini"] = nil
+    -- `ai.providers.transport` sits between this provider and
+    -- `lib.nvim.net.curl` and captures `curl` as its own require-time
+    -- upvalue too, so it has to be dropped alongside the provider --
+    -- otherwise the second test in this file runs against the first's stub.
+    package.loaded["ai.providers.transport"] = nil
   end)
 
   after_each(function()
     vim.env.GEMINI_API_KEY = original_key
     package.loaded["lib.nvim.net.curl"] = nil
     package.loaded["ai.providers.gemini"] = nil
+    package.loaded["ai.providers.transport"] = nil
   end)
 
   describe("ask", function()

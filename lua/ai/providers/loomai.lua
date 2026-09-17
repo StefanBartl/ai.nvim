@@ -8,12 +8,20 @@
 --- quirk `ai.providers.sse`'s `recover_error_body` exists for: a loomAI
 --- error, streaming or not, is always `{"error":{"message":...}}`, and a
 --- stream-time error is always a regular `data: {"error":...}` event.
+---
+--- Attachments: none. loomAI's `/ask` contract is prompt-and-system text,
+--- and there is no field to smuggle bytes through -- so both capability
+--- flags are false and any attachment fails the request outright. This is
+--- the case `ai.attachments.unsupported` exists for: the alternative is a
+--- request that succeeds having quietly discarded the one thing the prompt
+--- was asking about.
 
 require("ai.@types")
 
-local curl = require("lib.nvim.net.curl")
+local attachments = require("ai.attachments")
 local lib_error = require("lib.lua.error")
 local sse = require("ai.providers.sse")
+local transport = require("ai.providers.transport")
 local util = require("ai.providers.util")
 
 --- Declared as a class (not `---@type Ai.Provider`) so the `function M.*`
@@ -23,13 +31,17 @@ local util = require("ai.providers.util")
 local M = {
   id = "loomai",
   name = "loomAI (local)",
-  capabilities = { streaming = true, vision = false },
+  capabilities = { streaming = true, vision = false, documents = false },
 }
 
 local DEFAULT_HOST = "http://127.0.0.1:8080"
 
+---@param req? Ai.Request
 ---@return string
-local function host()
+local function host(req)
+  if req and req.host then
+    return req.host
+  end
   return util.env_value("LOOMAI_HOST", DEFAULT_HOST)
 end
 
@@ -61,14 +73,21 @@ end
 ---@param req Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
-  curl.fetch_json(host() .. "/ask", {
+  local rejected = attachments.unsupported("loomai", M.capabilities, req.attachments)
+  if rejected then
+    cb(false, rejected)
+    return
+  end
+
+  local timeout_ms = req.timeout_ms or 60000
+  local prepare_err = transport.post_json(host(req) .. "/ask", {
     method = "POST",
     headers = { ["Content-Type"] = "application/json" },
     body = build_body(req),
-    timeout_ms = req.timeout_ms or 60000,
-  }, function(ok, data)
+    timeout_ms = timeout_ms,
+  }, function(ok, data, obj)
     if not ok then
-      cb(false, lib_error.new("network_error", "loomai: " .. tostring(data), data))
+      cb(false, util.fetch_error("loomai", data, obj, timeout_ms))
       return
     end
     -- curl exits 0 regardless of HTTP status (see fetch_json's own doc), so
@@ -91,19 +110,31 @@ function M.ask(req, cb)
       provider = "loomai",
     })
   end)
+  if prepare_err then
+    cb(false, lib_error.new("invalid_request", "loomai: " .. prepare_err))
+  end
 end
 
 ---@param req Ai.Request
 ---@param handlers Ai.StreamHandlers
 ---@return vim.SystemObj|nil
 function M.stream(req, handlers)
+  local rejected = attachments.unsupported("loomai", M.capabilities, req.attachments)
+  if rejected then
+    if handlers.on_error then
+      handlers.on_error(rejected)
+    end
+    return nil
+  end
+
+  local timeout_ms = req.timeout_ms or 60000
   local text_parts = {}
 
-  return curl.fetch_stream(host() .. "/ask/stream", {
+  local process, prepare_err = transport.stream_json(host(req) .. "/ask/stream", {
     method = "POST",
     headers = { ["Content-Type"] = "application/json" },
     body = build_body(req),
-    timeout_ms = req.timeout_ms or 60000,
+    timeout_ms = timeout_ms,
   }, {
     on_chunk = function(line)
       local payload = sse.data_payload(line)
@@ -135,7 +166,7 @@ function M.stream(req, handlers)
     on_done = function(obj)
       if obj.code ~= 0 then
         if handlers.on_error then
-          handlers.on_error(util.curl_exit_error("loomai", obj))
+          handlers.on_error(util.curl_exit_error("loomai", obj, timeout_ms))
         end
         return
       end
@@ -154,6 +185,13 @@ function M.stream(req, handlers)
       end
     end,
   })
+
+  -- See claude.lua: a body that never reached curl fires none of the
+  -- handlers above, so it has to be reported here.
+  if prepare_err and handlers.on_error then
+    handlers.on_error(lib_error.new("invalid_request", "loomai: " .. prepare_err))
+  end
+  return process
 end
 
 return M

@@ -12,9 +12,10 @@ CONTENTS                                                        *ai-contents*
   7. Completion ........................... |ai-completion|
   8. Lua API ............................. |ai-api|
   9. Providers ............................ |ai-providers|
- 10. Context .............................. |ai-context|
- 11. Scope ................................ |ai-scope|
- 12. Health check ........................ |ai-health|
+ 10. Attachments .......................... |ai-attachments|
+ 11. Context .............................. |ai-context|
+ 12. Scope ................................ |ai-scope|
+ 13. Health check ........................ |ai-health|
 
 ==============================================================================
 1. INTRODUCTION                                                    *ai-intro*
@@ -24,10 +25,10 @@ inside Neovim -- context assembly (buffer/selection/diagnostics), a
 streaming answer panel, and an `:Ai` composer command, built on
 `lib.nvim.net.curl` (SSE/NDJSON streaming, secrets kept out of curl's argv).
 
-It pairs well with pdfport.nvim -- its `claude`/`ollama` extraction backends
-are the two real bugs (broken JSON escaping, an API key visible in the
-process list) that this plugin exists to fix at the transport layer, once
-and for every future caller.
+It pairs well with pdfport.nvim: its `claude`/`ollama` extraction backends
+send their PDFs and page images through this plugin's `ask()` instead of
+carrying a second hand-written curl/provider path of their own. That
+migration is what |ai-attachments| were built for.
 
 ==============================================================================
 2. REQUIREMENTS                                              *ai-requirements*
@@ -243,10 +244,19 @@ require("ai").ask({req}, {cb})
     context      table?     `Ai.ContextDefaults`, see |ai-context|
     timeout_ms   integer?   overrides config.timeout_ms
     system       string?    system prompt, provider-dependent
+    max_tokens   integer?   response-length cap; only `claude` needs one
+    attachments  table?     `Ai.Attachment[]`, see |ai-attachments|
+    api_key      string?    overrides the provider's env-var lookup, this
+                            request only -- set `provider` explicitly with
+                            it, a key belongs to one API
+    host         string?    overrides a self-hosted provider's base URL
+                            (`ollama`, `loomai`), this request only
 
   {cb} is called as `cb(ok, res_or_err)`: `res_or_err` is an `Ai.Response`
-  table (`text`, `usage`, `stop_reason`, `provider`) on success, or a string
-  error message on failure.
+  table (`text`, `usage`, `stop_reason`, `provider`) on success, or a
+  `LibErrorValue` on failure, whose `kind` is one of `missing_api_key`,
+  `invalid_request`, `timeout`, `network_error`, `api_error`,
+  `invalid_response`, `blocked` or `provider_resolution`.
 
                                                                *ai.stream()*
 require("ai").stream({req}, {handlers})
@@ -304,14 +314,71 @@ executable on PATH and/or an env var set), never a network round trip. Set
 `provider` to an explicit id to always use one provider; `:Ai provider
 {name}` switches it at runtime.
 
-API keys are read only from the environment (`vim.env.*`), never stored by
+API keys are read from the environment (`vim.env.*`) unless a caller passes
+`req.api_key` for one request (see |ai-attachments|), never stored by
 this plugin, and never appear in curl's argv -- they go through
 `lib.nvim.net.curl`'s `secret_headers`, which is the reason ai.nvim exists
 at all (see |ai-intro|). |:checkhealth| ai and `:Ai info` show only whether
 a key is set, never its value.
 
 ==============================================================================
-10. CONTEXT                                                      *ai-context*
+10. ATTACHMENTS                                              *ai-attachments*
+
+A request can carry binary payloads alongside its prompt -- a rasterized
+page, a whole PDF -- through `req.attachments`, a list of `Ai.Attachment`: >lua
+    local attachments = require("ai.attachments")
+
+    local page, err = attachments.from_file("/tmp/invoice-page-1.png")
+    if not page then error(err) end
+
+    require("ai").ask({
+      prompt = "Extract every table on this page as Markdown.",
+      provider = "claude",
+      attachments = { page },
+    }, function(ok, res) ... end)
+<
+`Ai.Attachment` is three fields -- `kind` (`"image"` or `"document"`),
+`media_type` (an IANA type) and `data` (base64, unwrapped) -- plus an
+optional `name` used only in error messages. That is the intersection of
+what every provider's wire format actually carries; each backend spells it
+its own way.
+
+                                          *ai.attachments.from_file()*
+require("ai.attachments").from_file({path}, {opts})
+  Read, size-check and base64 {path}. Returns `attachment, nil` or
+  `nil, err_message` -- never raises. {opts}: `media_type` (overrides the
+  extension guess), `kind` (overrides the media-type guess), `name`.
+  Recognized extensions: .png .jpg .jpeg .gif .webp .pdf
+
+                                         *ai.attachments.from_bytes()*
+require("ai.attachments").from_bytes({data}, {media_type}, {opts})
+  Same, for bytes already in memory (a rasterizer's stdout, say).
+
+What each provider can carry:
+
+  claude   image, document    content blocks with a base64 `source`
+  gemini   image, document    `inline_data` parts with a `mime_type`
+  openai   image              `image_url` part whose url is a `data:` URI
+  ollama   image              bare `images` array on the message
+  loomai   --                 text only
+
+A provider that cannot carry an attachment FAILS the request
+(`err.kind == "invalid_request"`) before sending anything -- it is never
+dropped silently, because a prompt asking about a page, sent without the
+page, does not fail: it answers confidently about nothing.
+
+Only `claude` and `gemini` take a PDF whole; for the others the caller
+rasterizes pages first and sends images. A capability describes the API, not
+the model: Ollama's chat endpoint has an `images` field for every model,
+`llava` reads it and `llama3.2` ignores it.
+
+Large requests need no configuration. A body over 8 KB is written to a
+`0600` temp file and read back by curl with `--data-binary @file` instead of
+being passed in argv, where Windows caps a command line at 32 767
+characters; the file is removed once the request ends.
+
+==============================================================================
+11. CONTEXT                                                      *ai-context*
 
 `Ai.ContextDefaults` fields, all boolean, independent (not mutually
 exclusive):
@@ -329,7 +396,7 @@ assembled context block, if any. The quick-action keymaps
 stream` build no context of their own.
 
 ==============================================================================
-11. SCOPE                                                          *ai-scope*
+12. SCOPE                                                          *ai-scope*
 
 ai.nvim covers single-turn question/answer and streaming: ask a question,
 get an answer; stream a longer one into a panel; send the current context
@@ -357,7 +424,7 @@ not yet added to `provider_order` -- stays reachable only by naming it
 explicitly (`provider = "<name>"`), never through `"auto"` by accident.
 
 ==============================================================================
-12. HEALTH CHECK                                                   *ai-health*
+13. HEALTH CHECK                                                   *ai-health*
 
 :checkhealth ai
 

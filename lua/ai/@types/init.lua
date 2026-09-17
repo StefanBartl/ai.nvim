@@ -53,6 +53,24 @@
 ---@field accept? string Insert-mode: insert the currently shown suggestion
 ---@field dismiss? string Insert-mode: clear the currently shown suggestion without inserting it
 
+---One binary payload sent alongside the prompt. Deliberately provider-
+---neutral: bytes, what they are, and what role they play. Every wire format
+---this maps onto carries exactly those three things and differs only in how
+---it spells them -- Anthropic nests them in a `source` object per content
+---block, Gemini in an `inline_data` part, OpenAI in a `data:` URI, Ollama in
+---a bare `images` array that has no room for the media type at all. Turning
+---this into that is each provider backend's job, the same way each already
+---owns its own response schema.
+---
+---`data` is base64 *without* a `data:` URI prefix or line breaks --
+---`ai.attachments.from_file()` produces exactly that shape, and is the
+---intended way to build one.
+---@class Ai.Attachment
+---@field kind "image"|"document" What the payload is *for*. Not derivable from `media_type` alone in general, and it is what decides whether a provider can carry it at all (see `Ai.Provider.capabilities`).
+---@field media_type string IANA media type, e.g. `"image/png"`, `"application/pdf"`
+---@field data string Base64-encoded bytes, unwrapped
+---@field name? string Optional display name (a file name), used only in error messages -- no provider sends it
+
 ---@class Ai.Request
 ---@field prompt string
 ---@field system? string
@@ -61,6 +79,9 @@
 ---@field model? string Overrides the provider's default model for this request
 ---@field max_tokens? integer Overrides the provider's default response-length cap for this request. Only the `claude` backend reads it today (Anthropic's Messages API requires `max_tokens` on every request); ignored by providers that don't need one.
 ---@field timeout_ms? integer
+---@field attachments? Ai.Attachment[] Binary payloads sent with the prompt. A provider that cannot carry one fails the request with `"invalid_request"` before sending -- an attachment is never silently dropped.
+---@field api_key? string Overrides the provider's own env-var lookup for this request only. For an embedding plugin that already has the key in its own config (`pdfport.nvim`'s `claude_api_key`) and must not have to write it into the user's environment to use ai.nvim. Ignored by providers that need no key. **Set `provider` explicitly alongside it** -- a key belongs to one specific API, and under `provider = "auto"` it would be offered to whichever provider resolves first.
+---@field host? string Overrides a self-hosted provider's base URL for this request only (`ollama`, `loomai`) -- same reasoning as `api_key`. Ignored by the cloud providers, whose endpoint is not a user choice.
 
 ---@class Ai.Response
 ---@field text string
@@ -74,9 +95,12 @@
 ---@field on_error? fun(err: LibErrorValue) `err.kind` is one of: `"missing_api_key"`
 ---(a provider's own API key env var is unset; `err.data = {env_var}`),
 ---`"invalid_request"` (a client-side check rejected the request before it was
----sent, e.g. an unsafe model name), `"network_error"` (curl itself failed or
----exited non-zero; `err.data` is the raw `vim.SystemCompleted`/curl error
----value where available), `"api_error"` (the provider's API returned a
+---sent, e.g. an unsafe model name, or an attachment this provider cannot
+---carry), `"timeout"` (the request outlived its own `timeout_ms`; curl exited
+---28, see `ai.providers.transport`), `"network_error"` (curl itself failed or
+---exited non-zero for any *other* reason; `err.data` is the raw
+---`vim.SystemCompleted`/curl error value where available), `"api_error"`
+---(the provider's API returned a
 ---structured error body; `err.data` is that body's own `error` field),
 ---`"invalid_response"` (a 200 response whose body could not be understood),
 ---`"blocked"` (a provider-side safety/policy block, not a hard API error),
@@ -88,10 +112,30 @@
 ---A single AI backend. `available()` must be cheap and synchronous (it runs
 ---on every `"auto"` resolution) -- an executable-on-PATH / env-var check, not
 ---a network round trip.
+---
+---`available()` receives the request being resolved, when there is one, so a
+---provider whose availability depends on a credential can see a per-request
+---`api_key` as well as its own env var. It is called with no argument from
+---`:checkhealth ai` and `:Ai info`, which ask the standing question ("is this
+---usable as configured?") rather than about one request -- so every
+---implementation has to treat the parameter as optional.
 ---@class Ai.Provider
 ---@field id string
 ---@field name? string
----@field available fun(): boolean
+---@field available fun(req?: Ai.Request): boolean
 ---@field ask fun(req: Ai.Request, cb: fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)): nil
 ---@field stream fun(req: Ai.Request, handlers: Ai.StreamHandlers): vim.SystemObj|nil returns the underlying process handle so a caller can `:kill()` it to cancel
----@field capabilities? { vision?: boolean, streaming?: boolean, max_tokens?: integer }
+---@field capabilities? Ai.ProviderCapabilities
+
+---What a provider backend can carry, as a *transport* fact -- "this API has
+---a place to put one", not "the model you picked will understand it". The
+---two are genuinely different: Ollama's chat endpoint accepts an `images`
+---array for every model, and `llama3.2` will ignore it while `llava` reads
+---it. Only the first is knowable here, which is why `ai.nvim` refuses an
+---attachment the API has nowhere to put and passes through one the API
+---accepts, leaving model choice to the caller.
+---@class Ai.ProviderCapabilities
+---@field streaming? boolean `stream()` is a real event stream, not a single buffered answer
+---@field vision? boolean The API accepts `Ai.Attachment` entries with `kind = "image"`
+---@field documents? boolean The API accepts `Ai.Attachment` entries with `kind = "document"` (a PDF sent whole, not rasterized by the caller first)
+---@field max_tokens? integer

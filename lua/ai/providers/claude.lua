@@ -8,12 +8,22 @@
 --- (the two real bugs pdfport.nvim's original `claude.lua` backend had --
 --- broken JSON escaping and an argv-visible API key -- are what motivated
 --- ai.nvim in the first place).
+---
+--- Attachments: Anthropic takes them as content blocks on the user message,
+--- and its own block type names (`"image"`, `"document"`) happen to be
+--- exactly `Ai.Attachment.kind`'s two values -- so the mapping below reads
+--- like a pass-through and is not one; it is this provider's spelling of a
+--- neutral shape, the same as everywhere else in this directory. A `document`
+--- block is what lets a PDF be sent whole rather than rasterized page by page
+--- first, which is why `capabilities.documents` is true here and almost
+--- nowhere else.
 
 require("ai.@types")
 
-local curl = require("lib.nvim.net.curl")
+local attachments = require("ai.attachments")
 local lib_error = require("lib.lua.error")
 local sse = require("ai.providers.sse")
+local transport = require("ai.providers.transport")
 local util = require("ai.providers.util")
 
 --- Declared as a class (not `---@type Ai.Provider`) so the `function M.*`
@@ -23,7 +33,7 @@ local util = require("ai.providers.util")
 local M = {
   id = "claude",
   name = "Anthropic Claude API",
-  capabilities = { streaming = true, vision = false },
+  capabilities = { streaming = true, vision = true, documents = true },
 }
 
 local API_URL = "https://api.anthropic.com/v1/messages"
@@ -35,14 +45,43 @@ local DEFAULT_MODEL = "claude-opus-4-5"
 -- the same way `req.model` overrides `DEFAULT_MODEL`.
 local DEFAULT_MAX_TOKENS = 4096
 
+---@param req? Ai.Request
 ---@return string|nil
-local function api_key()
-  return util.env_value("ANTHROPIC_API_KEY")
+local function api_key(req)
+  return (req and req.api_key) or util.env_value("ANTHROPIC_API_KEY")
 end
 
+---@param req? Ai.Request
 ---@return boolean
-function M.available()
-  return util.executable("curl") and api_key() ~= nil
+function M.available(req)
+  return util.executable("curl") and api_key(req) ~= nil
+end
+
+---@internal
+---The user message's `content`: a plain string when there is nothing but
+---the prompt (the shape Anthropic's own examples use, and one fewer level
+---of nesting on the wire), a block array once an attachment is present.
+---
+---Attachments come first, prompt last. Anthropic documents that ordering as
+---producing better results for document/image questions, and pdfport.nvim's
+---hand-written backend already did it that way -- keeping it means the
+---migrated backend sends a byte-identical request, not a similar one.
+---@param req Ai.Request
+---@return string|table content
+local function user_content(req)
+  local list = req.attachments
+  if not list or #list == 0 then
+    return req.prompt
+  end
+  local content = {}
+  for _, att in ipairs(list) do
+    content[#content + 1] = {
+      type = att.kind,
+      source = { type = "base64", media_type = att.media_type, data = att.data },
+    }
+  end
+  content[#content + 1] = { type = "text", text = req.prompt }
+  return content
 end
 
 ---@internal
@@ -55,7 +94,7 @@ local function build_body(req, stream)
     max_tokens = req.max_tokens or DEFAULT_MAX_TOKENS,
     system = req.system,
     stream = stream or nil,
-    messages = { { role = "user", content = req.prompt } },
+    messages = { { role = "user", content = user_content(req) } },
   })
 end
 
@@ -80,7 +119,7 @@ end
 ---@param req Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
-  local key = api_key()
+  local key = api_key(req)
   if not key then
     cb(
       false,
@@ -93,15 +132,22 @@ function M.ask(req, cb)
     return
   end
 
-  curl.fetch_json(API_URL, {
+  local rejected = attachments.unsupported("claude", M.capabilities, req.attachments)
+  if rejected then
+    cb(false, rejected)
+    return
+  end
+
+  local timeout_ms = req.timeout_ms or 60000
+  local prepare_err = transport.post_json(API_URL, {
     method = "POST",
     headers = { ["Content-Type"] = "application/json", ["anthropic-version"] = ANTHROPIC_VERSION },
     secret_headers = { ["x-api-key"] = key },
     body = build_body(req, false),
-    timeout_ms = req.timeout_ms or 60000,
-  }, function(ok, data)
+    timeout_ms = timeout_ms,
+  }, function(ok, data, obj)
     if not ok then
-      cb(false, lib_error.new("network_error", "claude: " .. tostring(data), data))
+      cb(false, util.fetch_error("claude", data, obj, timeout_ms))
       return
     end
     if type(data) == "table" then
@@ -120,13 +166,16 @@ function M.ask(req, cb)
     end
     cb(true, to_response(data))
   end)
+  if prepare_err then
+    cb(false, lib_error.new("invalid_request", "claude: " .. prepare_err))
+  end
 end
 
 ---@param req Ai.Request
 ---@param handlers Ai.StreamHandlers
 ---@return vim.SystemObj|nil
 function M.stream(req, handlers)
-  local key = api_key()
+  local key = api_key(req)
   if not key then
     if handlers.on_error then
       handlers.on_error(
@@ -140,6 +189,15 @@ function M.stream(req, handlers)
     return nil
   end
 
+  local rejected = attachments.unsupported("claude", M.capabilities, req.attachments)
+  if rejected then
+    if handlers.on_error then
+      handlers.on_error(rejected)
+    end
+    return nil
+  end
+
+  local timeout_ms = req.timeout_ms or 60000
   local text_parts = {}
   local usage, stop_reason
   -- Lines that are not `data: ...` at all -- see ai.providers.sse's module
@@ -147,12 +205,12 @@ function M.stream(req, handlers)
   -- pretty-printed JSON body, not an SSE event, and curl still exits 0).
   local non_data_lines = {}
 
-  return curl.fetch_stream(API_URL, {
+  local process, prepare_err = transport.stream_json(API_URL, {
     method = "POST",
     headers = { ["Content-Type"] = "application/json", ["anthropic-version"] = ANTHROPIC_VERSION },
     secret_headers = { ["x-api-key"] = key },
     body = build_body(req, true),
-    timeout_ms = req.timeout_ms or 60000,
+    timeout_ms = timeout_ms,
   }, {
     on_chunk = function(line)
       -- Anthropic's SSE carries both `event: <type>` and `data: {...}` lines
@@ -201,7 +259,7 @@ function M.stream(req, handlers)
     on_done = function(obj)
       if obj.code ~= 0 then
         if handlers.on_error then
-          handlers.on_error(util.curl_exit_error("claude", obj))
+          handlers.on_error(util.curl_exit_error("claude", obj, timeout_ms))
         end
         return
       end
@@ -240,6 +298,13 @@ function M.stream(req, handlers)
       end
     end,
   })
+
+  -- A body that could not be written out never reached curl, so no handler
+  -- above will ever fire for it -- report it here or it is lost silently.
+  if prepare_err and handlers.on_error then
+    handlers.on_error(lib_error.new("invalid_request", "claude: " .. prepare_err))
+  end
+  return process
 end
 
 return M

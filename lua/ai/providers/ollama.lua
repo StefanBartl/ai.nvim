@@ -5,11 +5,23 @@
 --- end marker) -- a different line shape than the SSE providers, which is
 --- exactly why `lib.nvim.net.curl.fetch_stream` leaves line interpretation
 --- to each provider instead of assuming one format.
+---
+--- Attachments: Ollama's chat endpoint takes images as a bare `images` array
+--- of base64 strings on the message itself -- no media type, no per-image
+--- role, no document equivalent. That is the narrowest of the four wire
+--- formats `Ai.Attachment` maps onto, and the reason a *document* attachment
+--- is rejected here rather than quietly rasterized into something else: what
+--- a PDF should become for a vision model (how many pages, at what DPI) is a
+--- decision belonging to the caller that has the PDF, not to a transport
+--- backend guessing on its behalf. `capabilities.vision` says the endpoint
+--- has a slot, not that the chosen model reads it -- `llava` does,
+--- `llama3.2` accepts the field and ignores it.
 
 require("ai.@types")
 
-local curl = require("lib.nvim.net.curl")
+local attachments = require("ai.attachments")
 local lib_error = require("lib.lua.error")
+local transport = require("ai.providers.transport")
 local util = require("ai.providers.util")
 
 --- Declared as a class (not `---@type Ai.Provider`) so the `function M.*`
@@ -19,7 +31,7 @@ local util = require("ai.providers.util")
 local M = {
   id = "ollama",
   name = "Ollama (local)",
-  capabilities = { streaming = true, vision = false },
+  capabilities = { streaming = true, vision = true, documents = false },
 }
 
 local DEFAULT_HOST = "http://127.0.0.1:11434"
@@ -31,8 +43,12 @@ local DEFAULT_MODEL = "llama3.2"
 --- reusing it here as a client override would silently break on any machine
 --- that already sets it for that purpose. Same reasoning loomai.lua applies
 --- with LOOMAI_HOST vs. LOOMAI_OLLAMA_HOST.
+---@param req? Ai.Request
 ---@return string
-local function host()
+local function host(req)
+  if req and req.host then
+    return req.host
+  end
   return util.env_value("AI_OLLAMA_HOST", DEFAULT_HOST)
 end
 
@@ -54,7 +70,18 @@ local function build_body(req, stream)
   if req.system then
     messages[#messages + 1] = { role = "system", content = req.system }
   end
-  messages[#messages + 1] = { role = "user", content = req.prompt }
+  local user = { role = "user", content = req.prompt }
+  -- Only `kind == "image"` can reach this point: `M.capabilities.documents`
+  -- is false, so a document attachment has already failed the request in
+  -- `ask`/`stream` below.
+  local images = {}
+  for _, att in ipairs(req.attachments or {}) do
+    images[#images + 1] = att.data
+  end
+  if #images > 0 then
+    user.images = images
+  end
+  messages[#messages + 1] = user
   return vim.json.encode({
     model = req.model or DEFAULT_MODEL,
     messages = messages,
@@ -65,14 +92,21 @@ end
 ---@param req Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
-  curl.fetch_json(host() .. "/api/chat", {
+  local rejected = attachments.unsupported("ollama", M.capabilities, req.attachments)
+  if rejected then
+    cb(false, rejected)
+    return
+  end
+
+  local timeout_ms = req.timeout_ms or 60000
+  local prepare_err = transport.post_json(host(req) .. "/api/chat", {
     method = "POST",
     headers = { ["Content-Type"] = "application/json" },
     body = build_body(req, false),
-    timeout_ms = req.timeout_ms or 60000,
-  }, function(ok, data)
+    timeout_ms = timeout_ms,
+  }, function(ok, data, obj)
     if not ok then
-      cb(false, lib_error.new("network_error", "ollama: " .. tostring(data), data))
+      cb(false, util.fetch_error("ollama", data, obj, timeout_ms))
       return
     end
     if type(data) ~= "table" then
@@ -90,20 +124,32 @@ function M.ask(req, cb)
       provider = "ollama",
     })
   end)
+  if prepare_err then
+    cb(false, lib_error.new("invalid_request", "ollama: " .. prepare_err))
+  end
 end
 
 ---@param req Ai.Request
 ---@param handlers Ai.StreamHandlers
 ---@return vim.SystemObj|nil
 function M.stream(req, handlers)
+  local rejected = attachments.unsupported("ollama", M.capabilities, req.attachments)
+  if rejected then
+    if handlers.on_error then
+      handlers.on_error(rejected)
+    end
+    return nil
+  end
+
+  local timeout_ms = req.timeout_ms or 60000
   local text_parts = {}
   local done_reason
 
-  return curl.fetch_stream(host() .. "/api/chat", {
+  local process, prepare_err = transport.stream_json(host(req) .. "/api/chat", {
     method = "POST",
     headers = { ["Content-Type"] = "application/json" },
     body = build_body(req, true),
-    timeout_ms = req.timeout_ms or 60000,
+    timeout_ms = timeout_ms,
   }, {
     on_chunk = function(line)
       if line == "" then
@@ -136,7 +182,7 @@ function M.stream(req, handlers)
     on_done = function(obj)
       if obj.code ~= 0 then
         if handlers.on_error then
-          handlers.on_error(util.curl_exit_error("ollama", obj))
+          handlers.on_error(util.curl_exit_error("ollama", obj, timeout_ms))
         end
         return
       end
@@ -156,6 +202,13 @@ function M.stream(req, handlers)
       end
     end,
   })
+
+  -- See claude.lua: a body that never reached curl fires none of the
+  -- handlers above, so it has to be reported here.
+  if prepare_err and handlers.on_error then
+    handlers.on_error(lib_error.new("invalid_request", "ollama: " .. prepare_err))
+  end
+  return process
 end
 
 return M

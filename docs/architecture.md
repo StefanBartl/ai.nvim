@@ -22,6 +22,47 @@ Transport lives in `lib.nvim` (protocol-level, stable, shared by every
 context, what UI -- lives here, where it can move fast without pinning a
 shared library to one model/endpoint's shape.
 
+`lua/ai/providers/transport.lua` is the seam between the two: the one place a
+provider's encoded JSON body reaches `lib.nvim.net.curl`. See
+[Attachments and request size](#attachments-and-request-size) for the two
+things it does there and why neither belongs in `lib.nvim`.
+
+## Attachments and request size
+
+`Ai.Request.attachments` is deliberately three fields -- bytes, media type,
+`"image"`/`"document"` -- and nothing else. That is the intersection of what
+the four wire formats actually carry: Anthropic nests them in a `source`
+object per content block, Gemini in an `inline_data` part, OpenAI splices the
+media type into a `data:` URI, and Ollama takes a bare `images` array of
+base64 strings with no room for a media type at all. Mapping the neutral
+shape onto each is the backend's job, the same split as every response
+schema in this directory.
+
+Where the formats genuinely disagree -- Ollama and OpenAI have no slot for a
+document, loomAI none for anything -- `ai.attachments.unsupported` fails the
+request with `"invalid_request"` before it is sent. Dropping the block
+instead would be worse than an error: a prompt asking about a page, sent
+without the page, does not fail. It answers confidently about nothing.
+
+Two transport consequences fall out of attachments existing at all, and both
+live in `providers/transport.lua` rather than in `lib.nvim`, because both are
+about *this* plugin's request shape rather than about HTTP:
+
+- **A body too large for argv.** `lib.nvim.net.curl` passes `opts.body` as a
+  `-d <body>` element of curl's argv; Windows caps a command line at 32 767
+  characters. A base64 PDF is megabytes, so the request would fail at spawn
+  time with an error naming neither the body nor its size. Above
+  `MAX_INLINE_BODY_BYTES` the body goes to a `0600` temp file read back with
+  `--data-binary @file`, removed once the request ends. This was a latent
+  ceiling before attachments too -- a large enough `context = { cwd = true }`
+  sweep could already reach it.
+- **A timeout that says so.** `opts.timeout_ms` reaches `vim.system`, which
+  on expiry kills curl; the resulting exit code is platform-dependent and
+  indistinguishable from a crash. Passing curl its own `--max-time` as well
+  makes curl end the request first and exit 28, which
+  `ai.providers.util.curl_exit_error` turns into the `"timeout"` error kind.
+  The `vim.system` timeout stays as the outer backstop.
+
 ## Provider registry
 
 `lua/ai/providers/init.lua` lazy-loads five built-ins (`claude`, `ollama`,

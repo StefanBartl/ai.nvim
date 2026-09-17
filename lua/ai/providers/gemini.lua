@@ -18,12 +18,20 @@
 --- response -- no `GEMINI_API_KEY` was available to test against the real
 --- API while writing this. Confirm during live testing (see
 --- `docs/ROADMAP/reports/ai/live-testing-plan.md` in the nvim config repo).
+---
+--- Attachments: Gemini has one part shape for every binary payload --
+--- `inline_data` with a `mime_type` -- so an image and a whole PDF differ
+--- only in that media type. Of the four built-in wire formats this is the
+--- only one where `Ai.Attachment`'s image/document split has no counterpart
+--- at all on the wire; both capabilities are true here for that reason,
+--- not because two separate mechanisms were implemented.
 
 require("ai.@types")
 
-local curl = require("lib.nvim.net.curl")
+local attachments = require("ai.attachments")
 local lib_error = require("lib.lua.error")
 local sse = require("ai.providers.sse")
+local transport = require("ai.providers.transport")
 local util = require("ai.providers.util")
 
 --- Declared as a class (not `---@type Ai.Provider`) so the `function M.*`
@@ -33,7 +41,7 @@ local util = require("ai.providers.util")
 local M = {
   id = "gemini",
   name = "Google Gemini API",
-  capabilities = { streaming = true, vision = false },
+  capabilities = { streaming = true, vision = true, documents = true },
 }
 
 local API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -47,14 +55,19 @@ local DEFAULT_MODEL = "gemini-2.5-flash"
 -- `.`/`-`/`_`; anything else is rejected before it ever reaches the URL.
 local MODEL_PATTERN = "^[%w%.%-_]+$"
 
+---@param req? Ai.Request
 ---@return string|nil
-local function api_key()
+local function api_key(req)
+  if req and req.api_key then
+    return req.api_key
+  end
   return util.env_value("GEMINI_API_KEY")
 end
 
+---@param req? Ai.Request
 ---@return boolean
-function M.available()
-  return util.executable("curl") and api_key() ~= nil
+function M.available(req)
+  return util.executable("curl") and api_key(req) ~= nil
 end
 
 ---@internal
@@ -68,8 +81,15 @@ end
 ---@param req Ai.Request
 ---@return string json
 local function build_body(req)
+  -- Attachment parts before the text part, the same ordering claude.lua
+  -- uses and for the same reason.
+  local parts = {}
+  for _, att in ipairs(req.attachments or {}) do
+    parts[#parts + 1] = { inline_data = { mime_type = att.media_type, data = att.data } }
+  end
+  parts[#parts + 1] = { text = req.prompt }
   local body = {
-    contents = { { role = "user", parts = { { text = req.prompt } } } },
+    contents = { { role = "user", parts = parts } },
   }
   if req.system then
     body.systemInstruction = { parts = { { text = req.system } } }
@@ -115,7 +135,7 @@ end
 ---@param req Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
-  local key = api_key()
+  local key = api_key(req)
   if not key then
     cb(
       false,
@@ -141,16 +161,23 @@ function M.ask(req, cb)
     return
   end
 
+  local rejected = attachments.unsupported("gemini", M.capabilities, req.attachments)
+  if rejected then
+    cb(false, rejected)
+    return
+  end
+
+  local timeout_ms = req.timeout_ms or 60000
   local url = API_BASE .. model .. ":generateContent"
-  curl.fetch_json(url, {
+  local prepare_err = transport.post_json(url, {
     method = "POST",
     headers = { ["Content-Type"] = "application/json" },
     secret_headers = { ["x-goog-api-key"] = key },
     body = build_body(req),
-    timeout_ms = req.timeout_ms or 60000,
-  }, function(ok, data)
+    timeout_ms = timeout_ms,
+  }, function(ok, data, obj)
     if not ok then
-      cb(false, lib_error.new("network_error", "gemini: " .. tostring(data), data))
+      cb(false, util.fetch_error("gemini", data, obj, timeout_ms))
       return
     end
     if type(data) == "table" then
@@ -183,13 +210,16 @@ function M.ask(req, cb)
       provider = "gemini",
     })
   end)
+  if prepare_err then
+    cb(false, lib_error.new("invalid_request", "gemini: " .. prepare_err))
+  end
 end
 
 ---@param req Ai.Request
 ---@param handlers Ai.StreamHandlers
 ---@return vim.SystemObj|nil
 function M.stream(req, handlers)
-  local key = api_key()
+  local key = api_key(req)
   if not key then
     if handlers.on_error then
       handlers.on_error(
@@ -217,6 +247,15 @@ function M.stream(req, handlers)
     return nil
   end
 
+  local rejected = attachments.unsupported("gemini", M.capabilities, req.attachments)
+  if rejected then
+    if handlers.on_error then
+      handlers.on_error(rejected)
+    end
+    return nil
+  end
+
+  local timeout_ms = req.timeout_ms or 60000
   local text_parts = {}
   local finish_reason, usage
   -- See module doc: applied defensively by analogy with claude.lua/
@@ -227,12 +266,12 @@ function M.stream(req, handlers)
   local failed = false
 
   local url = API_BASE .. model .. ":streamGenerateContent?alt=sse"
-  return curl.fetch_stream(url, {
+  local process, prepare_err = transport.stream_json(url, {
     method = "POST",
     headers = { ["Content-Type"] = "application/json" },
     secret_headers = { ["x-goog-api-key"] = key },
     body = build_body(req),
-    timeout_ms = req.timeout_ms or 60000,
+    timeout_ms = timeout_ms,
   }, {
     on_chunk = function(line)
       local payload = sse.data_payload(line)
@@ -295,7 +334,7 @@ function M.stream(req, handlers)
       end
       if obj.code ~= 0 then
         if handlers.on_error then
-          handlers.on_error(util.curl_exit_error("gemini", obj))
+          handlers.on_error(util.curl_exit_error("gemini", obj, timeout_ms))
         end
         return
       end
@@ -344,6 +383,13 @@ function M.stream(req, handlers)
       end
     end,
   })
+
+  -- See claude.lua: a body that never reached curl fires none of the
+  -- handlers above, so it has to be reported here.
+  if prepare_err and handlers.on_error then
+    handlers.on_error(lib_error.new("invalid_request", "gemini: " .. prepare_err))
+  end
+  return process
 end
 
 return M
