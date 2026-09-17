@@ -150,10 +150,18 @@ function M.ask(req, cb)
       cb(false, util.fetch_error("claude", data, obj, timeout_ms))
       return
     end
-    if type(data) == "table" then
-      data = util.denil(data)
+    -- A 200 whose body decodes to something that is not an object (a bare
+    -- number, string or `null`) reaches this point as `ok`. Reading fields
+    -- off it raises inside curl's own callback, which means `cb` is never
+    -- called at all and the caller waits forever -- so it is reported as a
+    -- response we could not understand, the way ollama.lua/loomai.lua
+    -- already do.
+    if type(data) ~= "table" then
+      cb(false, lib_error.new("invalid_response", "claude: invalid response body", data))
+      return
     end
-    if type(data) == "table" and data.type == "error" then
+    data = util.denil(data)
+    if data.type == "error" then
       cb(
         false,
         lib_error.new(
@@ -167,7 +175,7 @@ function M.ask(req, cb)
     cb(true, to_response(data))
   end)
   if prepare_err then
-    cb(false, lib_error.new("invalid_request", "claude: " .. prepare_err))
+    cb(false, lib_error.new("network_error", "claude: " .. prepare_err))
   end
 end
 
@@ -302,7 +310,7 @@ function M.stream(req, handlers)
   -- A body that could not be written out never reached curl, so no handler
   -- above will ever fire for it -- report it here or it is lost silently.
   if prepare_err and handlers.on_error then
-    handlers.on_error(lib_error.new("invalid_request", "claude: " .. prepare_err))
+    handlers.on_error(lib_error.new("network_error", "claude: " .. prepare_err))
   end
   return process
 end

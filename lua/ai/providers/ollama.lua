@@ -125,7 +125,7 @@ function M.ask(req, cb)
     })
   end)
   if prepare_err then
-    cb(false, lib_error.new("invalid_request", "ollama: " .. prepare_err))
+    cb(false, lib_error.new("network_error", "ollama: " .. prepare_err))
   end
 end
 
@@ -206,7 +206,7 @@ function M.stream(req, handlers)
   -- See claude.lua: a body that never reached curl fires none of the
   -- handlers above, so it has to be reported here.
   if prepare_err and handlers.on_error then
-    handlers.on_error(lib_error.new("invalid_request", "ollama: " .. prepare_err))
+    handlers.on_error(lib_error.new("network_error", "ollama: " .. prepare_err))
   end
   return process
 end

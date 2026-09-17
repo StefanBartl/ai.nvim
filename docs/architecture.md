@@ -57,11 +57,17 @@ about *this* plugin's request shape rather than about HTTP:
   ceiling before attachments too -- a large enough `context = { cwd = true }`
   sweep could already reach it.
 - **A timeout that says so.** `opts.timeout_ms` reaches `vim.system`, which
-  on expiry kills curl; the resulting exit code is platform-dependent and
-  indistinguishable from a crash. Passing curl its own `--max-time` as well
-  makes curl end the request first and exit 28, which
-  `ai.providers.util.curl_exit_error` turns into the `"timeout"` error kind.
-  The `vim.system` timeout stays as the outer backstop.
+  on expiry kills curl and sets the exit code to `124` — a number curl never
+  produces and that explains nothing. Passing curl its own `--max-time`
+  makes curl end the request itself and exit 28, with a real diagnostic
+  (`Operation timed out after 2002 milliseconds with 0 bytes received`).
+
+  For that to happen curl has to expire *first*, and it does not by default:
+  `vim.system`'s timer starts at spawn, curl's a moment later, so giving both
+  the same number means the backstop always wins and exit 28 is unreachable.
+  `transport.lua` therefore hands `vim.system` a `TIMEOUT_GRACE_MS` margin on
+  top. `ai.providers.util.curl_exit_error` maps both 28 and 124 to the
+  `"timeout"` kind, so the backstop firing is still reported honestly.
 
 ## Provider registry
 

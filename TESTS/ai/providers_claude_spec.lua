@@ -329,4 +329,26 @@ describe("ai.providers.claude", function()
       assert.is_true(claude.available({ prompt = "hi", api_key = "from-caller" }))
     end)
   end)
+  describe("a 200 that is not an object", function()
+    it("fails with invalid_response rather than raising", function()
+      -- Raising here would happen inside curl's own callback, so `cb` would
+      -- never be called and a caller like pdfport.nvim would wait forever
+      -- instead of showing an error.
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function(_, _, cb)
+          cb(true, 42, { code = 0 })
+        end,
+      }
+      local claude = require("ai.providers.claude")
+      local ok, err
+      local raised = not pcall(function()
+        claude.ask({ prompt = "hi" }, function(a, b)
+          ok, err = a, b
+        end)
+      end)
+      assert.is_false(raised)
+      assert.is_false(ok)
+      assert.are.equal("invalid_response", err.kind)
+    end)
+  end)
 end)
