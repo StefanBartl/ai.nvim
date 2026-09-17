@@ -119,7 +119,7 @@ end
 local function resolve(req)
   local cfg = M.config()
   local requested = req.provider or cfg.provider or "auto"
-  local provider, err = providers.resolve(requested, cfg.provider_order)
+  local provider, err = providers.resolve(requested, cfg.provider_order, req)
   if not provider then
     return nil, err, req
   end

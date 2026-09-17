@@ -14,12 +14,18 @@ describe("ai.providers.claude", function()
     original_key = vim.env.ANTHROPIC_API_KEY
     vim.env.ANTHROPIC_API_KEY = "test-key"
     package.loaded["ai.providers.claude"] = nil
+    -- `ai.providers.transport` sits between this provider and
+    -- `lib.nvim.net.curl` and captures `curl` as its own require-time
+    -- upvalue too, so it has to be dropped alongside the provider --
+    -- otherwise the second test in this file runs against the first's stub.
+    package.loaded["ai.providers.transport"] = nil
   end)
 
   after_each(function()
     vim.env.ANTHROPIC_API_KEY = original_key
     package.loaded["lib.nvim.net.curl"] = nil
     package.loaded["ai.providers.claude"] = nil
+    package.loaded["ai.providers.transport"] = nil
   end)
 
   describe("ask", function()
@@ -167,6 +173,160 @@ describe("ai.providers.claude", function()
       })
       assert.are.equal("network_error", err.kind)
       assert.is_true(err.message:find("curl exited 7", 1, true) ~= nil)
+    end)
+  end)
+  describe("attachments", function()
+    local page = { kind = "image", media_type = "image/png", data = "AAA" }
+    local pdf = { kind = "document", media_type = "application/pdf", data = "BBB" }
+
+    ---Decode the JSON body the provider handed to curl.
+    ---@param req table
+    ---@return table
+    local function body_for(req)
+      local seen
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function(_, opts, cb)
+          seen = opts.body
+          cb(true, { content = {} }, { code = 0 })
+        end,
+      }
+      local claude = require("ai.providers.claude")
+      claude.ask(req, function() end)
+      return vim.json.decode(seen)
+    end
+
+    it("keeps content a plain string when there is nothing but the prompt", function()
+      local body = body_for({ prompt = "hi" })
+      assert.are.equal("hi", body.messages[1].content)
+    end)
+
+    it("sends an image as a base64 source block before the prompt", function()
+      local body = body_for({ prompt = "read this", attachments = { page } })
+      local content = body.messages[1].content
+      assert.are.equal(2, #content)
+      assert.are.equal("image", content[1].type)
+      assert.are.equal("base64", content[1].source.type)
+      assert.are.equal("image/png", content[1].source.media_type)
+      assert.are.equal("AAA", content[1].source.data)
+      -- Prompt last: Anthropic documents that ordering for document/image
+      -- questions, and pdfport.nvim's own backend already sent it that way.
+      assert.are.equal("text", content[2].type)
+      assert.are.equal("read this", content[2].text)
+    end)
+
+    it("sends a PDF as a document block, not a rasterized image", function()
+      local body = body_for({ prompt = "extract", attachments = { pdf } })
+      local content = body.messages[1].content
+      assert.are.equal("document", content[1].type)
+      assert.are.equal("application/pdf", content[1].source.media_type)
+    end)
+
+    it("keeps several attachments in the order they were given", function()
+      local body = body_for({ prompt = "p", attachments = { pdf, page } })
+      local content = body.messages[1].content
+      assert.are.equal("document", content[1].type)
+      assert.are.equal("image", content[2].type)
+      assert.are.equal("text", content[3].type)
+    end)
+
+    it("fails a malformed attachment without calling curl", function()
+      local called = false
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function()
+          called = true
+        end,
+      }
+      local claude = require("ai.providers.claude")
+      local ok, err
+      claude.ask({ prompt = "hi", attachments = { { kind = "image" } } }, function(a, b)
+        ok, err = a, b
+      end)
+      assert.is_false(ok)
+      assert.is_false(called)
+      assert.are.equal("invalid_request", err.kind)
+    end)
+  end)
+
+  describe("api_key override", function()
+    it("uses req.api_key in place of the environment variable", function()
+      local seen
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function(_, opts, cb)
+          seen = opts.secret_headers["x-api-key"]
+          cb(true, { content = {} }, { code = 0 })
+        end,
+      }
+      local claude = require("ai.providers.claude")
+      claude.ask({ prompt = "hi", api_key = "from-caller" }, function() end)
+      assert.are.equal("from-caller", seen)
+    end)
+
+    it("lets a caller work without ANTHROPIC_API_KEY set at all", function()
+      -- The case pdfport.nvim's own `claude_api_key` config option needs:
+      -- it must not have to write the key into the user's environment.
+      vim.env.ANTHROPIC_API_KEY = nil
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function(_, _, cb)
+          cb(true, { content = { { type = "text", text = "ok" } } }, { code = 0 })
+        end,
+      }
+      local claude = require("ai.providers.claude")
+      local ok, res
+      claude.ask({ prompt = "hi", api_key = "from-caller" }, function(a, b)
+        ok, res = a, b
+      end)
+      assert.is_true(ok)
+      assert.are.equal("ok", res.text)
+    end)
+  end)
+
+  describe("timeouts", function()
+    it("reports curl's own exit 28 as a timeout, not a generic network error", function()
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function(_, _, cb)
+          cb(false, "curl exited 28", { code = 28, stderr = "" })
+        end,
+      }
+      local claude = require("ai.providers.claude")
+      local ok, err
+      claude.ask({ prompt = "hi", timeout_ms = 5000 }, function(a, b)
+        ok, err = a, b
+      end)
+      assert.is_false(ok)
+      assert.are.equal("timeout", err.kind)
+      assert.is_true(err.message:find("5000 ms", 1, true) ~= nil)
+    end)
+
+    it("still reports any other non-zero exit as a network error", function()
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function(_, _, cb)
+          cb(false, "connection refused", { code = 7, stderr = "connection refused" })
+        end,
+      }
+      local claude = require("ai.providers.claude")
+      local ok, err
+      claude.ask({ prompt = "hi" }, function(a, b)
+        ok, err = a, b
+      end)
+      assert.is_false(ok)
+      assert.are.equal("network_error", err.kind)
+    end)
+  end)
+  describe("available", function()
+    it("is false with neither an env var nor a request key", function()
+      vim.env.ANTHROPIC_API_KEY = nil
+      local claude = require("ai.providers.claude")
+      assert.is_false(claude.available())
+    end)
+
+    it("counts a request's own api_key towards availability", function()
+      -- Otherwise `ai.providers.resolve` rejects the provider before
+      -- `ask()` ever sees the key, and `req.api_key` is unreachable for the
+      -- caller it exists for -- an embedding plugin holding the key in its
+      -- own config rather than in the environment.
+      vim.env.ANTHROPIC_API_KEY = nil
+      local claude = require("ai.providers.claude")
+      assert.is_true(claude.available({ prompt = "hi", api_key = "from-caller" }))
     end)
   end)
 end)

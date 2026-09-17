@@ -7,6 +7,13 @@ local lib_error = require("lib.lua.error")
 
 local M = {}
 
+---curl's `CURLE_OPERATION_TIMEDOUT`. `ai.providers.transport` passes curl its
+---own `--max-time` precisely so that a request that runs long ends *here*,
+---with a documented, platform-independent exit code, rather than as a
+---`vim.system`-killed process whose code says nothing about why it died.
+---@type integer
+M.CURL_EXIT_TIMEOUT = 28
+
 ---@type table<string, boolean>
 local executable_cache = {}
 
@@ -54,13 +61,38 @@ end
 ---itself).
 ---@param id string provider id, e.g. "claude"
 ---@param obj vim.SystemCompleted
+---@param timeout_ms? integer the request's own timeout, for the message when `obj.code` is `CURL_EXIT_TIMEOUT`
 ---@return LibErrorValue
-function M.curl_exit_error(id, obj)
+function M.curl_exit_error(id, obj, timeout_ms)
+  if obj.code == M.CURL_EXIT_TIMEOUT then
+    return lib_error.new(
+      "timeout",
+      timeout_ms and string.format("%s: request timed out after %d ms", id, timeout_ms)
+        or (id .. ": request timed out"),
+      obj
+    )
+  end
   return lib_error.new(
     "network_error",
     string.format("%s: curl exited %d: %s", id, obj.code, obj.stderr or ""),
     obj
   )
+end
+
+---Build the error for a failed `ai.providers.transport.post_json`. Same
+---timeout/network split as `curl_exit_error`, but for the buffered tier,
+---where `lib.nvim.net.curl` has already reduced the failure to a message
+---string and the exit code survives only on the raw process object.
+---@param id string provider id, e.g. "claude"
+---@param err any `fetch_json`'s error value (a string in practice)
+---@param obj vim.SystemCompleted|nil
+---@param timeout_ms? integer
+---@return LibErrorValue
+function M.fetch_error(id, err, obj, timeout_ms)
+  if type(obj) == "table" and obj.code == M.CURL_EXIT_TIMEOUT then
+    return M.curl_exit_error(id, obj, timeout_ms)
+  end
+  return lib_error.new("network_error", id .. ": " .. tostring(err), err)
 end
 
 ---Recursively replace `vim.NIL` with Lua `nil` in a decoded JSON value, in

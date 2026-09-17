@@ -3,12 +3,21 @@
 --- same line shape as `claude.lua` but a different event schema -- OpenAI's
 --- delta lives at `choices[1].delta.content`, with no separate event-type
 --- field to branch on).
+---
+--- Attachments: an image becomes an `image_url` content part whose `url` is
+--- a `data:` URI rather than an actual URL -- the same field carries both,
+--- which is why `Ai.Attachment.media_type` has to be spliced back into the
+--- string here instead of travelling in a field of its own. Documents are
+--- refused: Chat Completions grew a separate `file` part for them later and
+--- with different constraints, and claiming support that has never been
+--- exercised against the live API would be worse than saying no.
 
 require("ai.@types")
 
-local curl = require("lib.nvim.net.curl")
+local attachments = require("ai.attachments")
 local lib_error = require("lib.lua.error")
 local sse = require("ai.providers.sse")
+local transport = require("ai.providers.transport")
 local util = require("ai.providers.util")
 
 --- Declared as a class (not `---@type Ai.Provider`) so the `function M.*`
@@ -18,20 +27,46 @@ local util = require("ai.providers.util")
 local M = {
   id = "openai",
   name = "OpenAI Chat Completions",
-  capabilities = { streaming = true, vision = false },
+  capabilities = { streaming = true, vision = true, documents = false },
 }
 
 local API_URL = "https://api.openai.com/v1/chat/completions"
 local DEFAULT_MODEL = "gpt-4o"
 
+---@param req? Ai.Request
 ---@return string|nil
-local function api_key()
+local function api_key(req)
+  if req and req.api_key then
+    return req.api_key
+  end
   return util.env_value("OPENAI_API_KEY")
 end
 
+---@param req? Ai.Request
 ---@return boolean
-function M.available()
-  return util.executable("curl") and api_key() ~= nil
+function M.available(req)
+  return util.executable("curl") and api_key(req) ~= nil
+end
+
+---@internal
+---See `claude.lua`'s `user_content`: a plain string without attachments, a
+---content-part array with them, attachments before the prompt.
+---@param req Ai.Request
+---@return string|table content
+local function user_content(req)
+  local list = req.attachments
+  if not list or #list == 0 then
+    return req.prompt
+  end
+  local content = {}
+  for _, att in ipairs(list) do
+    content[#content + 1] = {
+      type = "image_url",
+      image_url = { url = string.format("data:%s;base64,%s", att.media_type, att.data) },
+    }
+  end
+  content[#content + 1] = { type = "text", text = req.prompt }
+  return content
 end
 
 ---@internal
@@ -43,7 +78,7 @@ local function build_body(req, stream)
   if req.system then
     messages[#messages + 1] = { role = "system", content = req.system }
   end
-  messages[#messages + 1] = { role = "user", content = req.prompt }
+  messages[#messages + 1] = { role = "user", content = user_content(req) }
   return vim.json.encode({
     model = req.model or DEFAULT_MODEL,
     messages = messages,
@@ -54,7 +89,7 @@ end
 ---@param req Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
-  local key = api_key()
+  local key = api_key(req)
   if not key then
     cb(
       false,
@@ -67,21 +102,28 @@ function M.ask(req, cb)
     return
   end
 
+  local rejected = attachments.unsupported("openai", M.capabilities, req.attachments)
+  if rejected then
+    cb(false, rejected)
+    return
+  end
+
   -- The Bearer token still goes through fetch_json's existing `-K` stdin
   -- path (bearer_token, not secret_headers) -- that generic mechanism
   -- already covers "Authorization: Bearer ...", which is exactly what this
   -- API expects. secret_headers exists for names that mechanism cannot
   -- recognize (see claude.lua's `x-api-key`), not as a second way to spell
   -- the same thing.
-  curl.fetch_json(API_URL, {
+  local timeout_ms = req.timeout_ms or 60000
+  local prepare_err = transport.post_json(API_URL, {
     method = "POST",
     headers = { ["Content-Type"] = "application/json" },
     bearer_token = key,
     body = build_body(req, false),
-    timeout_ms = req.timeout_ms or 60000,
-  }, function(ok, data)
+    timeout_ms = timeout_ms,
+  }, function(ok, data, obj)
     if not ok then
-      cb(false, lib_error.new("network_error", "openai: " .. tostring(data), data))
+      cb(false, util.fetch_error("openai", data, obj, timeout_ms))
       return
     end
     if type(data) == "table" then
@@ -102,13 +144,16 @@ function M.ask(req, cb)
       provider = "openai",
     })
   end)
+  if prepare_err then
+    cb(false, lib_error.new("invalid_request", "openai: " .. prepare_err))
+  end
 end
 
 ---@param req Ai.Request
 ---@param handlers Ai.StreamHandlers
 ---@return vim.SystemObj|nil
 function M.stream(req, handlers)
-  local key = api_key()
+  local key = api_key(req)
   if not key then
     if handlers.on_error then
       handlers.on_error(
@@ -122,6 +167,15 @@ function M.stream(req, handlers)
     return nil
   end
 
+  local rejected = attachments.unsupported("openai", M.capabilities, req.attachments)
+  if rejected then
+    if handlers.on_error then
+      handlers.on_error(rejected)
+    end
+    return nil
+  end
+
+  local timeout_ms = req.timeout_ms or 60000
   local text_parts = {}
   local finish_reason
   -- Lines that are not `data: ...` at all -- see ai.providers.sse's module
@@ -129,12 +183,12 @@ function M.stream(req, handlers)
   -- not an SSE event, and curl still exits 0; verified against the live API).
   local non_data_lines = {}
 
-  return curl.fetch_stream(API_URL, {
+  local process, prepare_err = transport.stream_json(API_URL, {
     method = "POST",
     headers = { ["Content-Type"] = "application/json" },
     bearer_token = key,
     body = build_body(req, true),
-    timeout_ms = req.timeout_ms or 60000,
+    timeout_ms = timeout_ms,
   }, {
     on_chunk = function(line)
       local payload = sse.data_payload(line)
@@ -179,7 +233,7 @@ function M.stream(req, handlers)
     on_done = function(obj)
       if obj.code ~= 0 then
         if handlers.on_error then
-          handlers.on_error(util.curl_exit_error("openai", obj))
+          handlers.on_error(util.curl_exit_error("openai", obj, timeout_ms))
         end
         return
       end
@@ -218,6 +272,13 @@ function M.stream(req, handlers)
       end
     end,
   })
+
+  -- See claude.lua: a body that never reached curl fires none of the
+  -- handlers above, so it has to be reported here.
+  if prepare_err and handlers.on_error then
+    handlers.on_error(lib_error.new("invalid_request", "openai: " .. prepare_err))
+  end
+  return process
 end
 
 return M

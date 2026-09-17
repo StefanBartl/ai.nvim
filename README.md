@@ -14,10 +14,11 @@
                                                .nvim
 ```
 
-> Pairs well with [pdfport.nvim](https://github.com/StefanBartl/pdfport.nvim) --
-> its `claude`/`ollama` extraction backends are the two real bugs (broken JSON
-> escaping, an API key visible in the process list) that this plugin exists to
-> fix at the transport layer, once and for every future caller.
+> Pairs well with [pdfport.nvim](https://github.com/StefanBartl/pdfport.nvim):
+> its `claude`/`ollama` extraction backends send their PDFs and page images
+> through this plugin's `ask()`, rather than carrying a second hand-written
+> curl/provider path of their own. That migration is what
+> [attachments](docs/attachments.md) were built for.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Neovim](https://img.shields.io/badge/Neovim-0.10%2B-57A143?logo=neovim&logoColor=white)](https://neovim.io)
@@ -54,6 +55,7 @@ each page answers.
 
 - [All options](docs/configuration.md) -- every `setup()` option and its default.
 - [Commands](docs/commands.md) / [Bindings cheatsheet](docs/BINDINGS.md)
+- [Attachments](docs/attachments.md) -- sending an image or a PDF with a prompt.
 
 ### The Rest
 

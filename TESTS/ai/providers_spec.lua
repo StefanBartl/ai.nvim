@@ -169,4 +169,69 @@ describe("ai.providers", function()
     assert.is_true(lib_error.is(err))
     assert.are.equal("provider_resolution", err.kind)
   end)
+  describe("bootstrapping the built-ins", function()
+    it("registers them on the first resolve, without setup() having run", function()
+      -- `load_builtin()` normally runs from `ai.setup()`. ai.nvim is also a
+      -- library another plugin calls into -- pdfport.nvim's claude/ollama
+      -- extraction backends go through `require("ai").ask()` -- and that
+      -- plugin cannot require its users to have called `ai.setup()` first.
+      local providers = require("ai.providers")
+      assert.are.same({}, providers.ids())
+
+      local _, err = providers.resolve("claude", {})
+      -- Whether claude is *available* depends on the machine; what matters
+      -- is that it is no longer an unknown id.
+      if err then
+        assert.is_true(err.message:find("not available", 1, true) ~= nil)
+        assert.is_true(err.message:find("unknown provider", 1, true) == nil)
+      end
+      assert.is_not_nil(providers.get("claude"))
+      assert.is_not_nil(providers.get("ollama"))
+    end)
+
+    it("does not re-register once a custom provider is present", function()
+      -- An empty registry is the only signal "setup() never ran"; a registry
+      -- holding a caller's own provider must be left exactly as it is.
+      local providers = require("ai.providers")
+      providers.register({
+        id = "fake",
+        available = function()
+          return true
+        end,
+      })
+      providers.resolve("fake", {})
+      assert.are.same({ "fake" }, providers.ids())
+    end)
+  end)
+  it("passes the request being resolved to each candidate's available()", function()
+    -- `Ai.Provider.available` takes the request so a provider whose
+    -- availability depends on a credential can see `req.api_key`, not only
+    -- its own env var.
+    local providers = require("ai.providers")
+    local seen
+    providers.register({
+      id = "fake",
+      available = function(req)
+        seen = req
+        return true
+      end,
+    })
+    local req = { prompt = "hi", api_key = "k" }
+    providers.resolve("fake", {}, req)
+    assert.are.equal(req, seen)
+  end)
+
+  it("still works for a provider whose available() ignores the argument", function()
+    -- Every pre-existing implementation is `function() ... end`; passing an
+    -- argument to it must stay harmless.
+    local providers = require("ai.providers")
+    providers.register({
+      id = "fake",
+      available = function()
+        return true
+      end,
+    })
+    local p = providers.resolve("fake", {}, { prompt = "hi" })
+    assert.are.equal("fake", p.id)
+  end)
 end)
