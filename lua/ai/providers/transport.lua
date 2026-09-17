@@ -15,14 +15,21 @@
 --- `context = { cwd = true }` sweep could already reach the same ceiling.
 ---
 --- **2. A timeout that says so.** `opts.timeout_ms` reaches `vim.system`,
---- which on expiry kills curl -- and a killed process reports a
---- platform-dependent exit code indistinguishable from a crash, so the
---- caller learns "curl exited 143", not "this took too long". Passing curl
---- its own `--max-time` as well makes curl end the request first and exit
---- **28**, a documented, cross-platform "operation timed out"; the
---- `vim.system` timeout stays as the outer backstop for a curl that hangs
---- without honouring it. `ai.providers.util.curl_exit_error` turns that 28
---- into the `"timeout"` error kind.
+--- which on expiry kills curl and sets the exit code to `124` (documented in
+--- `:help vim.system()`) -- so the caller learns "curl exited 124", a number
+--- curl itself never produces and that says nothing about what went wrong.
+--- Passing curl its own `--max-time` makes curl end the request itself and
+--- exit **28**, the documented, cross-platform "operation timed out", with
+--- its own diagnostics on stderr.
+---
+--- For curl to get there it has to expire *first*, which is what
+--- `TIMEOUT_GRACE_MS` is for: `vim.system`'s timer starts at spawn while
+--- curl's starts a moment later, so handing both the same number means the
+--- backstop always wins the race and exit 28 is unreachable. The grace
+--- margin keeps `vim.system` what it is meant to be -- the backstop for a
+--- curl that ignores its own limit. `ai.providers.util.curl_exit_error`
+--- maps both codes to the `"timeout"` error kind, so the backstop firing is
+--- still reported honestly rather than as a mystery exit code.
 
 local curl = require("lib.nvim.net.curl")
 
@@ -36,6 +43,16 @@ local uv = vim.uv or vim.loop
 ---method, every `-H` header and curl's own flags share it.
 ---@type integer
 M.MAX_INLINE_BODY_BYTES = 8192
+
+---How much longer than curl's own `--max-time` the `vim.system` backstop is
+---allowed to run. It has to cover two things: `max_time_seconds` rounding a
+---timeout *up* to the next whole second (under 1000 ms), and the process
+---start-up between `vim.system` starting its timer and curl starting its
+---own. Two seconds clears both comfortably -- this is the difference between
+---two timeouts of the same request, not a timeout extension anyone waits out
+---in practice.
+---@type integer
+local TIMEOUT_GRACE_MS = 2000
 
 ---@internal
 ---Write `json` to a fresh temp file, created 0600.
@@ -51,7 +68,13 @@ M.MAX_INLINE_BODY_BYTES = 8192
 ---@return string|nil err
 local function write_body_file(json)
   local path = vim.fn.tempname() .. ".json"
-  local fd, open_err = uv.fs_open(path, "w", 384) -- 0600
+  -- "wx", not "w": O_EXCL refuses to open anything that already exists at
+  -- this path, so a pre-planted file or symlink cannot be followed and
+  -- written through. `vim.fn.tempname()` is unpredictable and its directory
+  -- is already private, which makes this belt-and-braces rather than a fix
+  -- -- but the whole point of the file is that the body is the user's
+  -- document, so the cheap guarantee is worth having.
+  local fd, open_err = uv.fs_open(path, "wx", 384) -- 0600
   if not fd then
     return nil, "cannot create request body file: " .. tostring(open_err)
   end
@@ -82,7 +105,9 @@ end
 local function prepare(opts)
   local timeout_ms = opts.timeout_ms or 60000
   local prepared = vim.tbl_extend("force", {}, opts)
-  prepared.timeout_ms = timeout_ms
+  -- See TIMEOUT_GRACE_MS: curl's --max-time below is the request's real
+  -- deadline, and this one only catches a curl that blows through it.
+  prepared.timeout_ms = timeout_ms + TIMEOUT_GRACE_MS
 
   local raw_args = vim.list_extend({}, opts.raw_args or {})
   raw_args[#raw_args + 1] = "--max-time"
@@ -130,10 +155,20 @@ function M.post_json(url, opts, cb)
   if not prepared then
     return err
   end
-  curl.fetch_json(url, prepared, function(ok, data, obj)
+  -- `vim.system` *raises* when the binary cannot be spawned (ENOENT), and
+  -- `util.executable` deliberately caches a successful probe -- so a curl
+  -- that disappears mid-session passes `available()` and then throws here.
+  -- Unguarded, that error escapes into the caller's stack with `cb` never
+  -- called: an extraction that waits forever rather than failing. It also
+  -- strands the body temp file, since nothing would run `cleanup`.
+  local spawned, spawn_err = pcall(curl.fetch_json, url, prepared, function(ok, data, obj)
     cleanup()
     cb(ok, data, obj)
   end)
+  if not spawned then
+    cleanup()
+    return "could not start curl: " .. tostring(spawn_err)
+  end
   return nil
 end
 
@@ -149,7 +184,8 @@ function M.stream_json(url, opts, handlers)
   if not prepared then
     return nil, err
   end
-  return curl.fetch_stream(url, prepared, {
+  -- Same spawn-failure guard as `post_json`; see its comment.
+  local spawned, process = pcall(curl.fetch_stream, url, prepared, {
     on_chunk = handlers.on_chunk,
     on_done = function(obj)
       cleanup()
@@ -163,8 +199,12 @@ function M.stream_json(url, opts, handlers)
         handlers.on_error(stream_err)
       end
     end,
-  }),
-    nil
+  })
+  if not spawned then
+    cleanup()
+    return nil, "could not start curl: " .. tostring(process)
+  end
+  return process, nil
 end
 
 return M

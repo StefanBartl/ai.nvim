@@ -9,10 +9,18 @@ local M = {}
 
 ---curl's `CURLE_OPERATION_TIMEDOUT`. `ai.providers.transport` passes curl its
 ---own `--max-time` precisely so that a request that runs long ends *here*,
----with a documented, platform-independent exit code, rather than as a
----`vim.system`-killed process whose code says nothing about why it died.
+---with a documented, platform-independent exit code.
 ---@type integer
 M.CURL_EXIT_TIMEOUT = 28
+
+---What `vim.system` sets the exit code to when *its* timeout expires and it
+---kills the process (documented in `:help vim.system()`). That is the outer
+---backstop behind curl's own `--max-time`, and it should normally never
+---fire -- but when it does, the request still timed out, and saying "curl
+---exited 124" instead would be doubly unhelpful: curl's own exit codes stop
+---well below 124, so the number cannot even be looked up in curl's manual.
+---@type integer
+M.SYSTEM_EXIT_TIMEOUT = 124
 
 ---@type table<string, boolean>
 local executable_cache = {}
@@ -64,7 +72,7 @@ end
 ---@param timeout_ms? integer the request's own timeout, for the message when `obj.code` is `CURL_EXIT_TIMEOUT`
 ---@return LibErrorValue
 function M.curl_exit_error(id, obj, timeout_ms)
-  if obj.code == M.CURL_EXIT_TIMEOUT then
+  if obj.code == M.CURL_EXIT_TIMEOUT or obj.code == M.SYSTEM_EXIT_TIMEOUT then
     return lib_error.new(
       "timeout",
       timeout_ms and string.format("%s: request timed out after %d ms", id, timeout_ms)
@@ -89,7 +97,8 @@ end
 ---@param timeout_ms? integer
 ---@return LibErrorValue
 function M.fetch_error(id, err, obj, timeout_ms)
-  if type(obj) == "table" and obj.code == M.CURL_EXIT_TIMEOUT then
+  local code = type(obj) == "table" and obj.code or nil
+  if code == M.CURL_EXIT_TIMEOUT or code == M.SYSTEM_EXIT_TIMEOUT then
     return M.curl_exit_error(id, obj, timeout_ms)
   end
   return lib_error.new("network_error", id .. ": " .. tostring(err), err)

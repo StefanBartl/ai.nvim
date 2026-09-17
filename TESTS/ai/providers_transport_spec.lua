@@ -169,7 +169,9 @@ describe("ai.providers.transport", function()
       local transport = require("ai.providers.transport")
       transport.post_json("https://example.test", { body = "{}" }, function() end)
       assert.are.equal("60", captured.opts.raw_args[2])
-      assert.are.equal(60000, captured.opts.timeout_ms)
+      -- The backstop is deliberately longer than the 60s the caller asked
+      -- for -- see "the two timeouts" below for why.
+      assert.is_true(captured.opts.timeout_ms > 60000)
     end)
 
     it("keeps raw_args a caller already set", function()
@@ -182,6 +184,99 @@ describe("ai.providers.transport", function()
       )
       assert.are.equal("--compressed", captured.opts.raw_args[1])
       assert.are.equal("--max-time", captured.opts.raw_args[2])
+    end)
+  end)
+
+  describe("the two timeouts", function()
+    it("gives vim.system a longer deadline than curl's own --max-time", function()
+      -- Both timers measure the same request, but vim.system's starts at
+      -- spawn and curl's only once curl is running. Handing them the same
+      -- number means vim.system always kills curl first (exit 124) and
+      -- curl's own exit 28 -- the one that actually says "timed out" -- is
+      -- unreachable. Verified against a black-hole server before this guard
+      -- existed: 2000 ms in, 2000 ms out, code 124 every time.
+      stub_curl()
+      local transport = require("ai.providers.transport")
+      transport.post_json(
+        "https://example.test",
+        { body = "{}", timeout_ms = 5000 },
+        function() end
+      )
+      local args = captured.opts.raw_args
+      assert.are.equal("5", args[2])
+      assert.is_true(
+        captured.opts.timeout_ms > 5000,
+        "vim.system's backstop must outlast curl's --max-time, got "
+          .. tostring(captured.opts.timeout_ms)
+      )
+    end)
+
+    it("keeps that margin wider than --max-time's rounding up", function()
+      -- 1500 ms rounds up to a 2 s --max-time; the backstop has to clear
+      -- 2000 ms, not 1500 ms, or the rounding alone loses the race.
+      stub_curl()
+      local transport = require("ai.providers.transport")
+      transport.post_json(
+        "https://example.test",
+        { body = "{}", timeout_ms = 1500 },
+        function() end
+      )
+      assert.are.equal("2", captured.opts.raw_args[2])
+      assert.is_true(captured.opts.timeout_ms > 2000)
+    end)
+  end)
+
+  describe("a curl that cannot be started", function()
+    it("reports it instead of letting the error escape", function()
+      -- vim.system raises on ENOENT, and util.executable caches a successful
+      -- probe -- so a curl removed mid-session gets this far. Unguarded the
+      -- caller's callback never fires at all.
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function()
+          error("ENOENT: no such file or directory (cmd): 'curl'")
+        end,
+      }
+      local transport = require("ai.providers.transport")
+      local fired = false
+      local err
+      local ok = pcall(function()
+        err = transport.post_json("https://example.test", { body = "{}" }, function()
+          fired = true
+        end)
+      end)
+      assert.is_true(ok, "post_json must not propagate the spawn failure")
+      assert.is_false(fired)
+      assert.is_true(err:find("could not start curl", 1, true) ~= nil)
+    end)
+
+    it("removes the body temp file on that path too", function()
+      local path
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function(_, opts)
+          path = body_file_from(opts)
+          error("spawn failed")
+        end,
+      }
+      local transport = require("ai.providers.transport")
+      transport.post_json("https://example.test", { body = oversized_body() }, function() end)
+      assert.is_not_nil(path)
+      assert.are.equal(0, vim.fn.filereadable(path))
+    end)
+
+    it("does the same for a stream", function()
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_stream = function()
+          error("spawn failed")
+        end,
+      }
+      local transport = require("ai.providers.transport")
+      local process, err
+      local ok = pcall(function()
+        process, err = transport.stream_json("https://example.test", { body = "{}" }, {})
+      end)
+      assert.is_true(ok)
+      assert.is_nil(process)
+      assert.is_true(err:find("could not start curl", 1, true) ~= nil)
     end)
   end)
 

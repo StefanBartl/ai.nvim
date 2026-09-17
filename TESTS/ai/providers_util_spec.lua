@@ -129,6 +129,22 @@ describe("ai.providers.util", function()
       assert.are.equal(obj, err.data)
     end)
 
+    it("reports curl's own exit 28 as a timeout", function()
+      local err = util.curl_exit_error("claude", { code = 28, stderr = "" }, 5000)
+      assert.are.equal("timeout", err.kind)
+      assert.is_true(err.message:find("5000 ms", 1, true) ~= nil)
+    end)
+
+    it("reports vim.system's exit 124 as a timeout as well", function()
+      -- 124 is what vim.system sets when *its* timeout kills the process
+      -- (documented in :help vim.system()). It is the backstop behind
+      -- curl's --max-time and should rarely fire -- but curl's own exit
+      -- codes stop well below 124, so "curl exited 124" would be a number
+      -- nobody can look up.
+      local err = util.curl_exit_error("claude", { code = 124, signal = 15 }, 5000)
+      assert.are.equal("timeout", err.kind)
+    end)
+
     it("handles a missing stderr", function()
       local err = util.curl_exit_error("claude", { code = 7 })
       assert.are.equal("claude: curl exited 7: ", err.message)

@@ -96,10 +96,13 @@
 ---(a provider's own API key env var is unset; `err.data = {env_var}`),
 ---`"invalid_request"` (a client-side check rejected the request before it was
 ---sent, e.g. an unsafe model name, or an attachment this provider cannot
----carry), `"timeout"` (the request outlived its own `timeout_ms`; curl exited
----28, see `ai.providers.transport`), `"network_error"` (curl itself failed or
----exited non-zero for any *other* reason; `err.data` is the raw
----`vim.SystemCompleted`/curl error value where available), `"api_error"`
+---carry), `"timeout"` (the request outlived its own `timeout_ms` -- curl
+---exited 28, or the `vim.system` backstop behind it exited 124; see
+---`ai.providers.transport`), `"network_error"` (the request could not be sent
+---at all, or curl exited non-zero for any reason *other* than a timeout --
+---this covers a curl that could not be spawned and a request body that could
+---not be written out; `err.data` is the raw `vim.SystemCompleted`/curl error
+---value where available), `"api_error"`
 ---(the provider's API returned a
 ---structured error body; `err.data` is that body's own `error` field),
 ---`"invalid_response"` (a 200 response whose body could not be understood),
