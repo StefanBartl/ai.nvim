@@ -149,6 +149,11 @@ local function run_edit(system, prompt, range, apply)
     require("ai").ask({
       prompt = block .. "\n\nTask: " .. task,
       system = system,
+      -- Only the claude backend reads this today (Ai.Request's own doc),
+      -- but a rewrite/append/prepend answer is plausibly longer than a
+      -- short chat reply, and the plugin-wide default (4096) is sized for
+      -- the latter -- give edit requests more headroom before hitting it.
+      max_tokens = 8192,
     }, function(ok, res)
       progress:finish()
       if not ok then
@@ -159,6 +164,14 @@ local function run_edit(system, prompt, range, apply)
       if edit.buffer_changed(bufnr, changedtick) then
         notify.warn(
           "Buffer changed while waiting for a response -- discarded it rather than risk editing the wrong lines"
+        )
+        return
+      end
+      if edit.is_truncated(res.stop_reason) then
+        notify.warn(
+          "Response was cut off (stop_reason: "
+            .. tostring(res.stop_reason)
+            .. ") -- discarded rather than write incomplete code. Try a smaller selection."
         )
         return
       end

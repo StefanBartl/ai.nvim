@@ -12,10 +12,14 @@ local M = {}
 ---Resolve which lines an edit action targets. An explicit `range` (from a
 ---`:Ai` command's `-range`, or the Visual selection just left) wins; with no
 ---range, the target is the line under the cursor. Swaps a backwards range
----(`line2 < line1`) rather than passing it through -- a hand-typed `:10,5Ai
----rewrite` means "lines 5 through 10" to the person who typed it, and an
----unswapped reversed range would make `code_block` read zero lines (a
----silently empty prompt) and `apply` write to a nonsensical span.
+---(`line2 < line1`) rather than passing it through -- belt-and-suspenders,
+---not a fix for `:10,5Ai rewrite` specifically: Neovim's own command
+---dispatch already rejects/reorders a backwards `-range` before a route ever
+---runs, and Visual marks (`'<`/`'>`) are always buffer-ordered regardless of
+---drag direction, so neither of this module's two real callers can hand a
+---reversed pair in practice. `range` is still a public part of this
+---function's own contract (anything can call `rewrite_prompt(prompt, {line1
+---= 10, line2 = 5})` directly, bypassing both), and the swap costs nothing.
 ---@param range? {line1: integer, line2: integer}
 ---@param winid? integer Defaults to the current window
 ---@return integer line1
@@ -61,22 +65,59 @@ function M.code_block(bufnr, line1, line2)
   return "```" .. ft .. "\n" .. table.concat(lines, "\n") .. "\n```"
 end
 
----Parse a model's response into replacement/insertion lines: trims
----whitespace and strips a single markdown code fence a model added despite
----being told not to -- models routinely wrap anything code-shaped in one
----regardless of instructions (same defensive parse as
----`ai.completion.prompt.parse`).
+---Truncation-indicating `stop_reason`/`finish_reason` values across the five
+---built-in providers -- never normalized to one shared vocabulary elsewhere
+---in this codebase, so this is a best-effort superset: Anthropic/loomAI use
+---`"max_tokens"`, Gemini's (upper-cased) `finish_reason` is `"MAX_TOKENS"`,
+---OpenAI/Ollama use `"length"`. Case-folded before lookup.
+---@internal
+local TRUNCATED_STOP_REASONS = { max_tokens = true, length = true }
+
+---Whether a response's `stop_reason` indicates the model was cut off before
+---finishing, rather than stopping on its own -- e.g. a provider's
+---`max_tokens` cap hit mid-rewrite. A non-string (including `nil`, the
+---common case: not every provider sets one) is never truncated.
+---@param stop_reason string|nil
+---@return boolean
+function M.is_truncated(stop_reason)
+  if type(stop_reason) ~= "string" then
+    return false
+  end
+  return TRUNCATED_STOP_REASONS[stop_reason:lower()] == true
+end
+
+---Parse a model's response into replacement/insertion lines: normalizes
+---CRLF/CR to LF, trims surrounding whitespace, and extracts the first
+---fenced code block if the response has one -- models routinely wrap
+---anything code-shaped in a fence regardless of being told not to (same
+---defensive intent as `ai.completion.prompt.parse`, but not anchored to the
+---whole string the way that one is): searching for the first fence rather
+---than requiring the *entire* trimmed response to be exactly one fence means
+---a leading sentence of commentary or a second, unwanted fenced block after
+---the first doesn't defeat the strip. The one deliberate trade-off is
+---content that legitimately contains a literal "```" outside of a fence
+---(e.g. rewriting a markdown file) -- rare enough, and consistent with the
+---same limitation `ai.completion.prompt.parse` already accepts.
 ---@param text string|nil
 ---@return string[] lines empty when `text` is nil/blank
 function M.parse_lines(text)
   if type(text) ~= "string" then
     return {}
   end
-  local trimmed = text:match("^%s*(.-)%s*$")
+  -- `vim.trim`, not the classic `text:match("^%s*(.-)%s*$")` trim idiom:
+  -- that pattern is quadratic in the length of any whitespace run inside
+  -- the string (the lazy `(.-)` re-probes the greedy `%s*$` suffix at every
+  -- offset within the run, and a naive `gsub("%s+$", "")` has the same
+  -- problem since it isn't `^`-anchored and gets retried at every position)
+  -- -- `res.text` here is a full, unstreamed provider response with no
+  -- upper size bound from most of this codebase's providers. `vim.trim`'s
+  -- own source comments on exactly this and does it in two linear passes.
+  local normalized = text:gsub("\r\n", "\n"):gsub("\r", "\n")
+  local trimmed = vim.trim(normalized)
   if trimmed == "" then
     return {}
   end
-  local fenced = trimmed:match("^```[%w_+-]*\n(.-)\n?```$")
+  local fenced = trimmed:match("```[%w_+-]*\n(.-)\n?```")
   local body = fenced or trimmed
   return vim.split(body, "\n", { plain = true })
 end
