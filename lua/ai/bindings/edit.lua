@@ -11,17 +11,42 @@ local M = {}
 
 ---Resolve which lines an edit action targets. An explicit `range` (from a
 ---`:Ai` command's `-range`, or the Visual selection just left) wins; with no
----range, the target is the line under the cursor.
+---range, the target is the line under the cursor. Swaps a backwards range
+---(`line2 < line1`) rather than passing it through -- a hand-typed `:10,5Ai
+---rewrite` means "lines 5 through 10" to the person who typed it, and an
+---unswapped reversed range would make `code_block` read zero lines (a
+---silently empty prompt) and `apply` write to a nonsensical span.
 ---@param range? {line1: integer, line2: integer}
 ---@param winid? integer Defaults to the current window
 ---@return integer line1
 ---@return integer line2
 function M.resolve_range(range, winid)
   if range and range.line1 and range.line1 > 0 then
-    return range.line1, range.line2
+    local line1, line2 = range.line1, range.line2
+    if line2 < line1 then
+      line1, line2 = line2, line1
+    end
+    return line1, line2
   end
   local cursor_line = vim.api.nvim_win_get_cursor(winid or 0)[1]
   return cursor_line, cursor_line
+end
+
+---Whether `bufnr` is no longer safe to write an edit into: deleted/wiped
+---outright, or changed since `tick` (a `nvim_buf_get_changedtick()` snapshot
+---taken when the request was sent). Both matter because `ai.ask` is async --
+---the whole round-trip is a window in which the target buffer can be closed,
+---or its lines can shift out from under a `line1`/`line2` captured before
+---the request went out, which would otherwise make `apply` overwrite the
+---wrong lines silently rather than erroring.
+---@param bufnr integer
+---@param tick integer
+---@return boolean
+function M.buffer_changed(bufnr, tick)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return true
+  end
+  return vim.api.nvim_buf_get_changedtick(bufnr) ~= tick
 end
 
 ---Fence `bufnr`'s `line1..line2` (1-indexed, inclusive) as a labelled code
