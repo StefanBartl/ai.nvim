@@ -17,4 +17,4 @@ What each section reports:
   [attachments.md](attachments.md).
 - **configuration** -- the active `provider` and `provider_order`.
 - **composer route pre-flight** -- `:Ai`'s own route table, validated by
-  `lib.nvim.usercmd.composer`.
+  `lib.nvim.bindings.usercmd.composer`.
