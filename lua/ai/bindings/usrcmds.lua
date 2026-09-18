@@ -21,6 +21,10 @@ function M.setup()
 
   composer.verb("Ai", {
     desc = "Ask or stream a prompt to the active AI provider",
+    -- Command-level, not per-route (composer's own rule): every route below
+    -- accepts a `-range`, but only rewrite/append/prepend read `ctx.range`
+    -- -- the others just ignore it, same as any range-less invocation.
+    range = true,
     default = function(ctx)
       actions.ask_prompt(table.concat(ctx.rest or {}, " "))
     end,
@@ -37,6 +41,36 @@ function M.setup()
         desc = "Ask, streaming the answer into a panel (prompts for text if omitted)",
         run = function(ctx)
           actions.stream_prompt(table.concat(ctx.rest or {}, " "))
+        end,
+      },
+      {
+        path = { "rewrite" },
+        desc = "Replace the range (default: current line) with AI-generated code",
+        run = function(ctx)
+          actions.rewrite_prompt(
+            table.concat(ctx.rest or {}, " "),
+            { line1 = ctx.range.line1, line2 = ctx.range.line2 }
+          )
+        end,
+      },
+      {
+        path = { "append" },
+        desc = "Insert AI-generated code after the range (default: current line)",
+        run = function(ctx)
+          actions.append_prompt(
+            table.concat(ctx.rest or {}, " "),
+            { line1 = ctx.range.line1, line2 = ctx.range.line2 }
+          )
+        end,
+      },
+      {
+        path = { "prepend" },
+        desc = "Insert AI-generated code before the range (default: current line)",
+        run = function(ctx)
+          actions.prepend_prompt(
+            table.concat(ctx.rest or {}, " "),
+            { line1 = ctx.range.line1, line2 = ctx.range.line2 }
+          )
         end,
       },
       {

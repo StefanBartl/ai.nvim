@@ -102,6 +102,106 @@ function M.quick_action(context)
   end)
 end
 
+local edit = require("ai.bindings.edit")
+
+---@internal
+local REWRITE_SYSTEM = "You rewrite code on request. Respond with only the "
+  .. "replacement code for the given block -- no explanation, no markdown "
+  .. "code fences, no commentary. Match the original indentation style."
+
+---@internal
+local INSERT_AFTER_SYSTEM = "You write code on request. Respond with only "
+  .. "the code to insert immediately after the given block -- no "
+  .. "explanation, no markdown code fences, no commentary. Match the "
+  .. "surrounding indentation style."
+
+---@internal
+local INSERT_BEFORE_SYSTEM = "You write code on request. Respond with only "
+  .. "the code to insert immediately before the given block -- no "
+  .. "explanation, no markdown code fences, no commentary. Match the "
+  .. "surrounding indentation style."
+
+---@internal
+---Shared body for rewrite/append/prepend: resolve the target range, ask
+---non-streaming (an in-place edit needs the full answer before it can write
+---anything -- no partial line half-written mid-stream), then hand the
+---parsed response lines to `apply` for exactly one `nvim_buf_set_lines`
+---call, so the whole edit is a single undo step. Prompts for the task first
+---when `prompt` is empty.
+---@param system string
+---@param prompt string
+---@param range? {line1: integer, line2: integer}
+---@param apply fun(bufnr: integer, line1: integer, line2: integer, new_lines: string[])
+---@return nil
+local function run_edit(system, prompt, range, apply)
+  local function run(task)
+    local bufnr = vim.api.nvim_get_current_buf()
+    local line1, line2 = edit.resolve_range(range)
+    local block = edit.code_block(bufnr, line1, line2)
+    local notify = require("lib.nvim.notify").create("[ai]")
+    local progress = require("lib.nvim.progress").create({ title = "[ai]" })
+    require("ai").ask({
+      prompt = block .. "\n\nTask: " .. task,
+      system = system,
+    }, function(ok, res)
+      progress:finish()
+      if not ok then
+        ---@cast res LibErrorValue
+        notify.error(res.message)
+        return
+      end
+      local new_lines = edit.parse_lines(res.text)
+      if #new_lines == 0 then
+        notify.warn("Empty response, buffer left unchanged")
+        return
+      end
+      apply(bufnr, line1, line2, new_lines)
+    end)
+  end
+
+  if prompt ~= "" then
+    run(prompt)
+  else
+    prompt_for_text(run)
+  end
+end
+
+---Replace the target range (the Visual selection just left, or the current
+---line) with AI-generated code -- e.g. select a function, run this, type
+---"add error handling". Prompts for the task first when `prompt` is empty.
+---@param prompt string
+---@param range? {line1: integer, line2: integer}
+---@return nil
+function M.rewrite_prompt(prompt, range)
+  run_edit(REWRITE_SYSTEM, prompt, range, function(bufnr, line1, line2, new_lines)
+    vim.api.nvim_buf_set_lines(bufnr, line1 - 1, line2, false, new_lines)
+  end)
+end
+
+---Insert AI-generated code immediately after the target range (the Visual
+---selection just left, or the current line). Prompts for the task first
+---when `prompt` is empty.
+---@param prompt string
+---@param range? {line1: integer, line2: integer}
+---@return nil
+function M.append_prompt(prompt, range)
+  run_edit(INSERT_AFTER_SYSTEM, prompt, range, function(bufnr, _, line2, new_lines)
+    vim.api.nvim_buf_set_lines(bufnr, line2, line2, false, new_lines)
+  end)
+end
+
+---Insert AI-generated code immediately before the target range (the Visual
+---selection just left, or the current line). Prompts for the task first
+---when `prompt` is empty.
+---@param prompt string
+---@param range? {line1: integer, line2: integer}
+---@return nil
+function M.prepend_prompt(prompt, range)
+  run_edit(INSERT_BEFORE_SYSTEM, prompt, range, function(bufnr, line1, _, new_lines)
+    vim.api.nvim_buf_set_lines(bufnr, line1 - 1, line1 - 1, false, new_lines)
+  end)
+end
+
 ---Second quick-action from the concept: explain the current context
 ---without a chat panel -- a small, auto-dismissing badge instead.
 ---@param context Ai.ContextDefaults
