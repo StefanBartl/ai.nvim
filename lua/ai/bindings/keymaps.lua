@@ -26,11 +26,22 @@ function M.setup(cfg)
   local keymap = require("lib.nvim.bindings.keymap")
   local actions = require("ai.bindings.actions")
 
+  -- The Visual-mode binds below read `'<`/`'>` directly rather than passing
+  -- `context.selection` -- these actions target a buffer range to edit, not
+  -- a context block to prefix a prompt with, so they need line numbers
+  -- (`ai.context.assemble` only ever returns formatted text). Valid at this
+  -- point because leaving Visual mode (which is how a Visual-mode keymap's
+  -- Lua callback ever runs) is exactly what sets those marks.
+  ---@return {line1: integer, line2: integer}
+  local function visual_range()
+    return { line1 = vim.fn.getpos("'<")[2], line2 = vim.fn.getpos("'>")[2] }
+  end
+
   ---@type Lib.Keymap.Spec
   local spec = {
     prefix = prefix,
     which_key = cfg.which_key.enable and { group = "ai.nvim" } or nil,
-    order = { "ask", "quick", "explain" },
+    order = { "ask", "quick", "explain", "rewrite", "append", "prepend" },
     actions = {
       ask = {
         default = prefix .. "a",
@@ -69,6 +80,67 @@ function M.setup(cfg)
               actions.quick_action(vim.tbl_extend("force", cfg.context, { selection = true }))
             end,
             desc = "Send selection + a typed task, stream the answer",
+          },
+        },
+      },
+      -- Replace/insert code in place -- the gp.nvim-shaped gap: an answer
+      -- that writes back into the buffer instead of a popup/panel.
+      rewrite = {
+        default = prefix .. "r",
+        binds = {
+          {
+            mode = "n",
+            rhs = function()
+              actions.rewrite_prompt("")
+            end,
+            desc = "Rewrite current line with AI-generated code",
+          },
+          {
+            mode = "v",
+            rhs = function()
+              actions.rewrite_prompt("", visual_range())
+            end,
+            desc = "Rewrite selection with AI-generated code",
+          },
+        },
+      },
+      -- `o`/`O` mnemonic: Vim's own "open line below/above", same relation
+      -- append/prepend have to the target range here.
+      append = {
+        default = prefix .. "o",
+        binds = {
+          {
+            mode = "n",
+            rhs = function()
+              actions.append_prompt("")
+            end,
+            desc = "Insert AI-generated code after current line",
+          },
+          {
+            mode = "v",
+            rhs = function()
+              actions.append_prompt("", visual_range())
+            end,
+            desc = "Insert AI-generated code after selection",
+          },
+        },
+      },
+      prepend = {
+        default = prefix .. "O",
+        binds = {
+          {
+            mode = "n",
+            rhs = function()
+              actions.prepend_prompt("")
+            end,
+            desc = "Insert AI-generated code before current line",
+          },
+          {
+            mode = "v",
+            rhs = function()
+              actions.prepend_prompt("", visual_range())
+            end,
+            desc = "Insert AI-generated code before selection",
           },
         },
       },
