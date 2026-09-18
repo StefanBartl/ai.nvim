@@ -34,6 +34,19 @@ function M.setup(cfg)
   -- Lua callback ever runs) is exactly what sets those marks.
   ---@return {line1: integer, line2: integer}
   local function visual_range()
+    -- rewrite/append/prepend only ever operate on whole lines (there is no
+    -- column-aware nvim_buf_set_text path here) -- for a linewise ("V")
+    -- selection that is exactly what the user asked for, but a charwise
+    -- ("v") or blockwise selection spanning only part of a line still
+    -- replaces/inserts around the FULL line(s) it touches. Silent for that
+    -- case would mean unrelated text on the same line (a trailing comment,
+    -- a second statement) gets discarded without the user ever being told
+    -- why -- warn instead of guessing at a narrower edit.
+    if vim.fn.visualmode() ~= "V" then
+      require("lib.nvim.notify").create("[ai]").warn(
+        "rewrite/append/prepend act on whole lines -- the full line(s) your selection touches will be affected, not just the selected characters"
+      )
+    end
     return { line1 = vim.fn.getpos("'<")[2], line2 = vim.fn.getpos("'>")[2] }
   end
 

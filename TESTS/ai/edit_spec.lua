@@ -136,5 +136,48 @@ describe("ai.bindings.edit", function()
     it("returns an empty list for a blank string", function()
       assert.are.same({}, edit.parse_lines("   \n  "))
     end)
+
+    it("strips a fence with CRLF line endings", function()
+      assert.are.same(
+        { "local x = 1", "local y = 2" },
+        edit.parse_lines("```lua\r\nlocal x = 1\r\nlocal y = 2\r\n```")
+      )
+    end)
+
+    it("strips the fence past a leading sentence of commentary", function()
+      assert.are.same(
+        { "local fixed = true" },
+        edit.parse_lines("Sure, here you go:\r\n```lua\r\nlocal fixed = true\r\n```\r\n")
+      )
+    end)
+
+    it("extracts only the first block when the response has more than one fence", function()
+      assert.are.same(
+        { "local a = 1" },
+        edit.parse_lines("```lua\nlocal a = 1\n```\n\n```lua\nlocal b = 2\n```")
+      )
+    end)
+  end)
+
+  describe("is_truncated", function()
+    it("is true for claude/loomai's max_tokens", function()
+      assert.is_true(edit.is_truncated("max_tokens"))
+    end)
+
+    it("is true for gemini's upper-cased MAX_TOKENS", function()
+      assert.is_true(edit.is_truncated("MAX_TOKENS"))
+    end)
+
+    it("is true for openai/ollama's length", function()
+      assert.is_true(edit.is_truncated("length"))
+    end)
+
+    it("is false for a normal completion reason", function()
+      assert.is_false(edit.is_truncated("end_turn"))
+    end)
+
+    it("is false for nil (many providers never set one)", function()
+      assert.is_false(edit.is_truncated(nil))
+    end)
   end)
 end)

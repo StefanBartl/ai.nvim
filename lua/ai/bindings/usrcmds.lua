@@ -9,6 +9,23 @@ local actions = require("ai.bindings.actions")
 
 local M = {}
 
+---@internal
+---`range = true` is a whole-verb setting (composer's own rule: "a single
+---command-level option, not per-route"), so every `:Ai` subcommand accepts
+---a `-range` even though only rewrite/append/prepend read one -- Neovim
+---itself no longer rejects e.g. `:'<,'>Ai ask ...` the way a range-less
+---command would (`E481: No range allowed`), so a route that ignores
+---`ctx.range` warns instead of silently discarding it, to give back that
+---feedback.
+---@param ctx table
+local function warn_if_ranged(ctx)
+  if ctx.range and (ctx.range.range or 0) > 0 then
+    require("lib.nvim.notify")
+      .create("[ai]")
+      .warn("this :Ai subcommand does not use a range -- ignored")
+  end
+end
+
 ---@return nil
 function M.setup()
   -- Evaluated once, at registration time: the composer's `enum` is a plain
@@ -26,6 +43,7 @@ function M.setup()
     -- -- the others just ignore it, same as any range-less invocation.
     range = true,
     default = function(ctx)
+      warn_if_ranged(ctx)
       actions.ask_prompt(table.concat(ctx.rest or {}, " "))
     end,
     routes = {
@@ -33,6 +51,7 @@ function M.setup()
         path = { "ask" },
         desc = "Ask once, non-streaming (prompts for text if omitted)",
         run = function(ctx)
+          warn_if_ranged(ctx)
           actions.ask_prompt(table.concat(ctx.rest or {}, " "))
         end,
       },
@@ -40,6 +59,7 @@ function M.setup()
         path = { "stream" },
         desc = "Ask, streaming the answer into a panel (prompts for text if omitted)",
         run = function(ctx)
+          warn_if_ranged(ctx)
           actions.stream_prompt(table.concat(ctx.rest or {}, " "))
         end,
       },
@@ -80,6 +100,7 @@ function M.setup()
         },
         desc = "Switch the active provider",
         run = function(ctx)
+          warn_if_ranged(ctx)
           require("ai.config").set_provider(ctx.args.name)
           require("lib.nvim.notify").create("[ai]").info("provider set to " .. ctx.args.name)
         end,
@@ -87,7 +108,8 @@ function M.setup()
       {
         path = { "info" },
         desc = "Show the active provider, resolution order, and per-provider availability",
-        run = function()
+        run = function(ctx)
+          warn_if_ranged(ctx)
           actions.info()
         end,
       },
