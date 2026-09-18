@@ -138,6 +138,12 @@ local function run_edit(system, prompt, range, apply)
     local bufnr = vim.api.nvim_get_current_buf()
     local line1, line2 = edit.resolve_range(range)
     local block = edit.code_block(bufnr, line1, line2)
+    -- `ai.ask` is a full network round-trip -- snapshot the tick now so the
+    -- callback can tell a buffer closed or edited elsewhere meanwhile from
+    -- one still safe to write `line1`/`line2` into (see `edit.buffer_changed`'s
+    -- own doc for why a silent overwrite of the wrong lines is the real risk,
+    -- not just a deleted-buffer crash).
+    local changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
     local notify = require("lib.nvim.notify").create("[ai]")
     local progress = require("lib.nvim.progress").create({ title = "[ai]" })
     require("ai").ask({
@@ -148,6 +154,12 @@ local function run_edit(system, prompt, range, apply)
       if not ok then
         ---@cast res LibErrorValue
         notify.error(res.message)
+        return
+      end
+      if edit.buffer_changed(bufnr, changedtick) then
+        notify.warn(
+          "Buffer changed while waiting for a response -- discarded it rather than risk editing the wrong lines"
+        )
         return
       end
       local new_lines = edit.parse_lines(res.text)
