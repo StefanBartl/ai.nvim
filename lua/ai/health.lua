@@ -34,7 +34,12 @@ function M.check()
     "error",
     advice
   )
-  lib_health.check_require("lib.nvim.usercmd.composer", "usercmd.composer (:Ai)", "error", advice)
+  lib_health.check_require(
+    "lib.nvim.bindings.usercmd.composer",
+    "usercmd.composer (:Ai)",
+    "error",
+    advice
+  )
   lib_health.check_require("lib.nvim.bindings.keymap", "bindings.keymap (keymaps)", "error", advice)
 
   -- ── ui.nvim dependency ────────────────────────────────────────────────
@@ -143,7 +148,7 @@ function M.check()
   end
 
   -- ── composer route pre-flight ────────────────────────────────────────────
-  require("lib.nvim.usercmd.composer").checkhealth("Ai")
+  require("lib.nvim.bindings.usercmd.composer").checkhealth("Ai")
 end
 
 return M

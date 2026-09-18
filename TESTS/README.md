@@ -206,7 +206,7 @@ Skipped, with reasons:
 - `bindings/actions.lua`, `bindings/keymaps.lua`, `bindings/usrcmds.lua` --
   wiring code whose real behavior is "call `ui.kit.popup`/`ai.ui.panel`/
   `ai.ui.badge` with these arguments" or "register this route/keymap with
-  `lib.nvim.usercmd.composer`/`lib.nvim.bindings.keymap`"; the interesting
+  `lib.nvim.bindings.usercmd.composer`/`lib.nvim.bindings.keymap`"; the interesting
   logic (does an empty prompt fall through to `prompt_for_text`, does
   `explain_badge` skip an empty context block) is a handful of one-line
   branches directly adjacent to a `ui.kit.popup` call that needs a live

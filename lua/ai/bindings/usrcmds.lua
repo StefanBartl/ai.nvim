@@ -4,7 +4,7 @@
 --- keymap 1:1 (see `ai.bindings.keymaps`) but is an independent entry point
 --- -- both call into `ai.bindings.actions`, neither calls the other.
 
-local composer = require("lib.nvim.usercmd.composer")
+local composer = require("lib.nvim.bindings.usercmd.composer")
 local actions = require("ai.bindings.actions")
 
 local M = {}
