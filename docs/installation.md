@@ -7,7 +7,7 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
   "StefanBartl/ai.nvim",
   dependencies = { "StefanBartl/lib.nvim", "StefanBartl/ui.nvim" },
   cmd = "Ai",
-  keys = { "<leader>a" },
+  keys = { { "<leader>a", mode = { "n", "v" } } },
   config = function()
     require("ai").setup()
   end,
