@@ -97,13 +97,36 @@ end
 ---@internal
 ---Prefix `req.prompt` with the assembled context block, if any.
 ---@param req Ai.Request
----@return string
+---@return string prompt
+---@return string[]|nil errors forwarded from `ai.context.assemble` -- present
+---only when at least one requested context scope raised while resolving, not
+---when a scope legitimately resolved to nothing (ERR-11); `prompt` still
+---carries whatever context succeeded either way
 local function build_prompt(req)
-  local block = require("ai.context").assemble(req.context)
+  local block, errors = require("ai.context").assemble(req.context)
   if block == "" then
-    return req.prompt
+    return req.prompt, errors
   end
-  return block .. "\n\n" .. req.prompt
+  return block .. "\n\n" .. req.prompt, errors
+end
+
+---@internal
+---Warn, distinctly from a request failure, when part of the requested
+---context could not be gathered (ERR-11) -- `ask`/`stream` still send the
+---request with whatever context succeeded, the same "don't block on a
+---best-effort section" call `ai.completion` already documents, but silently
+---dropping a selection/diagnostics/cwd section because a scope *raised*
+---(not because it was legitimately empty) must not look identical to it
+---never having been requested; see `ai.bindings.actions.explain_badge`,
+---which surfaces the same `errors` list from a direct `assemble()` call.
+---@param context_errors string[]|nil
+local function warn_context_errors(context_errors)
+  if context_errors then
+    require("lib.nvim.notify").create("[ai]").warn(
+      "Failed to gather part of the context -- sending the request without it: "
+        .. table.concat(context_errors, "; ")
+    )
+  end
 end
 
 ---@internal
@@ -116,21 +139,24 @@ end
 ---@return Ai.Provider|nil provider
 ---@return LibErrorValue|nil err
 ---@return Ai.Request resolved_req
+---@return string[]|nil context_errors see `build_prompt`'s doc -- `nil` when
+---provider resolution itself failed (`err` is what matters then, not this)
 local function resolve(req)
   local cfg = M.config()
   local requested = req.provider or cfg.provider or "auto"
   local provider, err = providers.resolve(requested, cfg.provider_order, req)
   if not provider then
-    return nil, err, req
+    return nil, err, req, nil
   end
 
   local resolved = vim.tbl_extend("force", {}, req)
   resolved.provider = provider.id
   resolved.timeout_ms = resolved.timeout_ms or cfg.timeout_ms
   resolved.model = resolved.model or cfg.model[provider.id]
-  resolved.prompt = build_prompt(resolved)
+  local prompt, context_errors = build_prompt(resolved)
+  resolved.prompt = prompt
 
-  return provider, nil, resolved
+  return provider, nil, resolved, context_errors
 end
 
 ---Ask once, non-streaming.
@@ -139,11 +165,12 @@ end
 ---@return nil
 function M.ask(req, cb)
   assert(type(req) == "table" and type(req.prompt) == "string", "ai.ask: req.prompt is required")
-  local provider, err, resolved = resolve(req)
+  local provider, err, resolved, context_errors = resolve(req)
   if not provider then
     cb(false, err or lib_error.new("provider_resolution", "ai: unknown error resolving a provider"))
     return
   end
+  warn_context_errors(context_errors)
   provider.ask(resolved, cb)
 end
 
@@ -153,7 +180,7 @@ end
 ---@return vim.SystemObj|nil process returns the running process handle so a caller can `:kill()` it to cancel
 function M.stream(req, handlers)
   assert(type(req) == "table" and type(req.prompt) == "string", "ai.stream: req.prompt is required")
-  local provider, err, resolved = resolve(req)
+  local provider, err, resolved, context_errors = resolve(req)
   if not provider then
     if handlers.on_error then
       handlers.on_error(
@@ -162,6 +189,7 @@ function M.stream(req, handlers)
     end
     return nil
   end
+  warn_context_errors(context_errors)
   return provider.stream(resolved, handlers)
 end
 
