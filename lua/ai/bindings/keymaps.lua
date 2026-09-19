@@ -69,7 +69,7 @@ function M.setup(cfg)
           {
             mode = "v",
             rhs = function()
-              actions.ask_prompt("")
+              actions.ask_prompt("", vim.tbl_extend("force", cfg.context, { selection = true }))
             end,
             desc = "Ask about the selection",
           },
