@@ -190,6 +190,9 @@ function M.stream(req, handlers)
   -- doc for why (a real 401 comes back as a plain, pretty-printed JSON body,
   -- not an SSE event, and curl still exits 0; verified against the live API).
   local non_data_lines = {}
+  -- Set once an error is reported mid-stream so `on_done` below doesn't
+  -- also fire with an empty-but-"successful" response afterwards.
+  local failed = false
 
   local process, prepare_err = transport.stream_json(API_URL, {
     method = "POST",
@@ -215,6 +218,7 @@ function M.stream(req, handlers)
       end
       decoded = util.denil(decoded)
       if decoded.error then
+        failed = true
         if handlers.on_error then
           handlers.on_error(
             lib_error.new(
@@ -239,6 +243,9 @@ function M.stream(req, handlers)
       end
     end,
     on_done = function(obj)
+      if failed then
+        return
+      end
       if obj.code ~= 0 then
         if handlers.on_error then
           handlers.on_error(util.curl_exit_error("openai", obj, timeout_ms))

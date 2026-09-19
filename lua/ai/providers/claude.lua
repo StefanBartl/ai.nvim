@@ -212,6 +212,9 @@ function M.stream(req, handlers)
   -- doc for why (a real auth/validation failure comes back as a plain,
   -- pretty-printed JSON body, not an SSE event, and curl still exits 0).
   local non_data_lines = {}
+  -- Set once an error is reported mid-stream so `on_done` below doesn't
+  -- also fire with an empty-but-"successful" response afterwards.
+  local failed = false
 
   local process, prepare_err = transport.stream_json(API_URL, {
     method = "POST",
@@ -253,6 +256,7 @@ function M.stream(req, handlers)
         usage = decoded.usage
         stop_reason = decoded.delta and decoded.delta.stop_reason
       elseif decoded.type == "error" then
+        failed = true
         if handlers.on_error then
           handlers.on_error(
             lib_error.new(
@@ -265,6 +269,9 @@ function M.stream(req, handlers)
       end
     end,
     on_done = function(obj)
+      if failed then
+        return
+      end
       if obj.code ~= 0 then
         if handlers.on_error then
           handlers.on_error(util.curl_exit_error("claude", obj, timeout_ms))
