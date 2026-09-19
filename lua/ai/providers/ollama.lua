@@ -144,6 +144,9 @@ function M.stream(req, handlers)
   local timeout_ms = req.timeout_ms or 60000
   local text_parts = {}
   local done_reason
+  -- Set once an error is reported mid-stream so `on_done` below doesn't
+  -- also fire with an empty-but-"successful" response afterwards.
+  local failed = false
 
   local process, prepare_err = transport.stream_json(host(req) .. "/api/chat", {
     method = "POST",
@@ -161,6 +164,7 @@ function M.stream(req, handlers)
       end
       decoded = util.denil(decoded)
       if type(decoded.error) == "string" then
+        failed = true
         if handlers.on_error then
           handlers.on_error(
             lib_error.new("api_error", "ollama error: " .. decoded.error, decoded.error)
@@ -180,6 +184,9 @@ function M.stream(req, handlers)
       end
     end,
     on_done = function(obj)
+      if failed then
+        return
+      end
       if obj.code ~= 0 then
         if handlers.on_error then
           handlers.on_error(util.curl_exit_error("ollama", obj, timeout_ms))
