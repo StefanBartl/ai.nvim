@@ -87,15 +87,23 @@ end
 
 ---@internal
 ---Resolve a `lib.nvim.harvest.scope` kind and append every source it
----returns, formatted, to `sections`. A scope that errors or resolves to
----nothing is silently skipped -- see `M.assemble`'s own doc for why.
+---returns, formatted, to `sections`. A scope that legitimately resolves to
+---nothing (e.g. no diagnostics present) stays silent, matching every other
+---section here -- but a scope that *raises* (API drift, a malformed range)
+---is recorded into `errors` instead, so the two stop looking identical to
+---`M.assemble`'s caller. See `M.assemble`'s own doc.
 ---@param sections string[]
+---@param errors string[]
 ---@param scope Lib.Harvest.Scope
 ---@param kind string
 ---@param args table|nil
-local function add_scope(sections, scope, kind, args)
+local function add_scope(sections, errors, scope, kind, args)
   local ok, sources = pcall(scope.resolve, kind, args)
-  if not ok or not sources then
+  if not ok then
+    errors[#errors + 1] = tostring(sources)
+    return
+  end
+  if not sources then
     return
   end
   for _, s in ipairs(sources) do
@@ -110,14 +118,16 @@ end
 ---`selection` can both be true, matching the concept's own example
 ---(`context = { buffer = true, selection = true, diagnostics = true }`).
 ---@param opts Ai.ContextDefaults|nil
----@return string block empty string if nothing was requested or resolved
+---@return string block empty string if nothing was requested, or every requested scope resolved to nothing
+---@return string[]|nil errors present when at least one requested scope raised while resolving -- `block` can be a legitimate `""` either way, this is what tells the two apart
 function M.assemble(opts)
   opts = opts or {}
   local scope = require("lib.nvim.harvest.scope")
   local sections = {}
+  local errors = {}
 
   if opts.buffer then
-    add_scope(sections, scope, "buffer")
+    add_scope(sections, errors, scope, "buffer")
   end
 
   if opts.selection then
@@ -126,7 +136,7 @@ function M.assemble(opts)
     local line1 = vim.fn.getpos("'<")[2]
     local line2 = vim.fn.getpos("'>")[2]
     if line1 > 0 and line2 >= line1 then
-      add_scope(sections, scope, "range", { line1 = line1, line2 = line2 })
+      add_scope(sections, errors, scope, "range", { line1 = line1, line2 = line2 })
     end
   end
 
@@ -139,14 +149,14 @@ function M.assemble(opts)
   end
 
   if opts.cwd then
-    add_scope(sections, scope, "cwd")
+    add_scope(sections, errors, scope, "cwd")
   end
 
   if opts.structured_data then
     add_structured_data_scope(sections)
   end
 
-  return table.concat(sections, "\n\n")
+  return table.concat(sections, "\n\n"), (#errors > 0 and errors or nil)
 end
 
 return M

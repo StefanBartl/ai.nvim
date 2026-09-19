@@ -60,6 +60,34 @@ describe("ai.context", function()
     local block = require("ai.context").assemble({ diagnostics = true })
     assert.are.equal("", block)
   end)
+
+  it("assemble() returns no errors when a scope legitimately resolves to nothing", function()
+    vim.cmd("enew")
+    local block, errors = require("ai.context").assemble({ diagnostics = true })
+    assert.are.equal("", block)
+    assert.is_nil(errors)
+  end)
+
+  it("assemble() distinguishes a scope that raises from one that resolves to nothing", function()
+    local original = package.loaded["lib.nvim.harvest.scope"]
+    package.loaded["lib.nvim.harvest.scope"] = {
+      resolve = function()
+        error("boom: scope API drift")
+      end,
+    }
+
+    local ok, block, errors = pcall(function()
+      return require("ai.context").assemble({ buffer = true })
+    end)
+
+    package.loaded["lib.nvim.harvest.scope"] = original
+
+    assert.is_true(ok)
+    assert.are.equal("", block)
+    assert.is_not_nil(errors)
+    assert.are.equal(1, #errors)
+    assert.truthy(errors[1]:find("boom", 1, true) ~= nil)
+  end)
 end)
 
 describe("ai.context -- structured_data (data.nvim)", function()
