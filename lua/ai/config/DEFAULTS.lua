@@ -61,8 +61,14 @@ local DEFAULTS = {
     trigger = "manual",
     idle_ms = 500,
     max_context_lines = 60,
-    provider = nil,
-    model = nil,
+    -- `nil` here would store no key at all (Lua collapses `key = nil` in a
+    -- table constructor), which would make `warn_unknown_keys` below treat
+    -- both of these documented options as unknown-key typos. `false` is a
+    -- real, present key that every reader already treats as "unset" via
+    -- `or` (see `completion/init.lua`, `health.lua`), the same way `nil`
+    -- would have been.
+    provider = false,
+    model = false,
     keymap = {
       trigger = "<C-\\><C-a>",
       accept = "<Tab>",

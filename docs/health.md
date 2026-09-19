@@ -15,6 +15,11 @@ What each section reports:
   an `attachments` request fails with `invalid_request`, reported where
   someone can look it up before making the request rather than after. See
   [attachments.md](attachments.md).
-- **configuration** -- the active `provider` and `provider_order`.
+- **configuration** -- the active `provider` and `provider_order`, plus a
+  warning for every config value that failed its type/shape check and was
+  dropped back to its default instead of surviving the merge (e.g.
+  `provider_order = "claude"` instead of a list, or `completion.trigger =
+  "atuo"`) -- the value degrades silently everywhere else, this is where it
+  becomes visible.
 - **composer route pre-flight** -- `:Ai`'s own route table, validated by
   `lib.nvim.bindings.usercmd.composer`.
