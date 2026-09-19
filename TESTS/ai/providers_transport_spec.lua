@@ -119,6 +119,34 @@ describe("ai.providers.transport", function()
       assert.are.equal(0, vim.fn.filereadable(path))
     end)
 
+    it("reports a short write instead of treating it as a successful body file", function()
+      -- fs_write returns the number of bytes actually written, not a
+      -- true/false flag -- a short write (e.g. ENOSPC) returns a positive
+      -- number smaller than the body's length and must not be read as
+      -- success (ERR-03).
+      stub_curl()
+      local uv = vim.uv or vim.loop
+      local original_write = uv.fs_write
+      ---@diagnostic disable-next-line: duplicate-set-field
+      uv.fs_write = function(fd, data, offset)
+        local real_written = original_write(fd, data, offset)
+        return math.floor((real_written or 0) / 2)
+      end
+
+      local transport = require("ai.providers.transport")
+      local body = oversized_body()
+      local cb_called = false
+      local err = transport.post_json("https://example.test", { body = body }, function()
+        cb_called = true
+      end)
+
+      uv.fs_write = original_write
+
+      assert.is_false(cb_called)
+      assert.is_not_nil(err)
+      assert.is_true(err:find("cannot write request body file", 1, true) ~= nil)
+    end)
+
     it("survives a stream that reports both on_error and on_done", function()
       -- `fetch_stream` can reach both for one request; the second cleanup
       -- must be a no-op rather than deleting a since-reused temp name.
