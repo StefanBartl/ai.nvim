@@ -7,7 +7,7 @@ truth; this table mirrors it):
 require("ai").setup({
   provider = "auto",                         -- "auto" | "claude" | "ollama" | "openai" | "gemini" | "loomai" | a custom id
   provider_order = { "claude", "ollama", "openai", "gemini", "loomai" }, -- "auto" resolution order; "loomai" last, see docs/scope.md
-  model = {},                                 -- e.g. { claude = "claude-opus-4-5" }
+  model = {},                                 -- e.g. { claude = "claude-opus-4-5" } -- not validated here, see "Model ids" below
   timeout_ms = 60000,
 
   ui = {
@@ -61,6 +61,21 @@ require("ai").setup({
   log_level = vim.log.levels.WARN,
 })
 ```
+
+## Model ids
+
+`model`/`completion.model` are never validated at request time -- whatever
+string is configured goes straight onto the wire (see `lua/ai/init.lua`'s
+`resolve()`), so a typo'd or discontinued model id still fails as a normal
+API error rather than being caught early.
+
+`:checkhealth ai` catches the common case instead: it checks every
+configured model against `lua/ai/providers/models.lua`'s per-provider
+registry (Claude, Gemini, OpenAI) and warns about one it doesn't recognize.
+`ollama`/`loomai` are deliberately exempt -- both run whatever local model
+the user has pulled or loaded, so there is no fixed catalogue to check
+against; any model id is accepted for them. See
+[health.md](health.md#configuration).
 
 ## Inline completion
 
