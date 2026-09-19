@@ -49,10 +49,15 @@ end
 ---@internal
 ---Clear any shown suggestion and stop a pending auto-trigger timer -- used
 ---whenever a state that could make a suggestion stale occurs (typing,
----cursor movement, leaving insert mode).
+---cursor movement, leaving insert mode). Also bumps `generation`: leaving
+---insert mode must invalidate a still-in-flight request too, not just a
+---suggestion already rendered -- otherwise its response can land after
+---Normal-mode motion (which fires `CursorMoved`, not `CursorMovedI`, so
+---nothing clears it again) and render ghost text nobody is there to dismiss.
 local function reset()
   ghost.clear()
   cancel_auto_trigger()
+  generation = generation + 1
 end
 
 ---Request a completion suggestion at the cursor. Fired by the manual
@@ -70,7 +75,8 @@ function M.trigger()
   local my_generation = generation
 
   local bufnr = vim.api.nvim_get_current_buf()
-  local cursor = vim.api.nvim_win_get_cursor(0)
+  local winid = vim.api.nvim_get_current_win()
+  local cursor = vim.api.nvim_win_get_cursor(winid)
   local row, col = cursor[1], cursor[2]
   local changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
   local filetype = vim.bo[bufnr].filetype
@@ -81,12 +87,12 @@ function M.trigger()
   require("ai").ask({
     prompt = req_prompt,
     system = req_system,
-    provider = cfg.completion.provider,
-    model = cfg.completion.model,
+    provider = cfg.completion.provider or nil,
+    model = cfg.completion.model or nil,
     timeout_ms = cfg.timeout_ms,
   }, function(ok, res)
     if my_generation ~= generation then
-      return -- superseded by a newer trigger
+      return -- superseded by a newer trigger, or invalidated by leaving insert mode
     end
     if not vim.api.nvim_buf_is_valid(bufnr) then
       return
@@ -97,7 +103,13 @@ function M.trigger()
     if vim.api.nvim_buf_get_changedtick(bufnr) ~= changedtick then
       return
     end
-    local current_cursor = vim.api.nvim_win_get_cursor(0)
+    -- Re-validate the window the request was actually fired from, and read
+    -- its cursor -- not whatever window happens to be current when the
+    -- response lands, which can be a different one entirely (ERR-33).
+    if not vim.api.nvim_win_is_valid(winid) or vim.api.nvim_win_get_buf(winid) ~= bufnr then
+      return
+    end
+    local current_cursor = vim.api.nvim_win_get_cursor(winid)
     if current_cursor[1] ~= row or current_cursor[2] ~= col then
       return
     end
@@ -107,14 +119,15 @@ function M.trigger()
 
     local text = prompt.parse(res.text)
     if text ~= "" then
-      ghost.show(bufnr, row - 1, col, text)
+      ghost.show(bufnr, row - 1, col, text, changedtick)
     end
   end)
 end
 
 ---Insert the currently shown suggestion at the cursor and clear it.
----@return boolean accepted `false` if nothing was shown -- the caller
----(the keymap) should fall through to that key's normal behavior in that case
+---@return boolean accepted `false` if nothing was shown, or the shown
+---suggestion no longer matches the buffer's current text -- the caller
+---(the keymap) should fall through to that key's normal behavior in either case
 function M.accept()
   local suggestion = ghost.current()
   if not suggestion then
@@ -128,7 +141,16 @@ function M.accept()
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return false
   end
-  vim.api.nvim_buf_set_text(
+  -- Re-verify against the *current* text immediately before writing, not
+  -- just at render time: a ghost suggestion that survives into Normal mode
+  -- (see `reset()`'s doc) can outlive edits nothing else clears it for --
+  -- `dd`/`u`/`:%d` all bump changedtick without touching this module. A
+  -- stale (row, col) is skipped, not written blind (ERR-30).
+  if vim.api.nvim_buf_get_changedtick(bufnr) ~= suggestion.changedtick then
+    return false
+  end
+  local write_ok = pcall(
+    vim.api.nvim_buf_set_text,
     bufnr,
     suggestion.row,
     suggestion.col,
@@ -136,6 +158,9 @@ function M.accept()
     suggestion.col,
     lines
   )
+  if not write_ok then
+    return false
+  end
 
   local end_row = suggestion.row + #lines - 1
   local end_col = #lines > 1 and #lines[#lines] or (suggestion.col + #lines[1])

@@ -199,6 +199,35 @@ describe("ai.completion", function()
       saved_cb(true, { text = "stale" })
       assert.is_nil(require("ai.ui.ghost").current())
     end)
+
+    it(
+      "a response arriving after InsertLeave is discarded, even at the one cursor position Esc never moves",
+      function()
+        -- Column 0 is the one spot leaving insert mode does not move the
+        -- cursor away from -- without reset() (the InsertLeave handler)
+        -- bumping `generation`, the changedtick/cursor guards alone would not
+        -- catch this and a ghost suggestion would render in Normal mode,
+        -- where no autocmd clears it (ERR-33).
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+        local saved_cb
+        package.loaded["ai"] = {
+          config = function()
+            return { completion = { enable = true, max_context_lines = 10 } }
+          end,
+          ask = function(_, cb)
+            saved_cb = cb
+          end,
+        }
+        local completion = require("ai.completion")
+        completion.setup({ completion = { enable = true } })
+        completion.trigger()
+
+        vim.api.nvim_exec_autocmds("InsertLeave", { buffer = bufnr })
+
+        saved_cb(true, { text = "too late" })
+        assert.is_nil(require("ai.ui.ghost").current())
+      end
+    )
   end)
 
   describe("accept", function()
@@ -217,7 +246,8 @@ describe("ai.completion", function()
 
     it("inserts a single-line suggestion at the cursor and clears it", function()
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local x = " })
-      require("ai.ui.ghost").show(bufnr, 0, 10, "1")
+      local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+      require("ai.ui.ghost").show(bufnr, 0, 10, "1", tick)
 
       local accepted = require("ai.completion").accept()
       assert.is_true(accepted)
@@ -235,7 +265,8 @@ describe("ai.completion", function()
       -- one column, which would make this test check the wrong thing. Spying
       -- on the call directly checks what `accept()` itself computed instead.
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local x = " })
-      require("ai.ui.ghost").show(bufnr, 0, 10, "42")
+      local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+      require("ai.ui.ghost").show(bufnr, 0, 10, "42", tick)
 
       local seen
       local original = vim.api.nvim_win_set_cursor
@@ -252,7 +283,8 @@ describe("ai.completion", function()
 
     it("inserts a multi-line suggestion, splitting the current line around it", function()
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "before|after" })
-      require("ai.ui.ghost").show(bufnr, 0, 7, "one\ntwo\nthree")
+      local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+      require("ai.ui.ghost").show(bufnr, 0, 7, "one\ntwo\nthree", tick)
 
       require("ai.completion").accept()
       assert.are.same(
@@ -263,7 +295,8 @@ describe("ai.completion", function()
 
     it("moves the cursor to the end of a multi-line insert's last line", function()
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "before|after" })
-      require("ai.ui.ghost").show(bufnr, 0, 7, "one\ntwo\nthree")
+      local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+      require("ai.ui.ghost").show(bufnr, 0, 7, "one\ntwo\nthree", tick)
       require("ai.completion").accept()
       -- Row 3 (1-indexed): "threeafter" -- "three" is 5 bytes, so the cursor
       -- lands right after the inserted text, before "after".
@@ -272,7 +305,7 @@ describe("ai.completion", function()
 
     it("returns false without raising when the suggestion's buffer was since deleted", function()
       local scratch = vim.api.nvim_create_buf(false, true)
-      require("ai.ui.ghost").show(scratch, 0, 0, "x")
+      require("ai.ui.ghost").show(scratch, 0, 0, "x", vim.api.nvim_buf_get_changedtick(scratch))
       vim.api.nvim_buf_delete(scratch, { force = true })
 
       local accepted
@@ -281,6 +314,26 @@ describe("ai.completion", function()
       end)
       assert.is_false(accepted)
     end)
+
+    it(
+      "returns false and leaves the buffer untouched when it changed since the suggestion was shown",
+      function()
+        -- Simulates a ghost suggestion that survived into Normal mode (see
+        -- reset()'s doc) and then a Normal-mode edit -- accept() must not
+        -- write at the now-stale (row, col) (ERR-30).
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local x = " })
+        local stale_tick = vim.api.nvim_buf_get_changedtick(bufnr)
+        require("ai.ui.ghost").show(bufnr, 0, 10, "1", stale_tick)
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "something else entirely" })
+
+        local accepted = require("ai.completion").accept()
+        assert.is_false(accepted)
+        assert.are.same(
+          { "something else entirely" },
+          vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+        )
+      end
+    )
   end)
 
   describe("dismiss", function()

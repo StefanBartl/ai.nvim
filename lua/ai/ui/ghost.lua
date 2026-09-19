@@ -19,6 +19,7 @@ local M = {}
 ---@field row integer 0-indexed, matching the extmark API
 ---@field col integer
 ---@field text string The exact suggestion text last shown, for `accept()` to insert
+---@field changedtick integer The buffer's changedtick when this was rendered, for `accept()` to re-verify against before writing (ERR-30)
 
 ---@type Ai.Ui.Ghost.Shown|nil
 local shown = nil
@@ -30,8 +31,9 @@ local shown = nil
 ---@param row integer
 ---@param col integer
 ---@param text string
+---@param changedtick integer the buffer's changedtick this suggestion was computed against
 ---@return nil
-function M.show(bufnr, row, col, text)
+function M.show(bufnr, row, col, text, changedtick)
   M.clear()
   if text == "" then
     return
@@ -56,7 +58,7 @@ function M.show(bufnr, row, col, text)
   if not ok then
     return
   end
-  shown = { bufnr = bufnr, row = row, col = col, text = text }
+  shown = { bufnr = bufnr, row = row, col = col, text = text, changedtick = changedtick }
 end
 
 ---Clear the currently shown suggestion, if any.
