@@ -1,8 +1,9 @@
 ---@module 'ai.health'
 --- `:checkhealth ai` -- Neovim version, lib.nvim dependencies (including the
 --- `fetch_stream` extension ai.nvim needs specifically), curl, per-provider
---- availability (never a key's value, only whether one is set), and the
---- `:Ai` composer route pre-flight.
+--- availability (never a key's value, only whether one is set), configured
+--- model ids checked against `ai.providers.models`'s per-provider registry,
+--- and the `:Ai` composer route pre-flight.
 
 local lib_health = require("lib.nvim.health")
 
@@ -114,6 +115,15 @@ function M.check()
   vim.health.info("provider_order = " .. table.concat(cfg.provider_order, ", "))
   for _, issue in ipairs(require("ai.config").issues()) do
     vim.health.warn("invalid config value, using the default -- " .. issue)
+  end
+  -- A model id is never rejected at request time (see
+  -- `ai.providers.models`'s module doc) -- this is the surface the roadmap
+  -- item asked for: report it here instead, against each provider's own
+  -- known-model catalogue, with no fixed catalogue at all for a local
+  -- provider like ollama/loomai (there is nothing to validate a
+  -- self-hosted model name against).
+  for _, issue in ipairs(require("ai.providers.models").check_config(cfg)) do
+    vim.health.warn(issue, { "Check the provider's current docs for supported model ids" })
   end
 
   -- ── Completion ──────────────────────────────────────────────────────────

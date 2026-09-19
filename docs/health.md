@@ -20,6 +20,12 @@ What each section reports:
   dropped back to its default instead of surviving the merge (e.g.
   `provider_order = "claude"` instead of a list, or `completion.trigger =
   "atuo"`) -- the value degrades silently everywhere else, this is where it
-  becomes visible.
+  becomes visible. Also a warning for a configured `model`/`completion.model`
+  that isn't a known id for its provider, per
+  `lua/ai/providers/models.lua`'s registry (Claude/Gemini/OpenAI only --
+  `ollama`/`loomai` run arbitrary local models, so any id is accepted for
+  them). Reporting only: an unrecognized model still reaches the provider
+  and fails there as a normal API error, `opts.model` is never blocked here.
+  See [configuration.md](configuration.md#model-ids).
 - **composer route pre-flight** -- `:Ai`'s own route table, validated by
   `lib.nvim.bindings.usercmd.composer`.
