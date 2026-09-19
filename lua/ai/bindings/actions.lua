@@ -25,12 +25,13 @@ end
 ---Ask once, non-streaming; shows the answer in a read-only viewer popup.
 ---Prompts for text first when `prompt` is empty.
 ---@param prompt string
+---@param context? Ai.ContextDefaults
 ---@return nil
-function M.ask_prompt(prompt)
+function M.ask_prompt(prompt, context)
   local function run(text)
     local notify = require("lib.nvim.notify").create("[ai]")
     local progress = require("lib.nvim.progress").create({ title = "[ai]" })
-    require("ai").ask({ prompt = text }, function(ok, res)
+    require("ai").ask({ prompt = text, context = context }, function(ok, res)
       progress:finish()
       if not ok then
         ---@cast res LibErrorValue
@@ -232,7 +233,13 @@ end
 ---@param context Ai.ContextDefaults
 ---@return nil
 function M.explain_badge(context)
-  local ctx_block = require("ai.context").assemble(context)
+  local ctx_block, ctx_errors = require("ai.context").assemble(context)
+  if ctx_errors then
+    require("lib.nvim.notify")
+      .create("[ai]")
+      .warn("Failed to gather context: " .. table.concat(ctx_errors, "; "))
+    return
+  end
   if ctx_block == "" then
     require("lib.nvim.notify").create("[ai]").warn("Nothing to explain in the current context")
     return
