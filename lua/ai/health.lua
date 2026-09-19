@@ -112,6 +112,9 @@ function M.check()
   local cfg = require("ai").config()
   vim.health.info("provider = " .. cfg.provider)
   vim.health.info("provider_order = " .. table.concat(cfg.provider_order, ", "))
+  for _, issue in ipairs(require("ai.config").issues()) do
+    vim.health.warn("invalid config value, using the default -- " .. issue)
+  end
 
   -- ── Completion ──────────────────────────────────────────────────────────
   vim.health.start("ai.nvim: completion")

@@ -49,8 +49,8 @@ require("ai").setup({
     trigger = "manual",          -- "manual" | "auto"
     idle_ms = 500,                -- auto-mode idle debounce; unused in "manual"
     max_context_lines = 60,       -- buffer lines included before/after the cursor
-    provider = nil,                -- overrides `provider` for completion requests only
-    model = nil,
+    provider = false,               -- overrides `provider` for completion requests only; `false` = unset
+    model = false,
     keymap = {
       trigger = "<C-\\><C-a>",    -- insert mode; manual mode only
       accept = "<Tab>",            -- insert mode; falls through to normal Tab when nothing is shown

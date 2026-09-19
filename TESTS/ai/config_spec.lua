@@ -88,5 +88,55 @@ describe("ai.config", function()
       config.setup({ provider_order = { "my-custom-provider" } })
       assert.are.equal(0, #messages)
     end)
+
+    it("does not warn about the documented completion.provider/completion.model options", function()
+      local config = require("ai.config")
+      config.setup({ completion = { provider = "ollama", model = "llama3.2" } })
+      assert.are.equal(0, #messages)
+    end)
+
+    it("warns about a typo'd key that happens to share a name with an open-shape key", function()
+      -- `model`/`provider_order` are open-shape only at the top level -- a
+      -- different, fixed-shape table that happens to have a key spelled the
+      -- same way (not a real `ui` option) must still be caught.
+      local config = require("ai.config")
+      config.setup({ ui = { model = "double" } })
+      assert.are.equal(1, #messages)
+      assert.is_true(messages[1]:find("ui.model", 1, true) ~= nil)
+    end)
+  end)
+
+  describe("invalid value degradation", function()
+    it("drops a wrong-typed provider_order to the default instead of merging it", function()
+      local config = require("ai.config")
+      local cfg = config.setup({ provider_order = "claude" })
+      assert.are.same({ "claude", "ollama", "openai", "gemini", "loomai" }, cfg.provider_order)
+      assert.are.equal(1, #config.issues())
+      assert.is_true(config.issues()[1]:find("provider_order", 1, true) ~= nil)
+    end)
+
+    it(
+      "drops an unrecognized completion.trigger to the default instead of a silent typo",
+      function()
+        local config = require("ai.config")
+        local cfg = config.setup({ completion = { trigger = "atuo" } })
+        assert.are.equal("manual", cfg.completion.trigger)
+        assert.are.equal(1, #config.issues())
+        assert.is_true(config.issues()[1]:find("completion.trigger", 1, true) ~= nil)
+      end
+    )
+
+    it("drops a wrong-typed timeout_ms to the default", function()
+      local config = require("ai.config")
+      local cfg = config.setup({ timeout_ms = "60s" })
+      assert.are.equal(60000, cfg.timeout_ms)
+      assert.are.equal(1, #config.issues())
+    end)
+
+    it("issues() is empty when every value is well-typed", function()
+      local config = require("ai.config")
+      config.setup({ provider_order = { "ollama" }, completion = { trigger = "auto" } })
+      assert.are.equal(0, #config.issues())
+    end)
   end)
 end)
