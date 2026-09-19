@@ -120,7 +120,21 @@ function M.check_config(cfg)
   local completion = cfg.completion
   local completion_model = completion and completion.model
   if type(completion_model) == "string" then
-    local provider_id = (completion and completion.provider) or cfg.provider
+    local requested = (completion and completion.provider) or cfg.provider or "auto"
+    local provider_id = requested
+    if requested == "auto" then
+      -- "auto" is not itself a provider id -- `M.KNOWN` has no entry for the
+      -- literal string "auto", so checking `is_known("auto", ...)` directly
+      -- would be vacuously true and never catch anything (the exact gap
+      -- `ai/init.lua`'s `resolve()` avoids by resolving *before* looking up
+      -- a model). Mirror that: walk `provider_order` the same way a real
+      -- request would, so the model is checked against whichever provider
+      -- would actually receive it. If nothing resolves (e.g. no provider in
+      -- `provider_order` is currently available), fall back to the literal
+      -- "auto" -- same permissive, no-false-positive behavior as before.
+      local provider = require("ai.providers").resolve(requested, cfg.provider_order or {}, nil)
+      provider_id = provider and provider.id or requested
+    end
     if type(provider_id) == "string" and not M.is_known(provider_id, completion_model) then
       issues[#issues + 1] = ("completion.model %q is not a known model for provider %q"):format(
         completion_model,
