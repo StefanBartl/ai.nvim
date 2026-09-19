@@ -80,9 +80,14 @@ local function write_body_file(json)
   end
   local written, write_err = uv.fs_write(fd, json, 0)
   uv.fs_close(fd)
-  if not written then
+  -- `fs_write` returns the number of bytes actually written, not a
+  -- true/false success flag -- a short write (ENOSPC, a signal) returns a
+  -- positive number smaller than `#json` and would pass a bare `not
+  -- written` check, reporting success for a truncated file.
+  if not written or written < #json then
     pcall(os.remove, path)
-    return nil, "cannot write request body file: " .. tostring(write_err)
+    return nil,
+      "cannot write request body file: " .. tostring(write_err or "short write (disk full?)")
   end
   return path, nil
 end
