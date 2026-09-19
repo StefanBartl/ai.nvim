@@ -59,6 +59,25 @@ function M.available()
 end
 
 ---@internal
+---`data.error`/`decoded.error` is either a plain string or a table that
+---*should* carry a `message` field -- but loomAI can send `{"error":{}}` or
+---`{"error":{"message":null}}` (the latter already turned into Lua `nil` by
+---`util.denil`), and `a and b or c` falls through to `c` (the whole table)
+---as soon as `b` is falsy, independent of `a`. An explicit check avoids
+---ever handing the raw table to `tostring()`.
+---@param err table|string
+---@return string
+local function error_message(err)
+  if type(err) == "table" then
+    if type(err.message) == "string" then
+      return err.message
+    end
+    return "unknown error"
+  end
+  return tostring(err)
+end
+
+---@internal
 ---@param req Ai.Request
 ---@return string json
 local function build_body(req)
@@ -99,8 +118,10 @@ function M.ask(req, cb)
     end
     data = util.denil(data)
     if data.error ~= nil then
-      local msg = type(data.error) == "table" and data.error.message or data.error
-      cb(false, lib_error.new("api_error", "loomai error: " .. tostring(msg), data.error))
+      cb(
+        false,
+        lib_error.new("api_error", "loomai error: " .. error_message(data.error), data.error)
+      )
       return
     end
     cb(true, {
@@ -129,6 +150,9 @@ function M.stream(req, handlers)
 
   local timeout_ms = req.timeout_ms or 60000
   local text_parts = {}
+  -- Set once an error is reported mid-stream so `on_done` below doesn't
+  -- also fire with an empty-but-"successful" response afterwards.
+  local failed = false
 
   local process, prepare_err = transport.stream_json(host(req) .. "/ask/stream", {
     method = "POST",
@@ -147,10 +171,14 @@ function M.stream(req, handlers)
       end
       decoded = util.denil(decoded)
       if decoded.error ~= nil then
+        failed = true
         if handlers.on_error then
-          local msg = type(decoded.error) == "table" and decoded.error.message or decoded.error
           handlers.on_error(
-            lib_error.new("api_error", "loomai error: " .. tostring(msg), decoded.error)
+            lib_error.new(
+              "api_error",
+              "loomai error: " .. error_message(decoded.error),
+              decoded.error
+            )
           )
         end
         return
@@ -164,6 +192,9 @@ function M.stream(req, handlers)
       end
     end,
     on_done = function(obj)
+      if failed then
+        return
+      end
       if obj.code ~= 0 then
         if handlers.on_error then
           handlers.on_error(util.curl_exit_error("loomai", obj, timeout_ms))
