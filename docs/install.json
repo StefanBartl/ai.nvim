@@ -1,0 +1,32 @@
+{
+  "tools": [
+    {
+      "bin": "curl",
+      "required": true,
+      "why": "Carries every provider's HTTP request and the streamed response (`lib.nvim.net.curl` shells out to it); without it no provider can answer and `:Ai` has nothing to talk to. Usually already present.",
+      "pkg": {
+        "apt": "curl",
+        "dnf": "curl",
+        "pacman": "curl",
+        "zypper": "curl",
+        "apk": "curl",
+        "brew": "curl",
+        "winget": "cURL.cURL",
+        "scoop": "curl",
+        "choco": "curl"
+      }
+    },
+    {
+      "bin": "ollama",
+      "required": false,
+      "why": "Enables the ollama provider: local models, nothing leaves the machine. The binary alone is not enough -- the daemon has to be running (default http://127.0.0.1:11434, override with AI_OLLAMA_HOST). The claude, openai and gemini providers need only an API key and curl.",
+      "pkg": {
+        "pacman": "ollama",
+        "brew": "ollama",
+        "winget": "Ollama.Ollama",
+        "scoop": "ollama",
+        "choco": "ollama"
+      }
+    }
+  ]
+}

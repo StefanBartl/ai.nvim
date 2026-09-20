@@ -28,6 +28,12 @@
     override with `LOOMAI_HOST`). Last in the default `provider_order`, see
     `docs/scope.md`.
 
+The two external tools -- `curl`, and `ollama` for that provider -- are
+declared in [install.json](install.json) and read by lib.nvim's
+[deps module](https://github.com/StefanBartl/lib.nvim/blob/main/lua/lib/nvim/deps/README.md):
+`:Lib deps show ai.nvim` says what is missing and why it matters, and
+`:Lib deps install ai.nvim` offers to install it, asking first.
+
 No provider is required at install time -- `:checkhealth ai` reports which
 ones are usable on this machine, and `provider = "auto"` (the default) picks
 the first available one in `provider_order`.
