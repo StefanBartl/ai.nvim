@@ -210,7 +210,13 @@ function M.stream(req, handlers)
     end,
     -- See claude.lua's identical comment: `fetch_stream`'s own `on_error` is
     -- `lib.nvim.net.curl`'s plain-string API, not `Ai.StreamHandlers`'s.
+    --
+    -- Also see claude.lua: this transport-level failure fires independently
+    -- of the process exit callback, so `failed` must be set here too or a
+    -- subsequent `on_done` with `obj.code == 0` calls `handlers.on_done`
+    -- right after this already reported the request as failed.
     on_error = function(err)
+      failed = true
       if handlers.on_error then
         handlers.on_error(lib_error.new("network_error", err))
       end

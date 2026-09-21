@@ -307,7 +307,16 @@ function M.stream(req, handlers)
     -- `Lib.Net.Curl.StreamHandlers`'s doc comment), not `Ai.StreamHandlers`'s
     -- -- it must be wrapped into the same `LibErrorValue` shape, not passed
     -- through raw.
+    --
+    -- This is a transport-level failure (e.g. a stdout read error), reported
+    -- independently of the process exit callback -- `on_done` can still fire
+    -- afterwards for the same request, so `failed` has to be set here too,
+    -- the same as the content-level `decoded.type == "error"` branch above,
+    -- or a subsequent `on_done` with `obj.code == 0` would call
+    -- `handlers.on_done` right after this already reported the request as
+    -- failed.
     on_error = function(err)
+      failed = true
       if handlers.on_error then
         handlers.on_error(lib_error.new("network_error", err))
       end

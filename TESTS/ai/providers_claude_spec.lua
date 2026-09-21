@@ -174,6 +174,32 @@ describe("ai.providers.claude", function()
       assert.are.equal("network_error", err.kind)
       assert.is_true(err.message:find("curl exited 7", 1, true) ~= nil)
     end)
+
+    it("does not also call on_done after a transport-level on_error fires", function()
+      -- `lib.nvim.net.curl.fetch_stream`'s own `on_error` (a stdout read
+      -- failure) fires independently of the process exit callback -- see
+      -- providers_transport_spec.lua's "survives a stream that reports both
+      -- on_error and on_done". If the process then exits 0, on_done must not
+      -- also report a spurious success for the same request.
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_stream = function(_, _, handlers)
+          handlers.on_error("read failed")
+          handlers.on_done({ code = 0, signal = 0, stdout = "", stderr = "" })
+        end,
+      }
+      local claude = require("ai.providers.claude")
+      local err_count, done_count = 0, 0
+      claude.stream({ prompt = "hi" }, {
+        on_error = function()
+          err_count = err_count + 1
+        end,
+        on_done = function()
+          done_count = done_count + 1
+        end,
+      })
+      assert.are.equal(1, err_count)
+      assert.are.equal(0, done_count)
+    end)
   end)
   describe("attachments", function()
     local page = { kind = "image", media_type = "image/png", data = "AAA" }
