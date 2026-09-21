@@ -84,7 +84,10 @@ jobs:
           exec > >(tee -a "$RUNNER_TEMP/test-output.log") 2>&1
           scripts/test.sh
       - uses: actions/upload-artifact@v7
-        if: failure()
+        # A job that hits `timeout-minutes` is reported as `cancelled`, not
+        # `failure` -- without `cancelled()` here, a hang (the exact case
+        # this log exists to debug) skips the upload silently.
+        if: failure() || cancelled()
         with:
           name: test-output-test-${{ matrix.os }}
           path: ${{ runner.temp }}/test-output.log
