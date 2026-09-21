@@ -63,6 +63,29 @@ describe("ai.providers.openai", function()
       assert.is_true(err.message:find("invalid_api_key", 1, true) ~= nil)
     end)
 
+    it("reports a non-table `error` value as a failure instead of raising", function()
+      -- A self-hosted OpenAI-Chat-Completions-compatible endpoint can report
+      -- a failure as `{"error": true}` rather than Anthropic/OpenAI's own
+      -- `{"error":{"message":...}}` object. Indexing `.message` off a
+      -- boolean would raise inside the transport callback and drop `cb`
+      -- entirely -- see loomai.lua's "reports a bare string error" test.
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function(_, _, cb)
+          cb(true, { error = true })
+        end,
+      }
+      local openai = require("ai.providers.openai")
+      local ok, err
+      local raised = not pcall(function()
+        openai.ask({ prompt = "hi" }, function(a, b)
+          ok, err = a, b
+        end)
+      end)
+      assert.is_false(raised)
+      assert.is_false(ok)
+      assert.are.equal("api_error", err.kind)
+    end)
+
     it("fails without calling curl when OPENAI_API_KEY is unset", function()
       vim.env.OPENAI_API_KEY = nil
       local called = false
@@ -180,6 +203,50 @@ describe("ai.providers.openai", function()
         end,
       })
       assert.are.equal("network_error", err.kind)
+    end)
+
+    it("does not also call on_done after a transport-level on_error fires", function()
+      -- See claude.lua's identical test: fetch_stream's on_error can fire
+      -- independently of the process exit callback, and on_done must not
+      -- then report a spurious success for the same request.
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_stream = function(_, _, handlers)
+          handlers.on_error("read failed")
+          handlers.on_done({ code = 0, signal = 0, stdout = "", stderr = "" })
+        end,
+      }
+      local openai = require("ai.providers.openai")
+      local err_count, done_count = 0, 0
+      openai.stream({ prompt = "hi" }, {
+        on_error = function()
+          err_count = err_count + 1
+        end,
+        on_done = function()
+          done_count = done_count + 1
+        end,
+      })
+      assert.are.equal(1, err_count)
+      assert.are.equal(0, done_count)
+    end)
+
+    it("reports a mid-stream non-table `error` value as a failure instead of raising", function()
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_stream = function(_, _, handlers)
+          handlers.on_chunk('data: {"error":1}')
+          handlers.on_done({ code = 0, signal = 0, stdout = "", stderr = "" })
+        end,
+      }
+      local openai = require("ai.providers.openai")
+      local err
+      local raised = not pcall(function()
+        openai.stream({ prompt = "hi" }, {
+          on_error = function(e)
+            err = e
+          end,
+        })
+      end)
+      assert.is_false(raised)
+      assert.are.equal("api_error", err.kind)
     end)
 
     it("fails without calling curl when OPENAI_API_KEY is unset", function()

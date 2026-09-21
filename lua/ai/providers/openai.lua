@@ -86,6 +86,28 @@ local function build_body(req, stream)
   })
 end
 
+---@internal
+---`data.error`/`decoded.error` should be a `{message = ...}` table (OpenAI's
+---own error shape), but this provider also has to work against any
+---OpenAI-Chat-Completions-compatible endpoint (a self-hosted gateway or
+---proxy) that reports a failure differently, e.g. `{"error": true}` or
+---`{"error": 1}`. Indexing `.message` off a non-table value there raises
+---inside the transport callback -- which is wrapped in `vim.schedule` by
+---`lib.nvim.net.curl.fetch_json`/`fetch_stream`, so the error is swallowed
+---and `cb`/`handlers` never fires at all -- see loomai.lua's identical
+---`error_message` helper for the same guard.
+---@param err table|string|boolean|number
+---@return string
+local function error_message(err)
+  if type(err) == "table" then
+    if type(err.message) == "string" then
+      return err.message
+    end
+    return "unknown error"
+  end
+  return tostring(err)
+end
+
 ---@param req Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
@@ -140,7 +162,7 @@ function M.ask(req, cb)
     if data.error then
       cb(
         false,
-        lib_error.new("api_error", "openai API error: " .. tostring(data.error.message), data.error)
+        lib_error.new("api_error", "openai API error: " .. error_message(data.error), data.error)
       )
       return
     end
@@ -223,7 +245,7 @@ function M.stream(req, handlers)
           handlers.on_error(
             lib_error.new(
               "api_error",
-              "openai API error: " .. tostring(decoded.error.message),
+              "openai API error: " .. error_message(decoded.error),
               decoded.error
             )
           )
@@ -263,7 +285,7 @@ function M.stream(req, handlers)
             handlers.on_error(
               lib_error.new(
                 "api_error",
-                "openai API error: " .. tostring(decoded_err.error.message),
+                "openai API error: " .. error_message(decoded_err.error),
                 decoded_err.error
               )
             )
@@ -281,7 +303,13 @@ function M.stream(req, handlers)
     end,
     -- See claude.lua's identical comment: `fetch_stream`'s own `on_error` is
     -- `lib.nvim.net.curl`'s plain-string API, not `Ai.StreamHandlers`'s.
+    --
+    -- Also see claude.lua: this transport-level failure fires independently
+    -- of the process exit callback, so `failed` must be set here too or a
+    -- subsequent `on_done` with `obj.code == 0` calls `handlers.on_done`
+    -- right after this already reported the request as failed.
     on_error = function(err)
+      failed = true
       if handlers.on_error then
         handlers.on_error(lib_error.new("network_error", err))
       end

@@ -175,6 +175,30 @@ describe("ai.providers.loomai", function()
       assert.are.equal("network_error", err.kind)
     end)
 
+    it("does not also call on_done after a transport-level on_error fires", function()
+      -- See claude.lua's identical test: fetch_stream's on_error can fire
+      -- independently of the process exit callback, and on_done must not
+      -- then report a spurious success for the same request.
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_stream = function(_, _, handlers)
+          handlers.on_error("read failed")
+          handlers.on_done({ code = 0, signal = 0, stdout = "", stderr = "" })
+        end,
+      }
+      local loomai = require("ai.providers.loomai")
+      local err_count, done_count = 0, 0
+      loomai.stream({ prompt = "hi" }, {
+        on_error = function()
+          err_count = err_count + 1
+        end,
+        on_done = function()
+          done_count = done_count + 1
+        end,
+      })
+      assert.are.equal(1, err_count)
+      assert.are.equal(0, done_count)
+    end)
+
     it("ignores [DONE]/empty payloads without emitting a chunk", function()
       package.loaded["lib.nvim.net.curl"] = {
         fetch_stream = function(_, _, handlers)
