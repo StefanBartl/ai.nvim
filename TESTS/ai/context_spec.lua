@@ -128,3 +128,76 @@ describe("ai.context -- structured_data (data.nvim)", function()
     assert.are.equal("", block)
   end)
 end)
+
+describe("ai.context -- structured_data error propagation (stubbed data.nvim)", function()
+  -- Unlike the describe block above, this one stubs `data.detect`/
+  -- `data.scope.resolve`/`data.format` directly via `package.loaded` --
+  -- `require()` checks that table before ever touching 'runtimepath', so
+  -- these run regardless of whether a real data.nvim checkout is on the
+  -- rtp in this test environment. Verifies the fix for the finding that
+  -- `add_structured_data_scope` let a raise from `detect.format`/
+  -- `scope_resolve.lines` escape `M.assemble` uncaught, unlike every other
+  -- scope in this file (see the "scope raises" test above).
+  local saved = {}
+
+  before_each(function()
+    saved["data.detect"] = package.loaded["data.detect"]
+    saved["data.scope.resolve"] = package.loaded["data.scope.resolve"]
+    saved["data.format"] = package.loaded["data.format"]
+    package.loaded["data.format"] = {
+      get = function()
+        return {}
+      end,
+    }
+  end)
+
+  after_each(function()
+    package.loaded["data.detect"] = saved["data.detect"]
+    package.loaded["data.scope.resolve"] = saved["data.scope.resolve"]
+    package.loaded["data.format"] = saved["data.format"]
+  end)
+
+  it("records into `errors` instead of raising when detect.format() throws", function()
+    package.loaded["data.detect"] = {
+      format = function()
+        error("boom: detect API drift")
+      end,
+    }
+    package.loaded["data.scope.resolve"] = {
+      lines = function()
+        return 0, 0
+      end,
+    }
+
+    local ok, block, errors = pcall(function()
+      return require("ai.context").assemble({ structured_data = true })
+    end)
+
+    assert.is_true(ok)
+    assert.are.equal("", block)
+    assert.is_not_nil(errors)
+    assert.truthy(errors[1]:find("boom", 1, true) ~= nil)
+  end)
+
+  it("records into `errors` instead of raising when scope_resolve.lines() throws", function()
+    package.loaded["data.detect"] = {
+      format = function()
+        return "json"
+      end,
+    }
+    package.loaded["data.scope.resolve"] = {
+      lines = function()
+        error("boom: scope_resolve API drift")
+      end,
+    }
+
+    local ok, block, errors = pcall(function()
+      return require("ai.context").assemble({ structured_data = true })
+    end)
+
+    assert.is_true(ok)
+    assert.are.equal("", block)
+    assert.is_not_nil(errors)
+    assert.truthy(errors[1]:find("boom", 1, true) ~= nil)
+  end)
+end)

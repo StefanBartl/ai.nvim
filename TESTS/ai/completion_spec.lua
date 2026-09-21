@@ -342,5 +342,30 @@ describe("ai.completion", function()
       require("ai.completion").dismiss()
       assert.is_nil(require("ai.ui.ghost").current())
     end)
+
+    it("a response for a request still in flight when dismissed does not reappear", function()
+      -- Regression test: dismiss() must bump `generation`, the same guard
+      -- reset() (InsertLeave) already uses -- otherwise a request fired
+      -- before the dismiss key, with no typing or cursor movement in
+      -- between, passes every staleness guard in trigger()'s callback and
+      -- silently re-renders the very suggestion the user just cancelled.
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      local saved_cb
+      package.loaded["ai"] = {
+        config = function()
+          return { completion = { enable = true, max_context_lines = 10 } }
+        end,
+        ask = function(_, cb)
+          saved_cb = cb
+        end,
+      }
+      local completion = require("ai.completion")
+      completion.trigger()
+
+      completion.dismiss()
+
+      saved_cb(true, { text = "too late" })
+      assert.is_nil(require("ai.ui.ghost").current())
+    end)
   end)
 end)

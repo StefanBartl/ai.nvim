@@ -35,9 +35,14 @@ end
 --- cursor guess, then whole-buffer. Silent no-op (no section appended) when
 --- data.nvim is absent, the cursor isn't in a recognizable block, or the
 --- block fails to decode (e.g. mid-edit) -- context assembly never errors
---- the caller's request over a best-effort section.
+--- the caller's request over a best-effort section. `detect.format`/
+--- `scope_resolve.lines` are `pcall`-guarded and a raise from either is
+--- recorded into `errors`, same as `add_scope` -- data.nvim version drift or
+--- a buffer mid-edit in a way that breaks its own internal assumptions must
+--- not escape `M.assemble` as an uncaught error.
 ---@param sections string[]
-local function add_structured_data_scope(sections)
+---@param errors string[]
+local function add_structured_data_scope(sections, errors)
   local ok_detect, detect = pcall(require, "data.detect")
   local ok_scope, scope_resolve = pcall(require, "data.scope.resolve")
   local ok_format, formats = pcall(require, "data.format")
@@ -47,7 +52,11 @@ local function add_structured_data_scope(sections)
 
   local bufnr = vim.api.nvim_get_current_buf()
   local cmd = { range = 0, line1 = 0, line2 = 0 }
-  local fmt = detect.format(bufnr, cmd)
+  local ok_fmt, fmt = pcall(detect.format, bufnr, cmd)
+  if not ok_fmt then
+    errors[#errors + 1] = tostring(fmt)
+    return
+  end
   if not fmt then
     return
   end
@@ -57,7 +66,11 @@ local function add_structured_data_scope(sections)
     return
   end
 
-  local s0, e0 = scope_resolve.lines(bufnr, cmd, fmt)
+  local ok_lines, s0, e0 = pcall(scope_resolve.lines, bufnr, cmd, fmt)
+  if not ok_lines then
+    errors[#errors + 1] = tostring(s0)
+    return
+  end
   local src = vim.api.nvim_buf_get_lines(bufnr, s0, e0 + 1, false)
   if #src == 0 then
     return
@@ -153,7 +166,7 @@ function M.assemble(opts)
   end
 
   if opts.structured_data then
-    add_structured_data_scope(sections)
+    add_structured_data_scope(sections, errors)
   end
 
   return table.concat(sections, "\n\n"), (#errors > 0 and errors or nil)

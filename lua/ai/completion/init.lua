@@ -169,10 +169,15 @@ function M.accept()
   return true
 end
 
----Clear the currently shown suggestion without inserting it.
+---Clear the currently shown suggestion without inserting it. Also bumps
+---`generation` -- without it, a request still in flight when the user
+---dismisses (before it responds, with no intervening typing or cursor
+---movement) would pass every one of `trigger()`'s staleness guards once it
+---lands and render right back, silently overriding the dismiss.
 ---@return nil
 function M.dismiss()
   ghost.clear()
+  generation = generation + 1
 end
 
 ---Install the reactive dismiss-on-type/dismiss-on-leave-insert behavior,
