@@ -100,3 +100,8 @@ local function add_optional_dep(env_var, deps_name, marker)
 end
 
 add_optional_dep("DATA_NVIM_DIR", "data.nvim", "data.detect")
+
+-- Swap and shada stay off for the whole suite, including plenary's child
+-- processes that reuse this file: stale swap files fail suites with E326.
+vim.o.swapfile = false
+vim.o.shadafile = "NONE"

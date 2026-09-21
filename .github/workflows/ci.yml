@@ -8,6 +8,7 @@ on:
 jobs:
   luacheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -28,6 +29,7 @@ jobs:
 
   stylua:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: JohnnyMorganz/stylua-action@v4
@@ -39,6 +41,7 @@ jobs:
   test:
     name: plenary tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       # One platform failing must not cancel the others: which of the three
       # broke is the whole information content of this job.
@@ -59,11 +62,14 @@ jobs:
         with:
           repository: nvim-lua/plenary.nvim
           path: plenary.nvim
+          # Pinned to the 2026-09-20 HEAD; bump deliberately, not by drifting.
+          ref: 74b06c6c75e4eeb3108ec01852001636d85a932b
 
       - uses: actions/checkout@v5
         with:
           repository: StefanBartl/lib.nvim
           path: lib.nvim
+          ref: ci-verified
 
       - uses: rhysd/action-setup-vim@v1
         with:
@@ -74,4 +80,12 @@ jobs:
         env:
           PLENARY_DIR: ${{ github.workspace }}/plenary.nvim
           LIB_NVIM_DIR: ${{ github.workspace }}/lib.nvim
-        run: scripts/test.sh
+        run: |
+          exec > >(tee -a "$RUNNER_TEMP/test-output.log") 2>&1
+          scripts/test.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-output-test-${{ matrix.os }}
+          path: ${{ runner.temp }}/test-output.log
+          if-no-files-found: ignore
