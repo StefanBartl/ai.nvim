@@ -27,4 +27,4 @@ else
   cmd="PlenaryBustedDirectory $target { minimal_init = 'TESTS/minimal_init.lua', sequential = true }"
 fi
 
-exec nvim --clean --headless -u TESTS/minimal_init.lua -c "$cmd"
+exec nvim -n --clean --headless -u TESTS/minimal_init.lua -c "$cmd"
