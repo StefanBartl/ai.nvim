@@ -6,11 +6,33 @@
 -- providers_claude_spec.lua's module doc gives for `lib.nvim.net.curl`.
 ---@diagnostic disable: need-check-nil
 describe("ai.ui.panel", function()
-  ---@return table surface stub, with `.lines` reflecting the last set_lines() call
+  ---@return table surface stub tracking `.lines` (mirroring the real
+  ---`ui.kit.surface`'s buffer content across whichever of `set_lines`/
+  ---`set_last_line`/`append_lines` panel.lua calls) plus a call counter per
+  ---method, so tests can assert panel.lua never falls back to a full
+  ---`set_lines` rewrite during streaming.
   local function make_surface_stub()
-    local surface = { closed = false, lines = nil, on_close_cb = nil }
+    local surface = {
+      closed = false,
+      lines = { "" },
+      on_close_cb = nil,
+      set_lines_calls = 0,
+      set_last_line_calls = 0,
+      append_lines_calls = 0,
+    }
     function surface:set_lines(lines)
+      self.set_lines_calls = self.set_lines_calls + 1
       self.lines = lines
+    end
+    function surface:set_last_line(text)
+      self.set_last_line_calls = self.set_last_line_calls + 1
+      self.lines[#self.lines] = text
+    end
+    function surface:append_lines(new_lines)
+      self.append_lines_calls = self.append_lines_calls + 1
+      for _, line in ipairs(new_lines) do
+        self.lines[#self.lines + 1] = line
+      end
     end
     function surface:on_close(cb)
       self.on_close_cb = cb
@@ -92,6 +114,17 @@ describe("ai.ui.panel", function()
     panel_mod.append(panel, "line one\nline two")
     panel_mod.append(panel, " continued\nline three")
     assert.are.same({ "line one", "line two continued", "line three" }, panel.lines)
+    assert.are.same(panel.lines, surface_stub.lines)
+  end)
+
+  it("append() updates the surface incrementally, never rewriting the whole buffer", function()
+    local panel_mod = require("ai.ui.panel")
+    local panel = panel_mod.open({})
+    panel_mod.append(panel, "line one\nline two")
+    panel_mod.append(panel, " continued\nline three")
+    assert.are.equal(0, surface_stub.set_lines_calls)
+    assert.are.equal(2, surface_stub.set_last_line_calls)
+    assert.are.equal(2, surface_stub.append_lines_calls)
   end)
 
   it("append('') is a no-op -- no progress update, no line change", function()
