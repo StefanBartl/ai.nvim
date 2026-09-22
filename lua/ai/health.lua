@@ -159,6 +159,13 @@ function M.check()
       "data.nvim not found (optional) -- context.structured_data is unavailable; every other context flag still works"
     )
   end
+  if pcall(require, "gitsuite.features.conflict") then
+    vim.health.ok("gitsuite.nvim detected -- context.conflict available")
+  else
+    vim.health.info(
+      "gitsuite.nvim not found (optional) -- context.conflict is unavailable; every other context flag still works"
+    )
+  end
 
   -- The declared external tools (docs/install.json): a pointer to
   -- `:Lib deps show`, not a second report -- the checks above already say

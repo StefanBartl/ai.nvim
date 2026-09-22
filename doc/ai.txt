@@ -288,10 +288,13 @@ require("ai.providers").register({provider})
                                                         *ai.context.assemble()*
 require("ai.context").assemble({opts})
   Build the context block for {opts} (`Ai.ContextDefaults`: `buffer`,
-  `selection`, `diagnostics`, `cwd`, all boolean). Every section is
-  best-effort -- a scope that resolves to nothing (no visual selection
-  active, no diagnostics present) is silently omitted. Returns an empty
-  string if nothing was requested or resolved. See |ai-context|.
+  `selection`, `diagnostics`, `cwd`, `structured_data`, `conflict`, all
+  boolean). Every section is best-effort -- a scope that resolves to
+  nothing (no visual selection active, no diagnostics present, no
+  unresolved conflict) is silently omitted. `structured_data` needs
+  data.nvim and `conflict` needs gitsuite.nvim, both optional soft
+  dependencies -- absent, those two flags are silent no-ops too. Returns
+  an empty string if nothing was requested or resolved. See |ai-context|.
 
 ==============================================================================
 9. PROVIDERS                                                   *ai-providers*

@@ -101,6 +101,13 @@ end
 
 add_optional_dep("DATA_NVIM_DIR", "data.nvim", "data.detect")
 
+--- gitsuite.nvim is an OPTIONAL soft dependency too (`ai.context`'s
+--- `conflict` flag) -- same convention as data.nvim above: the spec checks
+--- `pcall(require, "gitsuite.features.conflict")` itself and skips when
+--- missing, plus a separate `package.loaded`-stubbed describe block gives
+--- CI-guaranteed coverage regardless of whether a real checkout is found.
+add_optional_dep("GITSUITE_NVIM_DIR", "gitsuite.nvim", "gitsuite.features.conflict")
+
 -- Swap and shada stay off for the whole suite, including plenary's child
 -- processes that reuse this file: stale swap files fail suites with E326.
 vim.o.swapfile = false

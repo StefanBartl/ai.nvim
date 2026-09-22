@@ -99,6 +99,62 @@ local function add_structured_data_scope(sections, errors)
 end
 
 ---@internal
+---@param bufnr integer
+---@param first integer 0-indexed, inclusive
+---@param last integer 0-indexed, inclusive; `last < first` means an empty section (see gitsuite's `GitSuite.Conflict.Region` doc)
+---@return string[]
+local function lines_between(bufnr, first, last)
+  if last < first then
+    return {}
+  end
+  return vim.api.nvim_buf_get_lines(bufnr, first, last + 1, false)
+end
+
+---@internal
+--- Both sides of every non-ambiguous merge-conflict region in the current
+--- buffer, labeled "ours"/"theirs" -- so the model sees them as what they
+--- are, not undifferentiated code with `<<<<<<<`/`=======`/`>>>>>>>` markers
+--- mixed in (which it would otherwise have to guess how to parse, or worse,
+--- try to "fix" as a syntax error). An ambiguous region (gitsuite could not
+--- tell where "ours" ends -- see `gitsuite.features.conflict`'s own module
+--- doc) is skipped: there is no ours/theirs split to hand over.
+---
+--- gitsuite.nvim is an optional soft dependency of THIS section only --
+--- absent, or no conflict markers in the buffer, this silently adds
+--- nothing, exactly as legitimate as "no diagnostics present".
+---@param sections string[]
+local function add_conflict_scope(sections)
+  local ok, conflict = pcall(require, "gitsuite.features.conflict")
+  if not ok then
+    return
+  end
+  local bufnr = vim.api.nvim_get_current_buf()
+  local ok_scan, regions = pcall(conflict.scan, bufnr)
+  if not ok_scan or not regions then
+    return
+  end
+
+  for _, r in ipairs(regions) do
+    if not r.ambiguous then
+      local ours = lines_between(bufnr, r.ours_first, r.ours_last)
+      local theirs = lines_between(bufnr, r.theirs_first, r.theirs_last)
+      sections[#sections + 1] = table.concat({
+        ("Merge conflict -- ours (%s):"):format(r.ours_label ~= "" and r.ours_label or "HEAD"),
+        "```",
+        table.concat(ours, "\n"),
+        "```",
+        ("Merge conflict -- theirs (%s):"):format(
+          r.theirs_label ~= "" and r.theirs_label or "incoming"
+        ),
+        "```",
+        table.concat(theirs, "\n"),
+        "```",
+      }, "\n")
+    end
+  end
+end
+
+---@internal
 ---Resolve a `lib.nvim.harvest.scope` kind and append every source it
 ---returns, formatted, to `sections`. A scope that legitimately resolves to
 ---nothing (e.g. no diagnostics present) stays silent, matching every other
@@ -167,6 +223,10 @@ function M.assemble(opts)
 
   if opts.structured_data then
     add_structured_data_scope(sections, errors)
+  end
+
+  if opts.conflict then
+    add_conflict_scope(sections)
   end
 
   return table.concat(sections, "\n\n"), (#errors > 0 and errors or nil)
