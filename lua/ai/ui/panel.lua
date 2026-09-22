@@ -75,6 +75,13 @@ function M.attach_process(panel, process)
 end
 
 ---Append a streamed delta to the panel, redrawing the surface.
+---
+---Updates the surface incrementally (`set_last_line` + `append_lines`)
+---instead of rewriting the whole buffer per chunk: the panel's own `lines`
+---table still tracks the full text (needed for `M.finish` callers that read
+---it, and as the source of truth for the two surface calls below), but the
+---buffer write itself only ever touches the line currently being extended
+---plus any brand-new lines a chunk's newlines introduced.
 ---@param panel Ai.Ui.Panel
 ---@param delta string
 function M.append(panel, delta)
@@ -86,11 +93,14 @@ function M.append(panel, delta)
   end
   local pieces = vim.split(delta, "\n", { plain = true })
   panel.lines[#panel.lines] = panel.lines[#panel.lines] .. pieces[1]
+  local new_lines = {}
   for i = 2, #pieces do
     panel.lines[#panel.lines + 1] = pieces[i]
+    new_lines[#new_lines + 1] = pieces[i]
   end
   if panel.surface then
-    panel.surface:set_lines(panel.lines)
+    panel.surface:set_last_line(panel.lines[#panel.lines - #new_lines])
+    panel.surface:append_lines(new_lines)
   end
 end
 
