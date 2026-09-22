@@ -50,6 +50,9 @@ local DEFAULTS = {
     -- outside a json/yaml/xml block. Off by default like buffer/diagnostics/
     -- cwd -- only selection is on out of the box.
     structured_data = false,
+    -- Requires gitsuite.nvim (optional soft dep); silent no-op without it or
+    -- outside an unresolved merge conflict. Off by default like the above.
+    conflict = false,
   },
 
   -- Inline completion (ghost text). "manual" (default): only the trigger

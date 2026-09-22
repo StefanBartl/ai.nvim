@@ -49,3 +49,11 @@ the first available one in `provider_order`.
   other integration here -- without it, `structured_data` is a silent
   no-op and every other context flag still works. `:checkhealth ai` reports
   whether it was found.
+- [`gitsuite.nvim`](https://github.com/StefanBartl/gitsuite.nvim) -- backs
+  `context.conflict` (see [configuration.md](configuration.md)): both sides
+  of every unresolved merge-conflict region in the buffer, labeled
+  "ours"/"theirs", via `gitsuite.features.conflict.scan()`. Called via
+  `pcall(require, ...)`, same soft-dependency treatment as every other
+  integration here -- without it, `conflict` is a silent no-op and every
+  other context flag still works. `:checkhealth ai` reports whether it was
+  found.

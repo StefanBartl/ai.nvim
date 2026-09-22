@@ -201,3 +201,159 @@ describe("ai.context -- structured_data error propagation (stubbed data.nvim)", 
     assert.truthy(errors[1]:find("boom", 1, true) ~= nil)
   end)
 end)
+
+describe("ai.context -- conflict (gitsuite.nvim)", function()
+  -- Optional soft dependency: see TESTS/minimal_init.lua's GITSUITE_NVIM_DIR.
+  -- Registering zero `it`s below (rather than failing) is the correct
+  -- "skipped" outcome when it isn't present in this test environment.
+  local gitsuite_ok = pcall(require, "gitsuite.features.conflict")
+  if not gitsuite_ok then
+    return
+  end
+
+  it("includes both sides, labeled, for a real conflict region", function()
+    vim.cmd("enew")
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+      "before",
+      "<<<<<<< HEAD",
+      "our line",
+      "=======",
+      "their line",
+      ">>>>>>> feature",
+      "after",
+    })
+
+    local block = require("ai.context").assemble({ conflict = true })
+    assert.truthy(block:match("Merge conflict %-%- ours %(HEAD%):"))
+    assert.truthy(block:match("our line"))
+    assert.truthy(block:match("Merge conflict %-%- theirs %(feature%):"))
+    assert.truthy(block:match("their line"))
+  end)
+
+  it("omits the section when the buffer has no conflict markers", function()
+    vim.cmd("enew")
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { "plain content" })
+
+    local block = require("ai.context").assemble({ conflict = true })
+    assert.are.equal("", block)
+  end)
+
+  it("skips an ambiguous region -- no ours/theirs split to hand over", function()
+    vim.cmd("enew")
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+      "<<<<<<< HEAD",
+      "Title",
+      "=======",
+      "our text",
+      "=======",
+      "their text",
+      ">>>>>>> other",
+    })
+
+    local block = require("ai.context").assemble({ conflict = true })
+    assert.are.equal("", block)
+  end)
+end)
+
+describe("ai.context -- conflict (stubbed gitsuite.nvim)", function()
+  -- `require()` checks `package.loaded` before ever touching 'runtimepath',
+  -- so this runs regardless of whether a real gitsuite.nvim checkout is on
+  -- the rtp in this test environment -- the CI-guaranteed baseline for this
+  -- scope, same role the "stubbed data.nvim" block above plays for
+  -- structured_data.
+  local saved
+
+  before_each(function()
+    saved = package.loaded["gitsuite.features.conflict"]
+  end)
+
+  after_each(function()
+    package.loaded["gitsuite.features.conflict"] = saved
+  end)
+
+  it("formats a resolved region's ours/theirs lines from the buffer, by row", function()
+    vim.cmd("enew")
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { "OURS_LINE", "THEIRS_LINE" })
+
+    package.loaded["gitsuite.features.conflict"] = {
+      scan = function()
+        return {
+          {
+            ambiguous = false,
+            ours_first = 0,
+            ours_last = 0,
+            ours_label = "HEAD",
+            theirs_first = 1,
+            theirs_last = 1,
+            theirs_label = "branch",
+          },
+        }
+      end,
+    }
+
+    local block = require("ai.context").assemble({ conflict = true })
+    assert.truthy(block:match("Merge conflict %-%- ours %(HEAD%):"))
+    assert.truthy(block:match("OURS_LINE"))
+    assert.truthy(block:match("Merge conflict %-%- theirs %(branch%):"))
+    assert.truthy(block:match("THEIRS_LINE"))
+  end)
+
+  it("an empty side (last < first) renders as an empty fenced block, not an error", function()
+    vim.cmd("enew")
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { "THEIRS_ONLY" })
+
+    package.loaded["gitsuite.features.conflict"] = {
+      scan = function()
+        return {
+          {
+            ambiguous = false,
+            ours_first = 0,
+            ours_last = -1, -- our side deleted the whole block
+            ours_label = "",
+            theirs_first = 0,
+            theirs_last = 0,
+            theirs_label = "",
+          },
+        }
+      end,
+    }
+
+    local ok, block = pcall(function()
+      return require("ai.context").assemble({ conflict = true })
+    end)
+    assert.is_true(ok)
+    assert.truthy(block:match("Merge conflict %-%- ours %(HEAD%):"))
+    assert.truthy(block:match("THEIRS_ONLY"))
+  end)
+
+  it("scan() raising does not escape assemble() -- silent, like gitsuite being absent", function()
+    package.loaded["gitsuite.features.conflict"] = {
+      scan = function()
+        error("boom: gitsuite API drift")
+      end,
+    }
+
+    local ok, block = pcall(function()
+      return require("ai.context").assemble({ conflict = true })
+    end)
+    assert.is_true(ok)
+    assert.are.equal("", block)
+  end)
+
+  it("gitsuite.nvim absent: assemble({conflict=true}) is a silent no-op", function()
+    local orig_preload = package.preload["gitsuite.features.conflict"]
+    package.loaded["gitsuite.features.conflict"] = nil
+    package.preload["gitsuite.features.conflict"] = function()
+      error("no gitsuite.nvim here")
+    end
+
+    local ok, block = pcall(function()
+      return require("ai.context").assemble({ conflict = true })
+    end)
+
+    package.preload["gitsuite.features.conflict"] = orig_preload
+
+    assert.is_true(ok)
+    assert.are.equal("", block)
+  end)
+end)

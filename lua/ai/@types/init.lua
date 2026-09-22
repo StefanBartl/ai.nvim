@@ -38,6 +38,7 @@
 ---@field diagnostics? boolean Include `vim.diagnostic.get()` for the current buffer
 ---@field cwd? boolean Include a harvest.scope("cwd") sweep -- expensive, off by default
 ---@field structured_data? boolean Include the flattened JSON/YAML/XML block under the cursor, via `data.nvim` (optional soft dep) -- off by default
+---@field conflict? boolean Include both sides of every unresolved merge-conflict region in the buffer, labeled "ours"/"theirs", via `gitsuite.nvim` (optional soft dep) -- off by default
 
 ---@class Ai.CompletionOptions
 ---@field enable boolean

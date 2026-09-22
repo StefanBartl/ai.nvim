@@ -37,6 +37,7 @@ require("ai").setup({
     diagnostics = false,
     cwd = false,                 -- expensive (a full cwd sweep); off by default
     structured_data = false,     -- flattened json/yaml/xml block under the cursor, via data.nvim (optional soft dep); off by default
+    conflict = false,            -- both sides of every unresolved merge conflict, labeled "ours"/"theirs", via gitsuite.nvim (optional soft dep); off by default
   },
 
   -- Inline completion (ghost text at the cursor). "manual" (default): only
