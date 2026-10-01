@@ -39,6 +39,12 @@ through a real `ui.kit.popup`/`ui.kit.surface.open` call -- see "Skipped"
 below for why, and `panel_spec.lua`'s own module doc for how its logic is
 tested instead (stub the seam, not the whole dependency).
 
+`docs_examples_spec.lua` is the odd one out: it tests the *documentation*
+(REL-08). It extracts the code blocks and tables from `docs/*.md` at run
+time and executes them or diffs them against the code (full `setup()` block
+== `DEFAULTS`, `:Ai` subcommands, `BINDINGS.md` keymaps, lazy.nvim spec,
+...), so an edit that makes a doc and the code disagree fails the suite.
+
 ## Round 1 (2026-09-18): first full audit
 
 This repo had never had a full coverage round in the cross-repo campaign --
