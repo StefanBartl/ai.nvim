@@ -11,7 +11,10 @@
 --
 -- Not covered (see TESTS/README.md): prose, the Action-id/description columns
 -- and the Autocmds table of BINDINGS.md, the other docs' tables, README.md,
--- and doc/ai.txt (the `:help ai` file, maintained by hand and not checked).
+-- doc/ai.txt (the `:help ai` file, maintained by hand and not checked), and
+-- keymaps the BINDINGS.md scan cannot see: buffer-local ones, and a key mapped
+-- outside the registry that is neither under the prefix nor in
+-- DEFAULTS.completion.keymap.
 ---@diagnostic disable: missing-fields, need-check-nil
 
 local DOCS = vim.fn.getcwd() .. "/docs/"
@@ -201,48 +204,72 @@ describe("docs examples (REL-08) --", function()
   end)
 
   describe("attachments.md", function()
-    local tmp_png
-
-    before_each(function()
-      tmp_png = vim.fn.tempname() .. ".png"
-      local f = assert(io.open(tmp_png, "wb"))
-      f:write("\137PNG\r\n\26\n-not-a-real-image-")
-      f:close()
-    end)
+    local tmp_file
 
     after_each(function()
-      os.remove(tmp_png)
+      if tmp_file then
+        os.remove(tmp_file)
+        tmp_file = nil
+      end
     end)
 
-    it("the from_file() + ask() example builds an image attachment and passes it on", function()
+    ---Replace EVERY built-in provider with a stub running `on_ask`, not just
+    ---the id the example names today: a doc edit that picks another provider
+    ---must still land on a stub (never on real curl and the developer's own
+    ---API key) and fail on the id comparison instead.
+    ---@param on_ask fun(req: Ai.Request, cb?: fun(ok: boolean, res: table))
+    local function stub_all_providers(on_ask)
+      local providers = require("ai.providers")
+      providers.load_builtin()
+      for _, id in ipairs(providers.ids()) do
+        providers.register({
+          id = id,
+          available = function()
+            return true
+          end,
+          ask = on_ask,
+        })
+      end
+    end
+
+    it("the from_file() + ask() example builds an attachment and passes it on", function()
       local code = block_with("attachments.md", "attachments.from_file(")
       local doc_path = assert(
         code:match('attachments%.from_file%("([^"]+)"'),
         "from_file() example no longer passes a string-literal path"
       )
+      -- The temp file keeps the documented path's extension, so from_file()
+      -- really derives the media type from what the doc names (a `.tiff` or
+      -- extension-less doc path fails here, exactly as it would for a reader).
+      local payload = "\137PNG\r\n\26\n-not-a-real-image-"
+      tmp_file = vim.fn.tempname() .. (doc_path:match("%.[%w]+$") or "")
+      local f = assert(io.open(tmp_file, "wb"))
+      f:write(payload)
+      f:close()
       -- A function replacement: a string one would treat a `%` in the temp
       -- dir as a capture escape.
-      local real_path = tmp_png:gsub("\\", "/")
+      local real_path = tmp_file:gsub("\\", "/")
       code = code:gsub(vim.pesc(doc_path), function()
         return real_path
       end)
 
-      -- The real ai.ask() runs; only the provider it resolves is a stub, so
+      -- The provider's own capabilities, read before the stubs replace it: the
+      -- stub's ask() skips the capability check a real provider runs first.
+      local providers = require("ai.providers")
+      providers.load_builtin()
+      local provider_id =
+        assert(code:match('provider = "([^"]+)"'), "example has no provider literal")
+      local real_provider = assert(providers.get(provider_id), "example names an unknown provider")
+      local caps = real_provider.capabilities
+
+      -- The real ai.ask() runs; only the providers are stubs, so
       -- the attachments pass-through in ai.ask is exercised too.
       local seen_req
       local printed
-      local providers = require("ai.providers")
-      providers.load_builtin()
-      providers.register({
-        id = "claude",
-        available = function()
-          return true
-        end,
-        ask = function(req, cb)
-          seen_req = req
-          cb(true, { text = "| a | b |" })
-        end,
-      })
+      stub_all_providers(function(req, cb)
+        seen_req = req
+        cb(true, { text = "| a | b |" })
+      end)
       run_chunk(code, "attachments.md", nil, {
         vim = setmetatable({
           print = function(...)
@@ -251,12 +278,25 @@ describe("docs examples (REL-08) --", function()
         }, { __index = vim }),
       })
 
-      assert.are.equal("claude", seen_req.provider)
+      assert.is_not_nil(seen_req, "example did not reach a stubbed provider -- ask() call changed?")
+      assert.are.equal(provider_id, seen_req.provider)
       assert.are.equal(1, #seen_req.attachments)
       local att = seen_req.attachments[1]
-      assert.are.equal("image", att.kind)
-      assert.are.equal("image/png", att.media_type)
-      assert.are.equal("\137PNG\r\n\26\n-not-a-real-image-", vim.base64.decode(att.data))
+      -- Expectations derive from the documented path, not from the temp file.
+      local A = require("ai.attachments")
+      local doc_type =
+        assert(A.media_type_for(doc_path), "the documented path's extension implies no media type")
+      assert.are.equal(doc_type, att.media_type)
+      assert.are.equal(A.kind_for(doc_type), att.kind)
+      assert.are.equal(payload, vim.base64.decode(att.data))
+      -- What the stubbed ask() skipped: would the real provider take this?
+      local rejected = A.unsupported(provider_id, caps, seen_req.attachments)
+      assert.is_nil(
+        rejected,
+        provider_id
+          .. " cannot carry the example's attachment: "
+          .. (rejected and rejected.message or "")
+      )
       assert.are.equal("| a | b |", printed)
     end)
 
@@ -282,28 +322,21 @@ describe("docs examples (REL-08) --", function()
 
     it("the host = ... example reaches a registered built-in provider", function()
       local code = block_with("attachments.md", "host = ")
-      -- Real ai.ask(), stubbed ollama provider: `host` has to survive resolve().
+      -- Real ai.ask(), stubbed providers: `host` has to survive resolve().
       local seen_req
-      local providers = require("ai.providers")
-      providers.load_builtin()
-      providers.register({
-        id = "ollama",
-        available = function()
-          return true
-        end,
-        ask = function(req)
-          seen_req = req
-        end,
-      })
+      stub_all_providers(function(req)
+        seen_req = req
+      end)
       run_chunk(code, "attachments.md#host", nil, { cb = function() end })
 
-      assert(code:match('host = "([^"]+)"'), "example has no host literal")
-      assert.is_string(seen_req.host)
-      assert.are.equal("ollama", seen_req.provider)
-      -- Re-registering the real built-ins replaces the stub above, so this
-      -- checks that the documented provider id is a real built-in.
-      providers.load_builtin()
-      assert.is_table(providers.get(seen_req.provider))
+      -- Both values are read from the doc, then compared with what reached the
+      -- provider: a dropped, defaulted or rewritten host/provider fails here.
+      local doc_host = assert(code:match('host = "([^"]+)"'), "example has no host literal")
+      local doc_provider =
+        assert(code:match('provider = "([^"]+)"'), "example has no provider literal")
+      assert.is_not_nil(seen_req, "example did not reach a stubbed provider -- ask() call changed?")
+      assert.are.equal(doc_host, seen_req.host)
+      assert.are.equal(doc_provider, seen_req.provider)
 
       -- Runtime honoring of req.host stays with providers_ollama_spec; here
       -- the documented key has to be a real Ai.Request field.
@@ -319,8 +352,12 @@ describe("docs examples (REL-08) --", function()
       local rows = table_rows("attachments.md", { "Provider", "`image`", "`document`" })
       local listed = {}
       for _, row in ipairs(rows) do
-        local id =
-          assert(row[1]:match("^`(%l+)`$"), "provider cell is not a backticked id: " .. row[1])
+        -- Any id charset: providers.get() below is the validator, so an
+        -- unknown id fails as "lists unknown provider", not as a format error.
+        local id = assert(
+          row[1]:match("^`([%w_%-%.]+)`$"),
+          "provider cell is not a backticked id: " .. row[1]
+        )
         listed[#listed + 1] = id
         local p = assert(providers.get(id), "attachments.md lists unknown provider " .. id)
         assert.are.equal(
@@ -342,6 +379,7 @@ describe("docs examples (REL-08) --", function()
         providers.ids(),
         listed,
         "attachments.md provider table vs. built-in providers"
+          .. " (or its `| Provider | `image` | `document` |` header changed)"
       )
     end)
   end)
@@ -356,34 +394,43 @@ describe("docs examples (REL-08) --", function()
       spec.config()
       assert.are.same({}, notified, "setup() emitted warnings")
 
-      assert.are.equal(
-        2,
-        vim.fn.exists(":" .. spec.cmd),
-        "documented cmd is not defined after setup()"
-      )
+      -- lazy.nvim accepts `cmd` as a string or a list, and a `keys` entry as a
+      -- bare lhs string or a table; normalize both so a legitimate rewrite of
+      -- the doc does not crash this test with an error that never names it.
+      local cmds = type(spec.cmd) == "table" and spec.cmd or { spec.cmd }
+      assert.is_true(#cmds > 0, "installation.md spec has no cmd")
+      for _, c in ipairs(cmds) do
+        assert.are.equal(
+          2,
+          vim.fn.exists(":" .. c),
+          "documented cmd " .. c .. " is not defined after setup()"
+        )
+      end
       local ai_keys = require("lib.nvim.bindings.keymap").registered("Ai")
+      local first_lhs
+      assert.is_table(spec.keys, "installation.md spec has no keys")
       for _, key in ipairs(spec.keys) do
+        local lhs = type(key) == "string" and key or key[1]
+        assert(type(lhs) == "string", "installation.md keys entry has no lhs")
+        first_lhs = first_lhs or lhs
         -- lazy.nvim's `mode` is a string or a list and defaults to "n".
-        for _, mode in ipairs(mode_list(key.mode)) do
+        for _, mode in ipairs(mode_list(type(key) == "table" and key.mode or nil)) do
           -- The spec's lazy-load key is the bare prefix; the mappings live
           -- under it, so at least one registered `<prefix>...` must be
-          -- really mapped per mode.
+          -- really mapped per mode. maparg() is the judge, not the registry's
+          -- mode label: ai.nvim registers `v`, which Neovim applies to x and
+          -- s as well, so `mode = { "n", "x" }` is a valid spelling.
           local found = false
           for _, e in ipairs(ai_keys) do
-            if
-              vim.tbl_contains(mode_list(e.mode), mode)
-              and e.lhs
-              and vim.startswith(e.lhs, key[1])
-              and vim.fn.maparg(e.lhs, mode) ~= ""
-            then
+            if e.lhs and vim.startswith(e.lhs, lhs) and vim.fn.maparg(e.lhs, mode) ~= "" then
               found = true
               break
             end
           end
-          assert.is_true(found, ("no mapping under %s in mode %s"):format(key[1], mode))
+          assert.is_true(found, ("no mapping under %s in mode %s"):format(lhs, mode))
         end
       end
-      assert.are.equal(require("ai.config.DEFAULTS").keymaps.prefix, spec.keys[1][1])
+      assert.are.equal(require("ai.config.DEFAULTS").keymaps.prefix, first_lhs)
     end)
 
     it("the documented dependencies are exactly the externally required modules", function()
@@ -445,11 +492,14 @@ describe("docs examples (REL-08) --", function()
     end
 
     ---Subcommand names mentioned as `:Ai <sub>` or `:[range]Ai <sub>` in text.
+    ---The whole token is captured (digits, `_`, `-` included): a truncated
+    ---`info2` would pass as `info`, and a real `code_review` would be blamed
+    ---on the doc as `code`.
     ---@param text string
     ---@return table<string, true>
     local function documented_subcommands(text)
       local set = {}
-      for sub in text:gmatch(":%[?r?a?n?g?e?%]?Ai (%l+)") do
+      for sub in text:gmatch(":%[?r?a?n?g?e?%]?Ai (%l[%w_%-]*)") do
         set[sub] = true
       end
       return set
@@ -483,15 +533,28 @@ describe("docs examples (REL-08) --", function()
       end
     end)
 
-    it("every real :Ai subcommand is documented in commands.md", function()
+    it("every real :Ai subcommand is documented in commands.md and BINDINGS.md", function()
       setup_all()
-      local documented = documented_subcommands(block_with("commands.md", ":Ai ask"))
+      local in_md = documented_subcommands(block_with("commands.md", ":Ai ask"))
+      -- The BINDINGS.md Usercmds table: one command per row, in its first cell.
+      local in_table = {}
+      local rows = table_rows("BINDINGS.md", { "Command" })
+      assert.is_true(#rows > 0, "BINDINGS.md: found no Usercmds rows -- table drifted?")
+      for _, row in ipairs(rows) do
+        for sub in pairs(documented_subcommands(row[1])) do
+          in_table[sub] = true
+        end
+      end
       local real = vim.fn.getcompletion("Ai ", "cmdline")
       assert.is_true(#real > 0, "no :Ai subcommands registered -- is :Ai defined after setup()?")
       for _, c in ipairs(real) do
         assert.is_true(
-          documented[c] == true,
+          in_md[c] == true,
           (":Ai %s exists but is missing from commands.md"):format(c)
+        )
+        assert.is_true(
+          in_table[c] == true,
+          (":Ai %s exists but is missing from the BINDINGS.md Usercmds table"):format(c)
         )
       end
     end)
@@ -532,7 +595,10 @@ describe("docs examples (REL-08) --", function()
       for id in pairs(registered) do
         assert.is_true(
           documented[id] == true,
-          ("%q is registered but missing from BINDINGS.md"):format(id)
+          (
+            "%q is registered but not documented in any `| Mode | Default |` table of BINDINGS.md"
+            .. " (row missing, or a table header was renamed)"
+          ):format(id)
         )
       end
       for id in pairs(documented) do
@@ -541,6 +607,61 @@ describe("docs examples (REL-08) --", function()
           ("BINDINGS.md lists %q, which is not registered"):format(id)
         )
       end
+
+      -- Registry-independent scan: the loops above only see keymaps bound
+      -- through keymap.register(), so a plain vim.keymap.set (or a lib
+      -- `keymap()` call) under the prefix would stay invisible. Look at what
+      -- is really mapped instead: every GLOBAL map in modes n/x/s/o/i/c/t/l
+      -- (buffer-local maps are out of scope), keyed on the raw lhs and
+      -- mode-agnostic -- the registry comparison above already covers the
+      -- mode. nvim_get_keymap reports a literal space for a space leader, so
+      -- both sides are compared as raw bytes via the translated `lhs`
+      -- (`lhsraw` encodes Ctrl chords as modifier keys instead, which
+      -- nvim_replace_termcodes does not).
+      local DEFAULTS = require("ai.config.DEFAULTS")
+      local function raw(lhs)
+        return vim.api.nvim_replace_termcodes(lhs, true, true, true)
+      end
+
+      -- Self-check of that normalization on a Ctrl chord, so it cannot rot
+      -- silently on another Neovim version.
+      local probe = "<F20><C-j>"
+      vim.keymap.set("n", probe, "<Nop>")
+      local probe_seen = false
+      for _, m in ipairs(vim.api.nvim_get_keymap("n")) do
+        probe_seen = probe_seen or raw(m.lhs) == raw(probe)
+      end
+      vim.keymap.del("n", probe)
+      assert.is_true(
+        probe_seen,
+        "raw(nvim_get_keymap().lhs) no longer equals raw(lhs) for a Ctrl chord"
+      )
+
+      local doc_lhs = {}
+      for id in pairs(documented) do
+        doc_lhs[raw(id:match("^%a (.+)$"))] = true
+      end
+      local completion_lhs = {}
+      for _, k in pairs(DEFAULTS.completion.keymap) do
+        if type(k) == "string" then
+          completion_lhs[raw(k)] = true
+        end
+      end
+      local prefix = raw(DEFAULTS.keymaps.prefix)
+      local scanned = 0
+      for _, mode in ipairs({ "n", "x", "s", "o", "i", "c", "t", "l" }) do
+        for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
+          local lhs = raw(m.lhs)
+          if vim.startswith(lhs, prefix) or completion_lhs[lhs] then
+            scanned = scanned + 1
+            assert.is_true(
+              doc_lhs[lhs] == true,
+              ("%s %s is mapped but missing from BINDINGS.md"):format(mode, m.lhs)
+            )
+          end
+        end
+      end
+      assert.is_true(scanned > 0, "scan saw no mapped ai.nvim keymap -- lhs normalization broken?")
     end)
   end)
 
