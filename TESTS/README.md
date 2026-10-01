@@ -43,15 +43,22 @@ tested instead (stub the seam, not the whole dependency).
 (REL-08). It extracts code blocks and tables from `docs/*.md` at run time and
 executes them or diffs them against the code. Covered: the `configuration.md`
 `setup()` / completion / `register()` blocks (the full `setup()` block must
-equal `DEFAULTS`), the `attachments.md` `from_file()` / `host` examples, the
+equal `DEFAULTS`), the `attachments.md` `from_file()` / `host` examples (run
+through the real `ai.ask` with every built-in provider stubbed), the
 `Ai.Attachment` `@field` list (name, optional flag, type) and the provider
 capability table, the `installation.md` lazy.nvim spec and `dependencies` (both
-directions), the `:Ai` subcommand names, the `BINDINGS.md` keymap tables (mode
-and default lhs, both directions) and the `architecture.md` curl extension.
+directions), the `:Ai` subcommand names (both directions against `commands.md`
+and the `BINDINGS.md` Usercmds table), the `BINDINGS.md` keymap tables (mode
+and default lhs, both directions against the lib.nvim keymap registry, plus a
+registry-independent scan that every global keymap mapped under the prefix,
+and every key in `DEFAULTS.completion.keymap`, is documented -- by raw lhs in
+any of the modes n/x/s/o/i/c/t/l) and the `architecture.md` curl extension.
 **Not** cross-checked: prose, the other table columns (action ids,
 descriptions, the autocmds table), the remaining docs' tables, the root
 `README.md` and `doc/ai.txt` (the `:help ai` file, maintained by hand and not
-checked).
+checked), and keymaps the scan cannot see: buffer-local ones, and a key mapped
+outside the registry that is neither under the prefix nor in
+`DEFAULTS.completion.keymap`.
 
 ## Round 1 (2026-09-18): first full audit
 
