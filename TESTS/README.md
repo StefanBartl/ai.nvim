@@ -40,10 +40,18 @@ below for why, and `panel_spec.lua`'s own module doc for how its logic is
 tested instead (stub the seam, not the whole dependency).
 
 `docs_examples_spec.lua` is the odd one out: it tests the *documentation*
-(REL-08). It extracts the code blocks and tables from `docs/*.md` at run
-time and executes them or diffs them against the code (full `setup()` block
-== `DEFAULTS`, `:Ai` subcommands, `BINDINGS.md` keymaps, lazy.nvim spec,
-...), so an edit that makes a doc and the code disagree fails the suite.
+(REL-08). It extracts code blocks and tables from `docs/*.md` at run time and
+executes them or diffs them against the code. Covered: the `configuration.md`
+`setup()` / completion / `register()` blocks (the full `setup()` block must
+equal `DEFAULTS`), the `attachments.md` `from_file()` / `host` examples, the
+`Ai.Attachment` `@field` list (name, optional flag, type) and the provider
+capability table, the `installation.md` lazy.nvim spec and `dependencies` (both
+directions), the `:Ai` subcommand names, the `BINDINGS.md` keymap tables (mode
+and default lhs, both directions) and the `architecture.md` curl extension.
+**Not** cross-checked: prose, the other table columns (action ids,
+descriptions, the autocmds table), the remaining docs' tables, the root
+`README.md` and `doc/ai.txt` (the `:help ai` file, maintained by hand and not
+checked).
 
 ## Round 1 (2026-09-18): first full audit
 

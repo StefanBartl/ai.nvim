@@ -1,4 +1,4 @@
--- REL-08: the code blocks and tables in README.md / docs/*.md actually work.
+-- REL-08: the code blocks and tables in docs/*.md actually work.
 --
 -- The examples are extracted from the markdown files themselves at run time
 -- (not copied here), so a doc edit that stops matching the code -- or a code
@@ -8,6 +8,10 @@
 -- A block is located by a stable substring of its own text, never by index:
 -- reordering the docs must not break the lookup, only removing the example
 -- does (and that is worth a failure too).
+--
+-- Not covered (see TESTS/README.md): prose, the Action-id/description columns
+-- and the Autocmds table of BINDINGS.md, the other docs' tables, README.md,
+-- and doc/ai.txt (the `:help ai` file, maintained by hand and not checked).
 ---@diagnostic disable: missing-fields, need-check-nil
 
 local DOCS = vim.fn.getcwd() .. "/docs/"
@@ -62,9 +66,39 @@ local function block_with(file, needle)
   return hits[1]
 end
 
+---Data rows (header and separator dropped) of every GFM table in `file` whose
+---header starts with the cells `header`, each row as its trimmed cell strings.
+---@param file string
+---@param header string[]
+---@return string[][]
+local function table_rows(file, header)
+  local rows = {}
+  for _, tbl in ipairs(require("lib.nvim.markdown.table").parse(read_lines(DOCS .. file))) do
+    local matches = true
+    for i, cell in ipairs(header) do
+      matches = matches and tbl.rows[1][i] == cell
+    end
+    if matches then
+      for i = 2, #tbl.rows do
+        rows[#rows + 1] = tbl.rows[i]
+      end
+    end
+  end
+  return rows
+end
+
+---Registry/lazy `mode` fields are `string|string[]`; normalize to a list.
+---@param mode string|string[]|nil
+---@return string[]
+local function mode_list(mode)
+  return type(mode) == "table" and mode or { mode or "n" }
+end
+
 ---Run `code` as a chunk with `overrides` shadowing globals; `require` is
 ---replaced so a doc's `require("ai")` can be pointed at a capturing stub
----while every other module stays real.
+---while every other module stays real. Only the setup() block uses the stub
+---(a real setup() would install keymaps); the ask() examples run the real
+---`ai.ask` against a stubbed provider instead.
 ---@param code string
 ---@param name string chunk name for error messages
 ---@param ai_stub? table what `require("ai")` returns instead of the real one
@@ -82,8 +116,11 @@ local function run_chunk(code, name, ai_stub, extra)
   for k, v in pairs(extra or {}) do
     env[k] = v
   end
-  local fn, err = load(code, "=" .. name, "t", env)
+  -- loadstring + setfenv is the Lua 5.1 API Nvim guarantees; the 4-argument
+  -- load() is a 5.2/LuaJIT extension.
+  local fn, err = loadstring(code, "=" .. name)
   assert(fn, err)
+  setfenv(fn, env)
   return fn()
 end
 
@@ -129,10 +166,16 @@ describe("docs examples (REL-08) --", function()
       local code = block_with("configuration.md", 'completion = { provider = "ollama"')
       local opts = run_chunk("return { " .. code .. " }", "configuration.md#completion")
 
+      assert.is_table(opts.completion)
+
       local cfg = require("ai.config").setup(opts)
       assert.are.same({}, notified)
-      assert.are.equal("ollama", cfg.completion.provider)
-      assert.are.equal("qwen2.5-coder:7b-q5_K_M", cfg.completion.model)
+      assert.are.same({}, require("ai.config").issues())
+      -- DEFAULTS are `false`, so these also prove the documented value replaced
+      -- the default; `model` has no VALUE_SCHEMA entry, hence the type check.
+      assert.is_string(cfg.completion.model)
+      require("ai.providers").load_builtin()
+      assert.is_table(require("ai.providers").get(cfg.completion.provider))
     end)
 
     it("the custom-provider register() example registers a usable provider", function()
@@ -148,8 +191,9 @@ describe("docs examples (REL-08) --", function()
       local provider = require("ai.providers").get("myproxy")
       assert.is_table(provider)
       assert.is_true(provider.available())
+      -- Through the public entry point, so the registered id is really reachable.
       local got
-      provider.ask({ prompt = "ping" }, function(ok, res)
+      require("ai").ask({ prompt = "ping", provider = "myproxy" }, function(ok, res)
         got = { ok, res.text }
       end)
       assert.are.same({ true, "pong" }, got)
@@ -172,18 +216,34 @@ describe("docs examples (REL-08) --", function()
 
     it("the from_file() + ask() example builds an image attachment and passes it on", function()
       local code = block_with("attachments.md", "attachments.from_file(")
-      local doc_path = "/tmp/invoice-page-1.png"
-      assert.is_truthy(code:find(doc_path, 1, true))
-      code = code:gsub(vim.pesc(doc_path), (tmp_png:gsub("\\", "/")))
+      local doc_path = assert(
+        code:match('attachments%.from_file%("([^"]+)"'),
+        "from_file() example no longer passes a string-literal path"
+      )
+      -- A function replacement: a string one would treat a `%` in the temp
+      -- dir as a capture escape.
+      local real_path = tmp_png:gsub("\\", "/")
+      code = code:gsub(vim.pesc(doc_path), function()
+        return real_path
+      end)
 
+      -- The real ai.ask() runs; only the provider it resolves is a stub, so
+      -- the attachments pass-through in ai.ask is exercised too.
       local seen_req
       local printed
-      run_chunk(code, "attachments.md", {
+      local providers = require("ai.providers")
+      providers.load_builtin()
+      providers.register({
+        id = "claude",
+        available = function()
+          return true
+        end,
         ask = function(req, cb)
           seen_req = req
           cb(true, { text = "| a | b |" })
         end,
-      }, {
+      })
+      run_chunk(code, "attachments.md", nil, {
         vim = setmetatable({
           print = function(...)
             printed = ...
@@ -206,12 +266,14 @@ describe("docs examples (REL-08) --", function()
       local class_at = assert(types_src:find("---@class Ai.Attachment", 1, true))
       local class_src = types_src:sub(class_at):match("^(.-)\n\n") or types_src:sub(class_at)
 
+      -- Per field: its name, the optional flag and the first type token are
+      -- compared (trailing prose after the type is ignored).
       local doc_fields, src_fields = {}, {}
-      for name in code:gmatch("---@field (%w+)%??") do
-        doc_fields[#doc_fields + 1] = name
+      for name, opt, ty in code:gmatch("---@field ([%w_]+)(%??)%s+(%S+)") do
+        doc_fields[#doc_fields + 1] = name .. opt .. " " .. ty
       end
-      for name in class_src:gmatch("---@field (%w+)%??") do
-        src_fields[#src_fields + 1] = name
+      for name, opt, ty in class_src:gmatch("---@field ([%w_]+)(%??)%s+(%S+)") do
+        src_fields[#src_fields + 1] = name .. opt .. " " .. ty
       end
       table.sort(doc_fields)
       table.sort(src_fields)
@@ -220,16 +282,67 @@ describe("docs examples (REL-08) --", function()
 
     it("the host = ... example reaches a registered built-in provider", function()
       local code = block_with("attachments.md", "host = ")
+      -- Real ai.ask(), stubbed ollama provider: `host` has to survive resolve().
       local seen_req
-      run_chunk(code, "attachments.md#host", {
+      local providers = require("ai.providers")
+      providers.load_builtin()
+      providers.register({
+        id = "ollama",
+        available = function()
+          return true
+        end,
         ask = function(req)
           seen_req = req
         end,
-      }, { cb = function() end })
+      })
+      run_chunk(code, "attachments.md#host", nil, { cb = function() end })
 
-      assert.are.equal("http://192.168.1.4:11434", seen_req.host)
-      require("ai.providers").load_builtin()
-      assert.is_table(require("ai.providers").get(seen_req.provider))
+      assert(code:match('host = "([^"]+)"'), "example has no host literal")
+      assert.is_string(seen_req.host)
+      assert.are.equal("ollama", seen_req.provider)
+      -- Re-registering the real built-ins replaces the stub above, so this
+      -- checks that the documented provider id is a real built-in.
+      providers.load_builtin()
+      assert.is_table(providers.get(seen_req.provider))
+
+      -- Runtime honoring of req.host stays with providers_ollama_spec; here
+      -- the documented key has to be a real Ai.Request field.
+      local types_src = table.concat(read_lines(vim.fn.getcwd() .. "/lua/ai/@types/init.lua"), "\n")
+      local request_src = types_src:match("---@class Ai%.Request.-\n\n") or ""
+      assert.is_truthy(request_src:find("---@field host%??%s"), "Ai.Request has no `host` field")
+    end)
+
+    it("the provider capability table matches each built-in provider's capabilities", function()
+      local providers = require("ai.providers")
+      providers.load_builtin()
+
+      local rows = table_rows("attachments.md", { "Provider", "`image`", "`document`" })
+      local listed = {}
+      for _, row in ipairs(rows) do
+        local id =
+          assert(row[1]:match("^`(%l+)`$"), "provider cell is not a backticked id: " .. row[1])
+        listed[#listed + 1] = id
+        local p = assert(providers.get(id), "attachments.md lists unknown provider " .. id)
+        assert.are.equal(
+          row[2] == "yes",
+          p.capabilities.vision == true,
+          id .. ": image column disagrees with capabilities.vision"
+        )
+        assert.are.equal(
+          row[3] == "yes",
+          p.capabilities.documents == true,
+          id .. ": document column disagrees with capabilities.documents"
+        )
+      end
+
+      -- Both directions: an undocumented built-in fails here, and an empty
+      -- parse (header drift) cannot go vacuous either.
+      table.sort(listed)
+      assert.are.same(
+        providers.ids(),
+        listed,
+        "attachments.md provider table vs. built-in providers"
+      )
     end)
   end)
 
@@ -241,20 +354,30 @@ describe("docs examples (REL-08) --", function()
       assert.are.equal("StefanBartl/ai.nvim", spec[1])
       assert.is_function(spec.config)
       spec.config()
+      assert.are.same({}, notified, "setup() emitted warnings")
 
       assert.are.equal(
         2,
         vim.fn.exists(":" .. spec.cmd),
         "documented cmd is not defined after setup()"
       )
+      local ai_keys = require("lib.nvim.bindings.keymap").registered("Ai")
       for _, key in ipairs(spec.keys) do
-        for _, mode in ipairs(key.mode) do
+        -- lazy.nvim's `mode` is a string or a list and defaults to "n".
+        for _, mode in ipairs(mode_list(key.mode)) do
           -- The spec's lazy-load key is the bare prefix; the mappings live
-          -- under it, so at least one `<prefix>?` must exist per mode.
+          -- under it, so at least one registered `<prefix>...` must be
+          -- really mapped per mode.
           local found = false
-          for _, suffix in ipairs({ "a", "s", "r", "o", "O", "e" }) do
-            if vim.fn.maparg(key[1] .. suffix, mode) ~= "" then
+          for _, e in ipairs(ai_keys) do
+            if
+              vim.tbl_contains(mode_list(e.mode), mode)
+              and e.lhs
+              and vim.startswith(e.lhs, key[1])
+              and vim.fn.maparg(e.lhs, mode) ~= ""
+            then
               found = true
+              break
             end
           end
           assert.is_true(found, ("no mapping under %s in mode %s"):format(key[1], mode))
@@ -263,24 +386,52 @@ describe("docs examples (REL-08) --", function()
       assert.are.equal(require("ai.config.DEFAULTS").keymaps.prefix, spec.keys[1][1])
     end)
 
-    it("every dependency it lists is actually required by the plugin source", function()
+    it("the documented dependencies are exactly the externally required modules", function()
       local code = block_with("installation.md", "dependencies")
-      local expected = { ["StefanBartl/lib.nvim"] = "lib%.", ["StefanBartl/ui.nvim"] = "ui%.kit" }
-      for dep in code:gmatch('"(StefanBartl/[%w%.%-_]+)"') do
+      local documented = {}
+      for dep in code:gmatch("[\"'](StefanBartl/[%w%.%-_]+)[\"']") do
         if dep ~= "StefanBartl/ai.nvim" then
-          local pattern = assert(expected[dep], "unexpected dependency in the docs: " .. dep)
-          local used = false
-          for name, kind in vim.fs.dir(vim.fn.getcwd() .. "/lua", { depth = 4 }) do
-            if kind == "file" and name:match("%.lua$") then
-              local src = table.concat(read_lines(vim.fn.getcwd() .. "/lua/" .. name), "\n")
-              if src:find('require%("' .. pattern) then
-                used = true
-                break
+          documented[dep] = true
+        end
+      end
+      assert.is_true(next(documented) ~= nil, "parsed no dependency from the installation.md block")
+
+      -- Hard `require("<root>.` calls only. The soft deps (data.nvim,
+      -- gitsuite.nvim) are reached through `pcall(require, ...)`, which this
+      -- pattern deliberately ignores: they are optional and belong in
+      -- requirements.md, not in `dependencies`. Comment lines are skipped.
+      local used = {}
+      for _, dir in ipairs({ "lua", "plugin" }) do
+        local base = vim.fn.getcwd() .. "/" .. dir
+        for name, kind in vim.fs.dir(base, { depth = 8 }) do
+          if kind == "file" and name:match("%.lua$") then
+            for _, line in ipairs(read_lines(base .. "/" .. name)) do
+              if not line:match("^%s*%-%-") then
+                for root in line:gmatch('require%("([%w_]+)%.') do
+                  if root ~= "ai" then
+                    used["StefanBartl/" .. root .. ".nvim"] = true
+                  end
+                end
               end
             end
           end
-          assert.is_true(used, dep .. " is documented as a dependency but never required")
         end
+      end
+      assert.is_true(next(used) ~= nil, "found no external require() under lua/ -- scan broken?")
+
+      for dep in pairs(used) do
+        assert.is_true(
+          documented[dep] == true,
+          dep .. " is required by the plugin source but missing from installation.md"
+        )
+      end
+      for dep in pairs(documented) do
+        assert.is_true(
+          used[dep] == true,
+          dep
+            .. " is documented as a dependency but never required"
+            .. " (optional soft deps belong in docs/requirements.md, not in `dependencies`)"
+        )
       end
     end)
   end)
@@ -288,6 +439,9 @@ describe("docs examples (REL-08) --", function()
   describe("commands + keymap tables", function()
     local function setup_all()
       require("ai").setup()
+      -- A failed setup step is only reported through vim.notify; assert it here
+      -- so the failure names its cause instead of blaming the docs.
+      assert.are.same({}, notified, "setup() emitted warnings")
     end
 
     ---Subcommand names mentioned as `:Ai <sub>` or `:[range]Ai <sub>` in text.
@@ -313,8 +467,14 @@ describe("docs examples (REL-08) --", function()
         ["BINDINGS.md"] = table.concat(read_lines(DOCS .. "BINDINGS.md"), "\n"),
         ["quickstart.md"] = table.concat(read_lines(DOCS .. "quickstart.md"), "\n"),
       }
+      assert.is_true(next(real) ~= nil, "no :Ai subcommands registered -- is :Ai defined?")
       for file, text in pairs(sources) do
-        for sub in pairs(documented_subcommands(text)) do
+        local subs = documented_subcommands(text)
+        assert.is_true(
+          next(subs) ~= nil,
+          file .. ": found no ':Ai <sub>' mention -- extractor regex or doc format drifted"
+        )
+        for sub in pairs(subs) do
           assert.is_true(
             real[sub] == true,
             ("%s documents :Ai %s, which does not exist"):format(file, sub)
@@ -326,7 +486,9 @@ describe("docs examples (REL-08) --", function()
     it("every real :Ai subcommand is documented in commands.md", function()
       setup_all()
       local documented = documented_subcommands(block_with("commands.md", ":Ai ask"))
-      for _, c in ipairs(vim.fn.getcompletion("Ai ", "cmdline")) do
+      local real = vim.fn.getcompletion("Ai ", "cmdline")
+      assert.is_true(#real > 0, "no :Ai subcommands registered -- is :Ai defined after setup()?")
+      for _, c in ipairs(real) do
         assert.is_true(
           documented[c] == true,
           (":Ai %s exists but is missing from commands.md"):format(c)
@@ -334,24 +496,51 @@ describe("docs examples (REL-08) --", function()
       end
     end)
 
-    it("every default keymap in the BINDINGS.md tables is really mapped after setup()", function()
+    it("the BINDINGS.md keymap tables equal the keymaps mapped after setup()", function()
       setup_all()
-      local checked = 0
-      for _, line in ipairs(read_lines(DOCS .. "BINDINGS.md")) do
-        local modes, lhs = line:match("^| ([%w, ]+) | `(<[^`]+)` |")
-        if modes and lhs then
-          for mode in modes:gmatch("%a") do
-            local mapped = vim.fn.maparg(lhs, mode)
-            assert.is_true(
-              mapped ~= "",
-              ("BINDINGS.md lists %s in mode %s, but it is not mapped"):format(lhs, mode)
-            )
-            checked = checked + 1
+
+      -- Documented side: every `| Mode | Default | ...` table (the prefixed
+      -- actions and the completion surface), as "<mode> <lhs>" keys.
+      local documented = {}
+      for _, row in ipairs(table_rows("BINDINGS.md", { "Mode", "Default" })) do
+        local lhs =
+          assert(row[2]:match("^`(.+)`$"), "BINDINGS.md: default not in backticks: " .. row[2])
+        for mode in row[1]:gmatch("%a") do
+          documented[mode .. " " .. lhs] = true
+        end
+      end
+      assert.is_true(next(documented) ~= nil, "BINDINGS.md: found no keymap rows -- table drifted?")
+
+      -- Code side: everything the "Ai" registry bound -- the prefixed surface
+      -- plus the separate "Ai/completion" one -- and really mapped.
+      local registered = {}
+      for key, entries in pairs(require("lib.nvim.bindings.keymap").registered()) do
+        if key == "Ai" or vim.startswith(key, "Ai/") then
+          for _, e in ipairs(entries) do
+            if e.lhs and e.bound then
+              for _, m in ipairs(mode_list(e.mode)) do
+                local id = m .. " " .. e.lhs
+                assert.is_true(vim.fn.maparg(e.lhs, m) ~= "", id .. " is registered but not mapped")
+                registered[id] = true
+              end
+            end
           end
         end
       end
-      -- 6 prefixed actions x (n, v) + 3 insert-mode completion keys.
-      assert.are.equal(15, checked)
+      assert.is_true(next(registered) ~= nil, "no keymaps registered for Ai -- did setup() run?")
+
+      for id in pairs(registered) do
+        assert.is_true(
+          documented[id] == true,
+          ("%q is registered but missing from BINDINGS.md"):format(id)
+        )
+      end
+      for id in pairs(documented) do
+        assert.is_true(
+          registered[id] == true,
+          ("BINDINGS.md lists %q, which is not registered"):format(id)
+        )
+      end
     end)
   end)
 
@@ -363,9 +552,12 @@ describe("docs examples (REL-08) --", function()
 
       assert.is_truthy(code:find("secret_headers", 1, true))
       local found = false
+      -- Code lines only: a doc comment alone must not count as "implemented".
       for _, f in ipairs(vim.api.nvim_get_runtime_file("lua/lib/nvim/net/curl/*.lua", true)) do
-        if table.concat(read_lines(f), "\n"):find("secret_headers", 1, true) then
-          found = true
+        for _, line in ipairs(read_lines(f)) do
+          if not line:match("^%s*%-%-") and line:find("secret_headers", 1, true) then
+            found = true
+          end
         end
       end
       assert.is_true(found, "secret_headers is not implemented in lib.nvim.net.curl")
