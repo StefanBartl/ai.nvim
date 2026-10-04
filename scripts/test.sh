@@ -22,7 +22,11 @@ command -v nvim >/dev/null 2>&1 || {
 target="${1:-TESTS/ai}"
 
 if [[ "$target" == *.lua ]]; then
-  cmd="PlenaryBustedFile $target"
+  # Not :PlenaryBustedFile -- that spawns a child nvim without -u, i.e. without
+  # TESTS/minimal_init.lua (no rtp entries, no package.path for the shared
+  # TESTS/docs_support.lua), and with the developer's own config loaded.
+  # Running the busted runner in this process keeps the init.
+  cmd="lua require('plenary.busted').run('$target')"
 else
   cmd="PlenaryBustedDirectory $target { minimal_init = 'TESTS/minimal_init.lua', sequential = true }"
 fi

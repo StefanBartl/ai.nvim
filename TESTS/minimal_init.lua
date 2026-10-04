@@ -14,6 +14,10 @@
 -- should be exercising.
 vim.opt.rtp:append(vim.fn.getcwd())
 
+--- `TESTS/docs_support.lua` (helpers shared by the documentation specs) is
+--- `require`d as "docs_support"; it is not a spec, so plenary never runs it.
+package.path = vim.fn.getcwd() .. "/TESTS/?.lua;" .. package.path
+
 --- lib.nvim is a runtime dependency (net.curl, harvest.scope, progress,
 --- usercmd.composer, notify, ...), not an optional one -- ai.nvim's own
 --- modules `require("lib.*")` directly, so the specs cannot run without it
