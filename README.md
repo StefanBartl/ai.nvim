@@ -39,6 +39,7 @@ one `:Ai` command, instead of every plugin hand-rolling its own curl calls.
 ## Table of contents
 
 - [Documentation](#documentation)
+- [Literatur und Referenzen](#literatur-und-referenzen)
 - [License](#license)
 
 ---
@@ -68,6 +69,16 @@ each page answers.
 - [Feedback](https://github.com/StefanBartl/ai.nvim/issues)
 
 `:help ai` is the same reference inside the editor.
+
+---
+
+## Literatur und Referenzen
+
+- [gp.nvim](https://github.com/Robitx/gp.nvim) -- a chat and prompt plugin for Neovim; a close relative of what this plugin does.
+- [minuet-ai.nvim](https://github.com/milanglacier/minuet-ai.nvim) -- LLM code completion for Neovim; the neighbouring approach to the same problem.
+- [Anthropic Messages API](https://platform.claude.com/docs/en/api/messages) -- the API behind the `claude` provider.
+- [OpenAI API reference](https://developers.openai.com/api/reference/overview) -- the API behind the `openai` provider.
+- [Ollama API](https://github.com/ollama/ollama/blob/main/docs/api.md) -- the local API behind the `ollama` provider.
 
 ---
 
