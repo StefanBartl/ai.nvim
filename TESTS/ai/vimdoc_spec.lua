@@ -3,29 +3,38 @@
 -- code and against docs/*.md, so the next drift fails here instead of waiting
 -- for a reader of `:help ai`.
 --
--- Checked: the help tags (via a real `:helptags` run) and every `|ai-...|` link,
--- the CONTENTS list against the section headings, the config block (must equal
--- DEFAULTS), the `:Ai` subcommand tags, the keymap tables (against the BINDINGS.md
--- tables), the provider list, `provider_order`, the attachment capability list,
--- the `ai.ask()` request fields, the context flags, the stream handler names, the
--- error kinds, the Neovim version, the environment variables and default hosts.
+-- Checked: the help tags (via a real `:helptags` run) and every link, the
+-- CONTENTS list against the section headings, the config block (must equal
+-- DEFAULTS) and its provider-id comment, the `:Ai` subcommand tags, the keymap
+-- tables (against BINDINGS.md), the provider list, `provider_order`, the
+-- attachment capability list and extension list, the inline-body threshold, the
+-- `ai.ask()` request fields, the context flags (twice), the stream handler names,
+-- the error kinds (both ways), the Neovim version, and -- per provider -- its
+-- environment variables and default base URL.
 --
 -- Not checked: prose, descriptions, and anything that is not a name, a default
 -- or a list. A new fact in the vimdoc is only guarded once an extractor here
--- reads it -- the extractors fail loudly (never go vacuous) when the layout
--- they rely on changes.
+-- reads it; the extractors fail loudly (never go vacuous) when the layout they
+-- rely on changes. Sections are found by their help tag, not by their number, so
+-- inserting a section does not break the lookups.
 ---@diagnostic disable: need-check-nil
 
+-- Self-contained: a spec must not depend on how it was started (a plain
+-- :PlenaryBustedFile has no TESTS/minimal_init.lua behind it).
+package.path = vim.fn.getcwd() .. "/TESTS/?.lua;" .. package.path
 local S = require("docs_support")
 
 local VIMDOC = S.ROOT .. "/doc/ai.txt"
-local lines = S.read_lines(VIMDOC)
 
----Lines of numbered section `n` of the vimdoc (heading excluded), up to the next
----`====` rule.
----@param n integer
+---@type string[] doc/ai.txt, read in before_each so a missing file is a failing
+---test and not an error while the spec loads (which would hang the runner)
+local lines
+
+---Lines of the numbered section whose heading carries the help tag `tag` (heading
+---excluded), up to the next `====` rule.
+---@param tag string e.g. "ai-config"
 ---@return string[]
-local function section(n)
+local function section(tag)
   local out, inside = {}, false
   for _, line in ipairs(lines) do
     if inside then
@@ -33,12 +42,32 @@ local function section(n)
         break
       end
       out[#out + 1] = line
-    else
-      local num = line:match("^(%d+)%. %u")
-      inside = num ~= nil and tonumber(num) == n
+    elseif line:match("^%d+%. .*%*" .. vim.pesc(tag) .. "%*%s*$") then
+      inside = true
     end
   end
-  assert(#out > 0, ("doc/ai.txt: section %d not found"):format(n))
+  assert(#out > 0, ("doc/ai.txt: no section tagged *%s*"):format(tag))
+  return out
+end
+
+---`id -> text` of an indented list: a line matching `item_pat` (first capture is
+---the id) starts an item, following lines indented by 3+ spaces continue it.
+---@param sec string[]
+---@param item_pat string
+---@return table<string, string>
+local function items(sec, item_pat)
+  local out, current = {}, nil
+  for _, line in ipairs(sec) do
+    local id = line:match(item_pat)
+    if id then
+      current = id
+      out[id] = line
+    elseif current and line:match("^%s%s%s+%S") then
+      out[current] = out[current] .. "\n" .. line
+    else
+      current = nil
+    end
+  end
   return out
 end
 
@@ -53,8 +82,8 @@ local function set_of(list)
 end
 
 ---Asserts two name sets are equal, naming the side each stray name is missing from.
----@param expected table<string, true>
----@param actual table<string, true>
+---@param expected table<string, true> the code side
+---@param actual table<string, true> what doc/ai.txt says
 ---@param what string
 local function assert_same_set(expected, actual, what)
   assert.is_true(next(expected) ~= nil, what .. ": the code side is empty -- extractor broken?")
@@ -75,7 +104,9 @@ end
 ---@return table<string, true>
 local function class_fields(class)
   local src = S.read(S.ROOT .. "/lua/ai/@types/init.lua")
-  local at = assert(src:find("---@class " .. class, 1, true), class .. " not found in @types")
+  -- With the newline: `Ai.Request` must not match a longer `Ai.RequestFoo`.
+  local at =
+    assert(src:find("---@class " .. class .. "\n", 1, true), class .. " not found in @types")
   local block = src:sub(at):match("^(.-)\n\n") or src:sub(at)
   local fields = {}
   for name in block:gmatch("\n%-%-%-@field ([%w_]+)") do
@@ -84,25 +115,52 @@ local function class_fields(class)
   return fields
 end
 
----All source text under lua/ai/<subdir> (plain `.lua` files), comments included.
+---Code lines of one file, comment lines removed: a name that only appears in a
+---comment is not code.
+---@param path string
+---@return string[]
+local function code_lines(path)
+  local out = {}
+  for _, line in ipairs(S.read_lines(path)) do
+    if not line:match("^%s*%-%-") then
+      out[#out + 1] = line
+    end
+  end
+  return out
+end
+
+---Code of every `.lua` file under lua/ai/<subdir> (empty = all of lua/ai).
 ---@param subdir string
 ---@return string
-local function source_of(subdir)
+local function code_of(subdir)
   local parts = {}
   local base = S.ROOT .. "/lua/ai/" .. subdir
   for name, kind in vim.fs.dir(base, { depth = 4 }) do
     if kind == "file" and name:match("%.lua$") then
-      parts[#parts + 1] = S.read(base .. "/" .. name)
+      vim.list_extend(parts, code_lines(base .. "/" .. name))
     end
   end
   assert(#parts > 0, "no sources under " .. base)
   return table.concat(parts, "\n")
 end
 
+---Names a provider reads from the environment: `util.env_value("NAME"`.
+---@param source string
+---@return string[]
+local function env_reads(source)
+  local names = {}
+  for name in source:gmatch('env_value%("([%u%d_]+)"') do
+    names[#names + 1] = name
+  end
+  return names
+end
+
 describe("doc/ai.txt (:help ai) --", function()
   local tags -- every tag `:helptags` derives from the file
 
   before_each(function()
+    lines = S.read_lines(VIMDOC)
+    tags = nil
     for _, mod in ipairs({ "ai", "ai.config", "ai.providers" }) do
       package.loaded[mod] = nil
     end
@@ -144,25 +202,40 @@ describe("doc/ai.txt (:help ai) --", function()
       assert.is_true(help_tags()["ai.txt"] == true)
     end)
 
-    it("every |ai...| / |:Ai...| link resolves to a tag of this file", function()
+    it("every |link| resolves: to a tag of this file, or to Neovim's own help", function()
       local defined = help_tags()
-      local checked = 0
+      -- Neovim's own tags are only checkable where its help is installed.
+      local core_help = #vim.fn.getcompletion("quickfix", "help") > 0
+      local mine = 0
+      local in_code = false
       for _, line in ipairs(lines) do
-        for ref in line:gmatch("|([^|%s]+)|") do
-          -- Links into Neovim's own help (|:checkhealth|, ...) are not ours to check.
-          if ref:match("^ai") or ref:match("^:Ai") then
-            checked = checked + 1
-            assert.is_true(defined[ref] == true, ("dangling help link |%s|"):format(ref))
+        -- A `>lua` ... `<` example is code, not prose: its `|` (a Lua alternation
+        -- in a comment, say) is no link.
+        if line:match(">%a*%s*$") and not in_code then
+          in_code = true
+        elseif in_code and line:match("^<%s*$") then
+          in_code = false
+        end
+        for ref in (in_code and "" or line):gmatch("|([^|%s]+)|") do
+          if defined[ref] then
+            mine = mine + 1
+          elseif ref:match("^ai") or ref:match("^:Ai") then
+            error(("dangling help link |%s|"):format(ref)) -- ours by name: a typo must fail
+          elseif core_help then
+            assert.is_true(
+              vim.tbl_contains(vim.fn.getcompletion(ref, "help"), ref),
+              ("|%s| is neither a tag of doc/ai.txt nor of Neovim's help"):format(ref)
+            )
           end
         end
       end
-      assert.is_true(checked > 10, "found almost no |ai...| links -- extractor broken?")
+      assert.is_true(mine > 10, "found almost no links to this file -- extractor broken?")
     end)
 
     it("CONTENTS lists exactly the numbered sections, in order, with their tags", function()
       local headings, toc = {}, {}
       for _, line in ipairs(lines) do
-        local num, title, tag = line:match("^(%d+)%. (%u[%u%s]-)%s+%*([^*]+)%*$")
+        local num, title, tag = line:match("^(%d+)%. (%u.-)%s+%*([^*]+)%*$")
         if num then
           headings[#headings + 1] = { tonumber(num), title:lower(), tag }
         end
@@ -180,22 +253,33 @@ describe("doc/ai.txt (:help ai) --", function()
     end)
   end)
 
-  describe("configuration (section 4)", function()
-    it("the config block is exactly DEFAULTS", function()
-      local code, inside = {}, false
-      for _, line in ipairs(section(4)) do
+  describe("configuration", function()
+    ---@return string code of the config block (the one calling setup())
+    local function config_block()
+      local blocks, current = {}, nil
+      for _, line in ipairs(section("ai-config")) do
         if line:match(">lua%s*$") then
-          inside = true
-        elseif inside and line:match("^<%s*$") then
-          break
-        elseif inside then
-          code[#code + 1] = (line:gsub("^  ", ""))
+          current = {}
+        elseif current and line:match("^<%s*$") then
+          blocks[#blocks + 1] = table.concat(current, "\n")
+          current = nil
+        elseif current then
+          current[#current + 1] = (line:gsub("^  ", ""))
         end
       end
-      assert.is_true(#code > 10, "found no config block in section 4")
+      local hits = {}
+      for _, code in ipairs(blocks) do
+        if code:find('require("ai").setup(', 1, true) then
+          hits[#hits + 1] = code
+        end
+      end
+      assert.are.equal(1, #hits, "expected exactly one setup() block in the configuration section")
+      return hits[1]
+    end
 
+    it("the config block is exactly DEFAULTS", function()
       local captured
-      S.run_chunk(table.concat(code, "\n"), "doc/ai.txt#config", {
+      S.run_chunk(config_block(), "doc/ai.txt#config", {
         setup = function(opts)
           captured = opts
         end,
@@ -204,19 +288,44 @@ describe("doc/ai.txt (:help ai) --", function()
       assert.are.same(require("ai.config.DEFAULTS"), captured)
     end)
 
+    it("the provider-id comment of the config block lists the built-in providers", function()
+      local comment = assert(
+        config_block():match('provider = "auto",[^\n]-%-%-([^\n]*)'),
+        "the `provider = ...` line lost its id comment"
+      )
+      local documented = {}
+      for id in comment:gmatch('"([%w_%-]+)"') do
+        if id ~= "auto" then
+          documented[id] = true
+        end
+      end
+      local providers = require("ai.providers")
+      providers.load_builtin()
+      assert_same_set(set_of(providers.ids()), documented, "provider ids in the config comment")
+    end)
+
     it("provider_order in the scope section is the default one", function()
-      local text = table.concat(section(12), "\n")
+      local text = table.concat(section("ai-scope"), "\n")
       local list =
-        assert(text:match('(%{%s*"[%w_]+"[^}]*%})'), "no provider_order list in section 12")
+        assert(text:match('(%{%s*"[%w_]+"[^}]*%})'), "no provider_order list in the scope section")
       local order = {}
       for id in list:gmatch('"([%w_%-]+)"') do
         order[#order + 1] = id
       end
       assert.are.same(require("ai.config.DEFAULTS").provider_order, order)
     end)
+
+    it("the documented completion idle default is DEFAULTS.completion.idle_ms", function()
+      local text = table.concat(section("ai-completion"), " ")
+      local ms = assert(
+        text:match("`completion%.idle_ms` %(default%s+(%d+)%)"),
+        "no idle_ms default in the prose"
+      )
+      assert.are.equal(require("ai.config.DEFAULTS").completion.idle_ms, tonumber(ms))
+    end)
   end)
 
-  describe("commands and bindings (sections 5-7)", function()
+  describe("commands and bindings", function()
     it("every :Ai subcommand has its |:Ai-<sub>| tag, and no tag names a missing one", function()
       require("ai").setup()
       local real = {}
@@ -247,7 +356,7 @@ describe("doc/ai.txt (:help ai) --", function()
 
       local documented = {}
       for _, line in ipairs(lines) do
-        local modes, lhs, id = line:match("^  (%a[%a, ]-)  +(<%S+)  +(%l+) ")
+        local modes, lhs, id = line:match("^  (%a[%a, ]-)  +(<%S+)  +([%w_%-]+) ")
         if modes then
           documented[mode_key(modes) .. " " .. lhs .. " " .. id] = true
         end
@@ -263,7 +372,7 @@ describe("doc/ai.txt (:help ai) --", function()
     end)
   end)
 
-  describe("providers (sections 9-10, 2)", function()
+  describe("providers", function()
     local providers
 
     before_each(function()
@@ -273,31 +382,27 @@ describe("doc/ai.txt (:help ai) --", function()
 
     it("the provider list names exactly the built-in providers", function()
       local documented = {}
-      for _, line in ipairs(section(9)) do
-        local id = line:match("^  (%l+)%s%s+%S")
-        if id then
-          documented[id] = true
-        end
+      for id in pairs(items(section("ai-providers"), "^  ([%w_%-]+)%s%s+%S")) do
+        documented[id] = true
       end
       assert_same_set(set_of(providers.ids()), documented, "providers")
     end)
 
     it("the attachment capability list matches each provider's capabilities", function()
-      local documented = {}
+      local rows = {}
       local in_list = false
-      for _, line in ipairs(section(10)) do
+      for _, line in ipairs(section("ai-attachments")) do
         if line:match("^What each provider can carry") then
           in_list = true
         elseif in_list then
-          local id, kinds = line:match("^  (%l+)%s+(%S[^%s].-)%s%s+%S")
+          local id, kinds = line:match("^  ([%w_%-]+)%s+(%S[^%s].-)%s%s+%S")
           if id then
-            documented[id] = kinds
+            rows[id] = kinds
           end
         end
       end
-      local expected_ids = set_of(providers.ids())
       local documented_ids = {}
-      for id, kinds in pairs(documented) do
+      for id, kinds in pairs(rows) do
         documented_ids[id] = true
         local caps =
           assert(providers.get(id), "doc/ai.txt lists unknown provider " .. id).capabilities
@@ -314,66 +419,97 @@ describe("doc/ai.txt (:help ai) --", function()
           id .. ": the attachment kinds disagree with its capabilities"
         )
       end
-      assert_same_set(expected_ids, documented_ids, "attachment capability list")
+      assert_same_set(set_of(providers.ids()), documented_ids, "attachment capability list")
     end)
 
-    it("every API key / host variable a provider reads is documented, with its default", function()
-      local help = table.concat(lines, "\n")
-      local source = source_of("providers")
-      local seen = 0
-      for name in source:gmatch('"([A-Z][A-Z0-9_]*_API_KEY)"') do
-        seen = seen + 1
-        assert.is_truthy(
-          help:find(name, 1, true),
-          name .. " is read by a provider but not documented"
-        )
+    it("the recognized file extensions and the inline-body threshold match the code", function()
+      local text = table.concat(section("ai-attachments"), "\n")
+      local documented = {}
+      local list = assert(text:match("Recognized extensions:([^\n]*)"), "no extension list")
+      for ext in list:gmatch("%.(%w+)") do
+        documented[ext] = true
       end
-      for name in source:gmatch('"([A-Z][A-Z0-9_]*_HOST)"') do
-        seen = seen + 1
-        assert.is_truthy(
-          help:find(name, 1, true),
-          name .. " is read by a provider but not documented"
-        )
+      local expected = {}
+      for ext in code_of(""):gmatch('\n%s+(%l+) = "[%w]+/[%w%.%+%-]+",') do
+        expected[ext] = true
       end
-      assert.is_true(seen >= 4, "found almost no environment variable in lua/ai/providers")
-      -- ... and the other direction: every UPPER_CASE_WITH_UNDERSCORE token of the
-      -- help is an environment variable (nothing else in doc/ai.txt has that
-      -- shape), so each one must be read by a provider. No suffix is assumed --
-      -- a typo such as OPENAI_APIKEY or LOOMAI_HOSTT must not slip past. OLLAMA_HOST
-      -- is the one name the help mentions on purpose as *not* read (it is Ollama's
-      -- own variable, see AI_OLLAMA_HOST).
-      local tokens = 0
-      for name in help:gmatch("%f[%w_](%u[%u%d]*_[%u%d_]+)%f[^%w_]") do
-        tokens = tokens + 1
-        assert.is_true(
-          name == "OLLAMA_HOST" or source:find('"' .. name .. '"', 1, true) ~= nil,
-          name .. " is documented but no provider reads it"
-        )
+      assert_same_set(expected, documented, "recognized extensions")
+
+      local kb = assert(text:match("A body over (%d+) KB"), "no inline-body threshold in the prose")
+      assert.are.equal(
+        require("ai.providers.transport").MAX_INLINE_BODY_BYTES,
+        tonumber(kb) * 1024,
+        "the documented threshold is not transport.MAX_INLINE_BODY_BYTES"
+      )
+    end)
+
+    it("each provider's environment variables and default URL are documented under it", function()
+      local requirements = items(section("ai-requirements"), "^  %- ([%w_%-]+):")
+      local list = items(section("ai-providers"), "^  ([%w_%-]+)%s%s+%S")
+      local checked = 0
+      for _, id in ipairs(providers.ids()) do
+        -- This provider's own file only: a name read by another provider must
+        -- not satisfy it.
+        local own = table.concat(code_lines(S.ROOT .. "/lua/ai/providers/" .. id .. ".lua"), "\n")
+        local reads = env_reads(own)
+        local host = own:match('DEFAULT_HOST = "([^"]+)"')
+        local bullet = assert(requirements[id], id .. ": no bullet in the requirements section")
+        for _, name in ipairs(reads) do
+          checked = checked + 1
+          assert.is_truthy(
+            bullet:find(name, 1, true),
+            id .. ": " .. name .. " is read but not named in its requirements bullet"
+          )
+        end
+        -- ... and the other direction: every variable the bullet names is read by
+        -- this provider (OLLAMA_HOST is mentioned on purpose as *not* read).
+        for name in bullet:gmatch("%f[%w_](%u[%u%d]*_[%u%d_]+)%f[^%w_]") do
+          assert.is_true(
+            name == "OLLAMA_HOST" or vim.tbl_contains(reads, name),
+            id .. ": its requirements bullet names " .. name .. ", which it does not read"
+          )
+        end
+        for _, text in ipairs({ bullet, list[id] or "" }) do
+          for url in text:gmatch("(http://127%.0%.0%.1:%d+)") do
+            assert.are.equal(host, url, id .. ": a documented URL is not its DEFAULT_HOST")
+          end
+        end
+        if host then
+          checked = checked + 1
+          assert.is_truthy(
+            bullet:find(host, 1, true),
+            id .. ": DEFAULT_HOST " .. host .. " is missing from its requirements bullet"
+          )
+        end
       end
-      assert.is_true(tokens >= 6, "found almost no environment variable in doc/ai.txt")
-      -- Default base URLs named in the help must be the ones in the code.
-      local urls = 0
-      for url in help:gmatch("(http://127%.0%.0%.1:%d+)") do
-        urls = urls + 1
-        assert.is_truthy(
-          source:find(url, 1, true),
-          url .. " is documented but is not a provider default"
-        )
+      assert.is_true(checked >= 5, "checked almost nothing -- extractors broken?")
+    end)
+
+    it("every environment variable named anywhere in the help is one a provider reads", function()
+      local reads = set_of(env_reads(code_of("providers")))
+      local documented = {}
+      for _, line in ipairs(lines) do
+        for name in line:gmatch("%f[%w_](%u[%u%d]*_[%u%d_]+)%f[^%w_]") do
+          -- Ollama's own variable, named on purpose as the one NOT read.
+          if not (name == "OLLAMA_HOST" and line:find("not `OLLAMA_HOST`", 1, true)) then
+            documented[name] = true
+          end
+        end
       end
-      assert.is_true(urls > 0, "no default base URL found in doc/ai.txt")
+      assert_same_set(reads, documented, "environment variables")
     end)
   end)
 
-  describe("API surface (section 8, 11)", function()
+  describe("API surface", function()
     it("the ai.ask() request fields are the Ai.Request fields", function()
       local documented, in_list = {}, false
-      for _, line in ipairs(section(8)) do
+      for _, line in ipairs(section("ai-api")) do
         if line:match("{req} fields:") then
           in_list = true
         elseif in_list and line:match("^  {cb}") then
           break
         elseif in_list then
-          local name = line:match("^    ([%l_]+)%s%s+%S")
+          local name = line:match("^    ([%w_]+)%s%s+%S")
           if name then
             documented[name] = true
           end
@@ -384,8 +520,8 @@ describe("doc/ai.txt (:help ai) --", function()
 
     it("the stream handlers are the Ai.StreamHandlers fields", function()
       local documented = {}
-      for _, line in ipairs(section(8)) do
-        local name = line:match("^    (on_[%l_]+)%s%s+")
+      for _, line in ipairs(section("ai-api")) do
+        local name = line:match("^    (on_[%w_]+)%s%s+")
         if name then
           documented[name] = true
         end
@@ -397,8 +533,8 @@ describe("doc/ai.txt (:help ai) --", function()
       "the context flags are the DEFAULTS.context keys and the Ai.ContextDefaults fields",
       function()
         local documented = {}
-        for _, line in ipairs(section(11)) do
-          local name = line:match("^  ([%l_]+)%s%s+%S") or line:match("^  ([%l_]+)%s*$")
+        for _, line in ipairs(section("ai-context")) do
+          local name = line:match("^  ([%w_]+)%s%s+%S") or line:match("^  ([%w_]+)%s*$")
           if name then
             documented[name] = true
           end
@@ -409,50 +545,53 @@ describe("doc/ai.txt (:help ai) --", function()
         end
         assert_same_set(defaults, documented, "context flags (vs DEFAULTS.context)")
         assert_same_set(class_fields("Ai.ContextDefaults"), documented, "context flags (vs @types)")
+
+        -- The flag list in the ai.context.assemble() entry of the API section.
+        local api = table.concat(section("ai-api"), " ")
+        local list = assert(
+          api:match("`Ai%.ContextDefaults`:%s*(.-), all%s+boolean"),
+          "no flag list in the assemble() entry"
+        )
+        local in_api = {}
+        for flag in list:gmatch("`([%w_]+)`") do
+          in_api[flag] = true
+        end
+        assert_same_set(defaults, in_api, "context flags in the assemble() entry")
       end
     )
 
-    it("the error kinds are the ones the providers actually raise", function()
-      local text = table.concat(section(8), " ")
+    it("the documented error kinds are exactly the ones the providers raise", function()
+      local text = table.concat(section("ai-api"), " ")
       local list =
-        assert(text:match("`kind` is one of ([^.]-)%."), "no error-kind list in section 8")
+        assert(text:match("`kind` is one of ([^.]-)%."), "no error-kind list in the API section")
       local documented = {}
-      for kind in list:gmatch("`([%l_]+)`") do
+      for kind in list:gmatch("`([%w_]+)`") do
         documented[kind] = true
       end
-
-      -- Raised: every kind named as a string literal in the sources (the @types
-      -- file is excluded -- its comments are documentation, not code), and every
-      -- `lib_error.new("<kind>", ...)` literal.
-      local source = source_of("providers") .. source_of(""):gsub("%-%-%-@[^\n]*", "") -- annotation lines are docs, not code
-      for kind in pairs(documented) do
-        assert.is_truthy(
-          source:find('"' .. kind .. '"', 1, true),
-          ("doc/ai.txt documents error kind %q, which no source raises"):format(kind)
-        )
+      -- Raised = a `lib_error.new("<kind>", ...)` call in real code. Comment lines
+      -- are stripped by code_of, so a kind that is only *mentioned* does not count.
+      local raised = {}
+      for kind in code_of(""):gmatch('lib_error%.new%(%s*"([%w_]+)"') do
+        raised[kind] = true
       end
-      local raised = 0
-      for kind in source:gmatch('lib_error%.new%(%s*"([%l_]+)"') do
-        raised = raised + 1
-        assert.is_true(
-          documented[kind] == true,
-          ("error kind %q is raised but not documented"):format(kind)
-        )
-      end
-      assert.is_true(raised > 0, "found no lib_error.new() call -- extractor broken?")
+      assert_same_set(raised, documented, "error kinds")
     end)
   end)
 
-  describe("requirements (section 2)", function()
+  describe("requirements", function()
     it(
       "the minimum Neovim version agrees across doc/ai.txt, requirements.md and :checkhealth",
       function()
-        local from_vimdoc = table.concat(section(2), "\n"):match("Neovim >= (%d+%.%d+)")
+        local requirements = table.concat(section("ai-requirements"), "\n")
+        local from_vimdoc = requirements:match("Neovim >= (%d+%.%d+)")
         local from_md = S.read(S.DOCS .. "requirements.md"):match("Neovim >= (%d+%.%d+)")
-        local from_health = S.read(S.ROOT .. "/lua/ai/health.lua"):match("Neovim >= (%d+%.%d+)")
-        assert.is_truthy(from_vimdoc, "no `Neovim >= x.y` in doc/ai.txt section 2")
+        -- The real threshold is the tuple handed to version_ok(), not the message.
+        local major, minor = S.read(S.ROOT .. "/lua/ai/health.lua")
+          :match("version_ok%(%s*{%s*(%d+)%s*,%s*(%d+)")
+        assert.is_truthy(from_vimdoc, "no `Neovim >= x.y` in the requirements section")
+        assert.is_truthy(major, "health.lua no longer calls version_ok({ major, minor, ... })")
         assert.are.equal(from_md, from_vimdoc)
-        assert.are.equal(from_health, from_vimdoc)
+        assert.are.equal(major .. "." .. minor, from_vimdoc)
       end
     )
   end)

@@ -15,7 +15,8 @@ M.DOCS = M.ROOT .. "/docs/"
 function M.read_lines(path)
   local lines = {}
   for line in io.lines(path) do
-    lines[#lines + 1] = line
+    -- A CRLF checkout must not leave a carriage return on every line on a non-Windows read.
+    lines[#lines + 1] = (line:gsub("\r$", ""))
   end
   return lines
 end

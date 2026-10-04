@@ -47,9 +47,10 @@ tested instead (stub the seam, not the whole dependency).
 The two documentation specs are the odd ones out: they test the *documentation*
 (REL-08), not the code. Both read the docs at run time and diff them against the
 code, and both share their helpers (`docs/*.md` blocks and tables, running a
-documented snippet, listing the real keymaps) in `TESTS/docs_support.lua`, which
-`TESTS/minimal_init.lua` makes `require`-able as `docs_support` (it is not a
-spec, so plenary never runs it).
+documented snippet, listing the real keymaps) in `TESTS/docs_support.lua`. Each
+spec puts `TESTS/?.lua` on `package.path` itself (so it also runs when started
+without `TESTS/minimal_init.lua`); the module is not a spec, so plenary never
+runs it.
 
 `docs_examples_spec.lua` -- `docs/*.md`. It extracts code blocks and tables and
 executes them or diffs them against the code. Covered: the `configuration.md`
@@ -70,22 +71,37 @@ the scan cannot see: buffer-local ones, and a key mapped outside the registry
 that is neither under the prefix nor in `DEFAULTS.completion.keymap`.
 
 `vimdoc_spec.lua` -- `doc/ai.txt`, the `:help ai` file, which is maintained by
-hand and was found well behind `docs/*.md` once (2026-10-01). It runs a real
-`:helptags` on a scratch copy (a duplicate or malformed tag fails) and checks
-that every `|ai...|` link resolves; that CONTENTS matches the section headings;
-that the config block equals `DEFAULTS` and `provider_order` is the default one;
-that the `:Ai` subcommand tags, the keymap tables (mode, lhs and action id,
-against the `BINDINGS.md` tables), the provider list and the attachment
-capability list match the code; that the `ai.ask()` request fields, the stream
-handlers and the context flags match `@types`/`DEFAULTS`; that the documented
-error kinds are the ones the providers raise (both directions); and that the
-minimum Neovim version, every environment variable (any UPPER_CASE_WITH_
-UNDERSCORE token) and the default base URLs match the code. **Not** checked:
-prose and descriptions -- anything that is not a name, a default or a list. Its
-extractors fail loudly instead of going vacuous when the layout they read
-changes; each documented fact was checked by deliberately breaking `doc/ai.txt`
-(16 mutations, all caught; the env-variable check missed a suffix typo at first
-and was rewritten without a suffix assumption).
+hand and was found well behind `docs/*.md` once (2026-10-01). Sections are found
+by their help tag, not their number, so adding or renumbering a section breaks
+nothing. It runs a real `:helptags` on a scratch copy (a duplicate or malformed
+tag fails) and checks that every `|link|` resolves (to this file, or to Neovim's
+own help where that is installed); that CONTENTS matches the section headings;
+that the config block equals `DEFAULTS`, its provider-id comment lists the
+built-in providers and `provider_order` and the `idle_ms` default are the real
+ones; that the `:Ai` subcommand tags, the keymap tables (mode, lhs and action id,
+against the `BINDINGS.md` tables), the provider list, the attachment capability
+list, the recognized extensions and the inline-body threshold match the code; that
+the `ai.ask()` request fields, the stream handlers and the context flags (in the
+section and in the `assemble()` entry) match `@types`/`DEFAULTS`; that the
+documented error kinds are *exactly* the `lib_error.new("<kind>", ...)` calls in
+real code (comment lines never count); that the minimum Neovim version agrees with
+`requirements.md` and the tuple `health.lua` hands to `version_ok()`; and, per
+provider, that the environment variables and the default base URL in its
+requirements bullet are the ones its own source reads. Every UPPER_CASE_WITH_
+UNDERSCORE token in the help must be an environment variable a provider reads
+(Ollama's own `OLLAMA_HOST`, named as *not* read, is the one exception): a new
+such token in the help needs a matching `util.env_value()` call or an entry in the
+spec's exception.
+
+**Not** checked: prose and descriptions -- anything that is not a name, a default
+or a list. The extractors fail loudly instead of going vacuous when the layout
+they read changes. The spec was verified by deliberately breaking the help and the
+code (28 cases: 26 must turn red, and inserting a numbered section or switching the
+file to CRLF must stay green); the first version missed an error kind that only a
+*comment* still mentioned, per-provider swaps of keys and ports, and a
+suffix-dependent environment-variable check, which an independent review found and
+the cases above now pin. A load error in a spec or in `docs_support.lua` makes
+`scripts/test.sh <file>` exit with 2 immediately instead of idling.
 
 ## Round 1 (2026-09-18): first full audit
 
