@@ -26,7 +26,9 @@ if [[ "$target" == *.lua ]]; then
   # TESTS/minimal_init.lua (no rtp entries, no package.path for the shared
   # TESTS/docs_support.lua), and with the developer's own config loaded.
   # Running the busted runner in this process keeps the init.
-  cmd="lua require('plenary.busted').run('$target')"
+  # pcall: an error while the spec FILE loads (a syntax error, a missing doc)
+  # happens before busted can exit, and headless nvim would idle forever.
+  cmd="lua local ok, err = pcall(require('plenary.busted').run, '$target'); if not ok then io.stderr:write(tostring(err) .. '\n'); vim.cmd('2cq') end"
 else
   cmd="PlenaryBustedDirectory $target { minimal_init = 'TESTS/minimal_init.lua', sequential = true }"
 fi
