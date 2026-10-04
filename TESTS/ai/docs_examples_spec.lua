@@ -9,123 +9,20 @@
 -- reordering the docs must not break the lookup, only removing the example
 -- does (and that is worth a failure too).
 --
--- Not covered (see TESTS/README.md): prose, the Action-id/description columns
--- and the Autocmds table of BINDINGS.md, the other docs' tables, README.md,
--- doc/ai.txt (the `:help ai` file, maintained by hand and not checked), and
--- keymaps the BINDINGS.md scan cannot see: buffer-local ones, and a key mapped
--- outside the registry that is neither under the prefix nor in
--- DEFAULTS.completion.keymap.
+-- Not covered (see TESTS/README.md): prose, the description column and the
+-- Autocmds table of BINDINGS.md, the other docs' tables, README.md, and keymaps
+-- the BINDINGS.md scan cannot see: buffer-local ones, and a key mapped outside
+-- the registry that is neither under the prefix nor in
+-- DEFAULTS.completion.keymap. doc/ai.txt (`:help ai`) is vimdoc_spec.lua's job.
+--
+-- The helpers (block/table extraction, run_chunk, the keymap scan) live in
+-- TESTS/docs_support.lua, shared with vimdoc_spec.lua.
 ---@diagnostic disable: missing-fields, need-check-nil
 
-local DOCS = vim.fn.getcwd() .. "/docs/"
-
----@param path string
----@return string[]
-local function read_lines(path)
-  local lines = {}
-  for line in io.lines(path) do
-    lines[#lines + 1] = line
-  end
-  return lines
-end
-
----Every fenced block of `file` (relative to docs/), as `{ lang, code }`.
----@param file string
----@return { lang: string, code: string }[]
-local function fenced_blocks(file)
-  local blocks, cur = {}, nil
-  for _, line in ipairs(read_lines(DOCS .. file)) do
-    local fence = line:match("^```(%S*)%s*$")
-    if fence ~= nil then
-      if cur then
-        cur.code = table.concat(cur.lines, "\n")
-        blocks[#blocks + 1] = cur
-        cur = nil
-      else
-        cur = { lang = fence, lines = {} }
-      end
-    elseif cur then
-      cur.lines[#cur.lines + 1] = line
-    end
-  end
-  return blocks
-end
-
----The single block of `file` whose code contains `needle` (plain match).
----@param file string
----@param needle string
----@return string
-local function block_with(file, needle)
-  local hits = {}
-  for _, b in ipairs(fenced_blocks(file)) do
-    if b.code:find(needle, 1, true) then
-      hits[#hits + 1] = b.code
-    end
-  end
-  assert(
-    #hits == 1,
-    ("%s: expected exactly 1 block containing %q, found %d"):format(file, needle, #hits)
-  )
-  return hits[1]
-end
-
----Data rows (header and separator dropped) of every GFM table in `file` whose
----header starts with the cells `header`, each row as its trimmed cell strings.
----@param file string
----@param header string[]
----@return string[][]
-local function table_rows(file, header)
-  local rows = {}
-  for _, tbl in ipairs(require("lib.nvim.markdown.table").parse(read_lines(DOCS .. file))) do
-    local matches = true
-    for i, cell in ipairs(header) do
-      matches = matches and tbl.rows[1][i] == cell
-    end
-    if matches then
-      for i = 2, #tbl.rows do
-        rows[#rows + 1] = tbl.rows[i]
-      end
-    end
-  end
-  return rows
-end
-
----Registry/lazy `mode` fields are `string|string[]`; normalize to a list.
----@param mode string|string[]|nil
----@return string[]
-local function mode_list(mode)
-  return type(mode) == "table" and mode or { mode or "n" }
-end
-
----Run `code` as a chunk with `overrides` shadowing globals; `require` is
----replaced so a doc's `require("ai")` can be pointed at a capturing stub
----while every other module stays real. Only the setup() block uses the stub
----(a real setup() would install keymaps); the ask() examples run the real
----`ai.ask` against a stubbed provider instead.
----@param code string
----@param name string chunk name for error messages
----@param ai_stub? table what `require("ai")` returns instead of the real one
----@param extra? table additional globals for the chunk
----@return any
-local function run_chunk(code, name, ai_stub, extra)
-  local env = setmetatable({
-    require = function(mod)
-      if mod == "ai" and ai_stub then
-        return ai_stub
-      end
-      return require(mod)
-    end,
-  }, { __index = _G })
-  for k, v in pairs(extra or {}) do
-    env[k] = v
-  end
-  -- loadstring + setfenv is the Lua 5.1 API Nvim guarantees; the 4-argument
-  -- load() is a 5.2/LuaJIT extension.
-  local fn, err = loadstring(code, "=" .. name)
-  assert(fn, err)
-  setfenv(fn, env)
-  return fn()
-end
+local S = require("docs_support")
+local DOCS = S.DOCS
+local read_lines, block_with, table_rows = S.read_lines, S.block_with, S.table_rows
+local mode_list, run_chunk = S.mode_list, S.run_chunk
 
 describe("docs examples (REL-08) --", function()
   local notified
@@ -609,56 +506,30 @@ describe("docs examples (REL-08) --", function()
       end
 
       -- Registry-independent scan: the loops above only see keymaps bound
-      -- through keymap.register(), so a plain vim.keymap.set (or a lib
-      -- `keymap()` call) under the prefix would stay invisible. Look at what
-      -- is really mapped instead: every GLOBAL map in modes n/x/s/o/i/c/t/l
-      -- (buffer-local maps are out of scope), keyed on the raw lhs and
-      -- mode-agnostic -- the registry comparison above already covers the
-      -- mode. nvim_get_keymap reports a literal space for a space leader, so
-      -- both sides are compared as raw bytes via the translated `lhs`
-      -- (`lhsraw` encodes Ctrl chords as modifier keys instead, which
-      -- nvim_replace_termcodes does not).
+      -- through keymap.register(), so a plain vim.keymap.set under the prefix
+      -- would stay invisible. Look at what is really mapped instead (see
+      -- docs_support.global_maps), keyed on the raw lhs and mode-agnostic --
+      -- the registry comparison above already covers the mode.
       local DEFAULTS = require("ai.config.DEFAULTS")
-      local function raw(lhs)
-        return vim.api.nvim_replace_termcodes(lhs, true, true, true)
-      end
-
-      -- Self-check of that normalization on a Ctrl chord, so it cannot rot
-      -- silently on another Neovim version.
-      local probe = "<F20><C-j>"
-      vim.keymap.set("n", probe, "<Nop>")
-      local probe_seen = false
-      for _, m in ipairs(vim.api.nvim_get_keymap("n")) do
-        probe_seen = probe_seen or raw(m.lhs) == raw(probe)
-      end
-      vim.keymap.del("n", probe)
-      assert.is_true(
-        probe_seen,
-        "raw(nvim_get_keymap().lhs) no longer equals raw(lhs) for a Ctrl chord"
-      )
-
       local doc_lhs = {}
       for id in pairs(documented) do
-        doc_lhs[raw(id:match("^%a (.+)$"))] = true
+        doc_lhs[S.raw(id:match("^%a (.+)$"))] = true
       end
       local completion_lhs = {}
       for _, k in pairs(DEFAULTS.completion.keymap) do
         if type(k) == "string" then
-          completion_lhs[raw(k)] = true
+          completion_lhs[S.raw(k)] = true
         end
       end
-      local prefix = raw(DEFAULTS.keymaps.prefix)
+      local prefix = S.raw(DEFAULTS.keymaps.prefix)
       local scanned = 0
-      for _, mode in ipairs({ "n", "x", "s", "o", "i", "c", "t", "l" }) do
-        for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
-          local lhs = raw(m.lhs)
-          if vim.startswith(lhs, prefix) or completion_lhs[lhs] then
-            scanned = scanned + 1
-            assert.is_true(
-              doc_lhs[lhs] == true,
-              ("%s %s is mapped but missing from BINDINGS.md"):format(mode, m.lhs)
-            )
-          end
+      for _, m in ipairs(S.global_maps()) do
+        if vim.startswith(m.raw, prefix) or completion_lhs[m.raw] then
+          scanned = scanned + 1
+          assert.is_true(
+            doc_lhs[m.raw] == true,
+            ("%s %s is mapped but missing from BINDINGS.md"):format(m.mode, m.lhs)
+          )
         end
       end
       assert.is_true(scanned > 0, "scan saw no mapped ai.nvim keymap -- lhs normalization broken?")
