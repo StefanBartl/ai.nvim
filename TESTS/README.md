@@ -18,6 +18,11 @@ scripts/test.sh                       # every spec under TESTS/ai
 scripts/test.sh TESTS/ai/sse_spec.lua # a single file
 ```
 
+A single file runs the busted runner in the already-initialised nvim
+(`require('plenary.busted').run(...)`), not `:PlenaryBustedFile`: that one spawns
+a child nvim without `-u`, i.e. without `TESTS/minimal_init.lua` and with the
+developer's own config loaded.
+
 which is exactly:
 
 ```bash
@@ -39,8 +44,14 @@ through a real `ui.kit.popup`/`ui.kit.surface.open` call -- see "Skipped"
 below for why, and `panel_spec.lua`'s own module doc for how its logic is
 tested instead (stub the seam, not the whole dependency).
 
-`docs_examples_spec.lua` is the odd one out: it tests the *documentation*
-(REL-08). It extracts code blocks and tables from `docs/*.md` at run time and
+The two documentation specs are the odd ones out: they test the *documentation*
+(REL-08), not the code. Both read the docs at run time and diff them against the
+code, and both share their helpers (`docs/*.md` blocks and tables, running a
+documented snippet, listing the real keymaps) in `TESTS/docs_support.lua`, which
+`TESTS/minimal_init.lua` makes `require`-able as `docs_support` (it is not a
+spec, so plenary never runs it).
+
+`docs_examples_spec.lua` -- `docs/*.md`. It extracts code blocks and tables and
 executes them or diffs them against the code. Covered: the `configuration.md`
 `setup()` / completion / `register()` blocks (the full `setup()` block must
 equal `DEFAULTS`), the `attachments.md` `from_file()` / `host` examples (run
@@ -53,12 +64,28 @@ and default lhs, both directions against the lib.nvim keymap registry, plus a
 registry-independent scan that every global keymap mapped under the prefix,
 and every key in `DEFAULTS.completion.keymap`, is documented -- by raw lhs in
 any of the modes n/x/s/o/i/c/t/l) and the `architecture.md` curl extension.
-**Not** cross-checked: prose, the other table columns (action ids,
-descriptions, the autocmds table), the remaining docs' tables, the root
-`README.md` and `doc/ai.txt` (the `:help ai` file, maintained by hand and not
-checked), and keymaps the scan cannot see: buffer-local ones, and a key mapped
-outside the registry that is neither under the prefix nor in
-`DEFAULTS.completion.keymap`.
+**Not** cross-checked: prose, the other table columns (descriptions, the
+autocmds table), the remaining docs' tables, the root `README.md`, and keymaps
+the scan cannot see: buffer-local ones, and a key mapped outside the registry
+that is neither under the prefix nor in `DEFAULTS.completion.keymap`.
+
+`vimdoc_spec.lua` -- `doc/ai.txt`, the `:help ai` file, which is maintained by
+hand and was found well behind `docs/*.md` once (2026-10-01). It runs a real
+`:helptags` on a scratch copy (a duplicate or malformed tag fails) and checks
+that every `|ai...|` link resolves; that CONTENTS matches the section headings;
+that the config block equals `DEFAULTS` and `provider_order` is the default one;
+that the `:Ai` subcommand tags, the keymap tables (mode, lhs and action id,
+against the `BINDINGS.md` tables), the provider list and the attachment
+capability list match the code; that the `ai.ask()` request fields, the stream
+handlers and the context flags match `@types`/`DEFAULTS`; that the documented
+error kinds are the ones the providers raise (both directions); and that the
+minimum Neovim version, every environment variable (any UPPER_CASE_WITH_
+UNDERSCORE token) and the default base URLs match the code. **Not** checked:
+prose and descriptions -- anything that is not a name, a default or a list. Its
+extractors fail loudly instead of going vacuous when the layout they read
+changes; each documented fact was checked by deliberately breaking `doc/ai.txt`
+(16 mutations, all caught; the env-variable check missed a suffix typo at first
+and was rewritten without a suffix assumption).
 
 ## Round 1 (2026-09-18): first full audit
 
