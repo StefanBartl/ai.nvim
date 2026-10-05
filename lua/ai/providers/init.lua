@@ -220,15 +220,18 @@ function M.resolve(id, order, req)
       return nil, key_err
     end
   end
+  -- "policy" only when the allow-list actually removed something; a plain
+  -- missing key or binary is not the policy's doing.
+  local filtered = policy.restricted() and #walk < #(order or {})
   local message = "ai: no provider available (checked: " .. table.concat(walk, ", ") .. ")"
-  if policy.restricted() and #walk < #(order or {}) then
+  if filtered then
     message = message .. "; " .. policy.describe()
   end
   return nil,
     lib_error.new(
       "provider_resolution",
       message,
-      { order = order, checked = walk, reason = policy.restricted() and "policy" or nil }
+      { order = order, checked = walk, reason = filtered and "policy" or nil }
     )
 end
 

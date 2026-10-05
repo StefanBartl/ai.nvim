@@ -19,7 +19,7 @@
 ---@field log_level? integer vim.log.levels
 
 ---@class Ai.PolicyOptions
----@field allowed? string[] Provider ids this machine may use. Empty or absent (the default) means no restriction. Non-empty: `provider = "auto"` walks only these, and a request or `:Ai provider` naming anything else is refused unless the caller asked for it explicitly (`Ai.Request.allow_unlisted`, or a confirmed `:Ai provider`). Ids are not checked against the registry, so an id may be listed before its provider exists.
+---@field allowed? string[] Provider ids this machine may use. Empty or absent (the default) means no restriction. Non-empty: `provider = "auto"` walks only these, and a request or `:Ai provider` naming anything else is refused unless the caller asked for it explicitly (`Ai.Request.allow_unlisted`, or a confirmed `:Ai provider`). A malformed value (not a list of strings) refuses every provider until it is fixed. Ids are not checked against the registry, so an id may be listed before its provider exists.
 
 ---@class Ai.KeyProvider
 ---@field active? string|false Profile in force at startup; must be one of `profiles` (one that is not still counts as chosen and yields no key). `false` or absent = none. A chosen profile never falls back to the provider's default variable.

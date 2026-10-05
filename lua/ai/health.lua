@@ -114,7 +114,9 @@ function M.check()
   vim.health.info("provider = " .. cfg.provider)
   vim.health.info("provider_order = " .. table.concat(cfg.provider_order, ", "))
   for _, issue in ipairs(require("ai.config").issues()) do
-    vim.health.warn("invalid config value, using the default -- " .. issue)
+    -- The issue says by itself what became of the value (a default, or for
+    -- policy.allowed a refusal) -- a fixed prefix would get one of them wrong.
+    vim.health.warn(issue)
   end
   -- A model id is never rejected at request time (see
   -- `ai.providers.models`'s module doc) -- this is the surface the roadmap
@@ -131,6 +133,11 @@ function M.check()
   local policy = require("ai.policy")
   if not policy.restricted() then
     vim.health.info("no allow-list (config.policy.allowed is empty) -- every provider may be used")
+  elseif (policy.allowed() or {})[1] == require("ai.config").INVALID_ALLOWED then
+    vim.health.error(
+      "config.policy.allowed is malformed -- every provider is refused until it is fixed",
+      { 'Make it a list of provider ids, e.g. policy = { allowed = { "claude", "copilot" } }' }
+    )
   else
     local allowed = policy.allowed() or {}
     vim.health.info("allowed = " .. table.concat(allowed, ", "))
@@ -139,7 +146,9 @@ function M.check()
         vim.health.info(id .. ": listed, but no provider with that id is registered (yet)")
       end
     end
-    if cfg.provider ~= "auto" and not policy.is_listed(cfg.provider) then
+    -- is_allowed, not is_listed: a session grant (`:Ai provider`) lets requests
+    -- through, and those are reported as grants below, not as refused.
+    if cfg.provider ~= "auto" and not policy.is_allowed(cfg.provider) then
       vim.health.warn(
         ("provider = %q is not on the allow-list -- requests that use it are refused"):format(
           cfg.provider
@@ -148,7 +157,7 @@ function M.check()
       )
     end
     local completion_provider = cfg.completion and cfg.completion.provider
-    if completion_provider and not policy.is_listed(completion_provider) then
+    if completion_provider and not policy.is_allowed(completion_provider) then
       vim.health.warn(
         ("completion.provider = %q is not on the allow-list -- completion requests are refused"):format(
           completion_provider

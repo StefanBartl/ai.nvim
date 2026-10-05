@@ -166,13 +166,17 @@ Some machines may only use some providers. `policy.allowed` lists them, once,
 for everything that goes through ai.nvim; empty (the default) means no
 restriction and nothing changes. With a list:
 
-  - `provider = "auto"` walks only the listed entries of `provider_order`.
+  - `provider = "auto"` walks only the listed entries of `provider_order`
+    (a session grant, below, does not widen it).
   - A request naming another provider fails before anything is sent
     (`provider_resolution`, `err.data.reason == "policy"`), for every caller.
   - `:Ai provider {name}` for an unlisted provider asks first; a yes allows
     it for this Neovim session only, nothing is written.
   - A caller that asked the user itself may set `allow_unlisted = true` on
     one request.
+
+A malformed `policy.allowed` (not a list of strings) is not read as empty: every
+provider is refused until it is fixed, `setup()` warns, |:checkhealth| reports it.
 
 The list is not checked against the registry, so an id may be listed before
 its provider exists. Plugins on top of ai.nvim read it with |ai.policy()| and
