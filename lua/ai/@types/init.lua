@@ -7,6 +7,7 @@
 ---@field provider? string Active provider id, or `"auto"` (default) to pick the first available id in `provider_order`
 ---@field provider_order? string[] `"auto"` resolution order (default `{"claude","ollama","openai","gemini","loomai"}`) -- `"loomai"` is last since it needs a local server the user must run themselves; see `ai.providers`'s module doc
 ---@field policy? Ai.PolicyOptions Which providers this machine may use at all (`lua/ai/policy.lua`)
+---@field keys? table<string, Ai.KeyProvider> Named API-key profiles per provider id (`lua/ai/keys.lua`); empty (default) = each provider reads its own environment variable
 ---@field model? table<string, string> Default model per provider id, e.g. `{ claude = "claude-opus-4-5" }`
 ---@field timeout_ms? integer Request timeout in ms, passed through to lib.nvim.net.curl (default 60000)
 ---@field ui? Ai.UiOptions
@@ -19,6 +20,15 @@
 
 ---@class Ai.PolicyOptions
 ---@field allowed? string[] Provider ids this machine may use. Empty or absent (the default) means no restriction. Non-empty: `provider = "auto"` walks only these, and a request or `:Ai provider` naming anything else is refused unless the caller asked for it explicitly (`Ai.Request.allow_unlisted`, or a confirmed `:Ai provider`). Ids are not checked against the registry, so an id may be listed before its provider exists.
+
+---@class Ai.KeyProvider
+---@field active? string Profile in force at startup; must be one of `profiles`. A chosen profile never falls back to the provider's default variable.
+---@field profiles table<string, Ai.KeyProfile>
+
+---One credential's source: exactly one of `env` or `file`.
+---@class Ai.KeyProfile
+---@field env? string Name of an environment variable holding the key
+---@field file? string Path of a file whose first non-empty line is the key (`~` is expanded; re-read when the file changes)
 
 ---@class Ai.UiOptions
 ---@field enable boolean

@@ -39,7 +39,7 @@ local function api_key(req)
   if req and req.api_key then
     return req.api_key
   end
-  return util.env_value("OPENAI_API_KEY")
+  return require("ai.keys").get("openai", "OPENAI_API_KEY")
 end
 
 ---@param req? Ai.Request
@@ -113,14 +113,7 @@ end
 function M.ask(req, cb)
   local key = api_key(req)
   if not key then
-    cb(
-      false,
-      lib_error.new(
-        "missing_api_key",
-        "openai: OPENAI_API_KEY not set",
-        { env_var = "OPENAI_API_KEY" }
-      )
-    )
+    cb(false, util.missing_key_error("openai", "OPENAI_API_KEY"))
     return
   end
 
@@ -186,13 +179,7 @@ function M.stream(req, handlers)
   local key = api_key(req)
   if not key then
     if handlers.on_error then
-      handlers.on_error(
-        lib_error.new(
-          "missing_api_key",
-          "openai: OPENAI_API_KEY not set",
-          { env_var = "OPENAI_API_KEY" }
-        )
-      )
+      handlers.on_error(util.missing_key_error("openai", "OPENAI_API_KEY"))
     end
     return nil
   end

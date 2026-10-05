@@ -63,6 +63,29 @@ function M.env_value(name, fallback)
   return (trimmed ~= "") and trimmed or fallback
 end
 
+---The `missing_api_key` error for provider `id`. Without an active key profile
+---(`ai.keys`) it names the provider's own variable, as it always did. With one,
+---the variable is not the problem -- the chosen profile has no key -- so it
+---names the profile, and never falls back to the default variable's account.
+---@param id string provider id, e.g. "claude"
+---@param env_var string the provider's own variable
+---@return LibErrorValue
+function M.missing_key_error(id, env_var)
+  local profile = require("ai.keys").active(id)
+  if profile then
+    return lib_error.new(
+      "missing_api_key",
+      ("%s: key profile '%s' has no key (%s)"):format(id, profile, require("ai.keys").describe(id)),
+      { profile = profile }
+    )
+  end
+  return lib_error.new(
+    "missing_api_key",
+    id .. ": " .. env_var .. " not set",
+    { env_var = env_var }
+  )
+end
+
 ---Build the "curl exited non-zero" error every streaming provider's
 ---`on_done` reports identically once `fetch_stream` hands it a raw process
 ---object (see that function's doc comment: it never checks `obj.code`

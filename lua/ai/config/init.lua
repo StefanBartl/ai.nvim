@@ -24,7 +24,8 @@ local _active = nil
 ---one of these names at another nesting level (e.g. `completion.model`, a
 ---single string) still gets checked normally.
 ---@type table<string, true>
-local OPEN_SHAPE_KEYS = { model = true, provider_order = true, ["policy.allowed"] = true }
+local OPEN_SHAPE_KEYS =
+  { model = true, provider_order = true, ["policy.allowed"] = true, keys = true }
 
 ---@internal
 ---Warn about every key in `opts` that `defaults` doesn't know about, at any

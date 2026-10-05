@@ -10,6 +10,7 @@ require("ai").setup({
   policy = {
     allowed = {},                             -- provider ids this machine may use; empty = no restriction, see "Provider policy"
   },
+  keys = {},                                  -- named API-key profiles per provider; empty = each provider's own variable, see "Key profiles"
   model = {},                                 -- e.g. { claude = "claude-opus-4-5" } -- not validated here, see "Model ids" below
   timeout_ms = 60000,
 
@@ -152,6 +153,48 @@ list:
 The list is not checked against the registry: an id may be listed before its
 provider exists (`"copilot"` today). A plugin on top of ai.nvim reads the policy
 with `require("ai").policy()` and may restrict further, never widen it.
+
+## Key profiles
+
+A person can have more than one credential for the same provider -- a private
+key now, a company account later. `keys` names them and says where each comes
+from; `:Ai key <profile>` picks one for the session:
+
+```lua
+-- the options passed to setup():
+{
+  keys = {
+    claude = {
+      active = "privat",                      -- in force at startup (optional)
+      profiles = {
+        privat = { env = "ANTHROPIC_API_KEY_PRIVAT" },   -- a variable name
+        firma = { file = "~/.config/ai/firma.key" },     -- first non-empty line
+      },
+    },
+  },
+}
+```
+
+- Without `keys` nothing changes: every provider reads its own variable
+  (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`). A per-request
+  `api_key` still wins over everything.
+- A profile has exactly one source: `env` (the name of an environment variable)
+  or `file` (a path; `~` is expanded, the file is re-read when it changes).
+  A command or password-manager source is not offered yet -- it needs an
+  asynchronous lookup and is a follow-up.
+- **A chosen profile never falls back to the default variable.** If its source
+  is empty, the request fails with `missing_api_key` naming the profile; it does
+  not quietly send with the other account's key.
+- `:Ai key firma` switches every provider that defines a `firma` profile for
+  this session (`:Ai key firma claude` only that one), `:Ai key reset` goes back
+  to `active` / the default variable, `:Ai key` shows the setup. Nothing is
+  written; the next start is back at `active`.
+- A key is never printed: `:Ai info`, `:Ai key` and `:checkhealth ai` show the
+  profile, the kind of source and "key present"/"KEY MISSING", nothing else.
+- `claude-cli` and the local providers have no key and are not affected.
+
+Keys switch the *account*; whether customer data may go to that account at all
+is a policy question (see "Provider policy" and your employer's rules).
 
 ## Registering a custom provider
 

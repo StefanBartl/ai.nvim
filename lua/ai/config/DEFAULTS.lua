@@ -22,6 +22,14 @@ local DEFAULTS = {
     allowed = {},
   },
 
+  -- Named API-key profiles per provider and which one is active (see
+  -- lua/ai/keys.lua). Empty means every provider reads its own environment
+  -- variable, as before. Shape:
+  --   keys = { claude = { active = "privat", profiles = {
+  --     privat = { env = "ANTHROPIC_API_KEY_PRIVAT" },
+  --     firma = { file = "~/.config/ai/firma.key" } } } }
+  keys = {},
+
   -- Per-provider default model, e.g. { claude = "claude-opus-4-5" }. Empty
   -- means each provider module's own built-in default.
   model = {},
