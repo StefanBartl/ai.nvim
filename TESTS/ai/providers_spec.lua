@@ -146,10 +146,13 @@ describe("ai.providers", function()
     end
   )
 
-  it("load_builtin() registers all five built-ins, including gemini and loomai", function()
+  it("load_builtin() registers all six built-ins, including claude-cli", function()
     local providers = require("ai.providers")
     providers.load_builtin()
-    assert.are.same({ "claude", "gemini", "loomai", "ollama", "openai" }, providers.ids())
+    assert.are.same(
+      { "claude", "claude-cli", "gemini", "loomai", "ollama", "openai" },
+      providers.ids()
+    )
   end)
 
   it("'auto' never reaches a provider absent from order, even if registered", function()

@@ -27,6 +27,10 @@
   - **loomai**: a loomAI server reachable at `http://127.0.0.1:8080` (default,
     override with `LOOMAI_HOST`). Last in the default `provider_order`, see
     `docs/scope.md`.
+  - **claude-cli**: the Claude Code CLI (`claude`) on `PATH`, logged in
+    (`claude auth status`). Opt-in -- not in the default `provider_order`;
+    select it with `:Ai provider claude-cli`. It uses the account the CLI is
+    logged in as, so no API key is configured here.
 
 The two external tools -- `curl`, and `ollama` for that provider -- are
 declared in [install.json](install.json) and read by lib.nvim's

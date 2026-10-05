@@ -71,8 +71,8 @@ about *this* plugin's request shape rather than about HTTP:
 
 ## Provider registry
 
-`lua/ai/providers/init.lua` lazy-loads five built-ins (`claude`, `ollama`,
-`openai`, `gemini`, `loomai`) behind the same proxy pattern
+`lua/ai/providers/init.lua` lazy-loads six built-ins (`claude`, `ollama`,
+`openai`, `gemini`, `loomai`, `claude-cli`) behind the same proxy pattern
 [`pdfport.nvim`](https://github.com/StefanBartl/pdfport.nvim) uses for its
 extraction backends: the real module only loads once one of its fields is
 actually touched. `M.register(provider)` lets a user (or a future built-in)

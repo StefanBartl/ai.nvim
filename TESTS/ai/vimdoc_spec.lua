@@ -450,7 +450,10 @@ describe("doc/ai.txt (:help ai) --", function()
       for _, id in ipairs(providers.ids()) do
         -- This provider's own file only: a name read by another provider must
         -- not satisfy it.
-        local own = table.concat(code_lines(S.ROOT .. "/lua/ai/providers/" .. id .. ".lua"), "\n")
+        local own = table.concat(
+          code_lines(S.ROOT .. "/lua/ai/providers/" .. id:gsub("%-", "_") .. ".lua"),
+          "\n"
+        )
         local reads = env_reads(own)
         local host = own:match('DEFAULT_HOST = "([^"]+)"')
         local bullet = assert(requirements[id], id .. ": no bullet in the requirements section")

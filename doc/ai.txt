@@ -55,6 +55,11 @@ migration is what |ai-attachments| were built for.
   - loomai:  a loomAI server reachable at http://127.0.0.1:8080 (default,
              override with `LOOMAI_HOST`). Last in the default
              `provider_order` -- see |ai-scope|.
+  - claude-cli: the Claude Code CLI (`claude`) on `PATH`, logged in
+             (`claude auth status`). Opt-in: not in the default
+             `provider_order`, select it with `:Ai provider claude-cli`.
+             Uses whatever account the CLI is logged in as; needs no API key
+             of its own.
 
 No provider is required at install time -- |:checkhealth| ai reports which
 ones are usable on this machine, and `provider = "auto"` (the default) picks
@@ -93,7 +98,7 @@ run or one of the default `<leader>a*` keymaps is pressed.
 Pass a table to |ai.setup()|. All keys are optional; `lua/ai/config/
 DEFAULTS.lua` is the source of truth. >lua
   require("ai").setup({
-    provider = "auto",                        -- "auto"|"claude"|"ollama"|"openai"|"gemini"|"loomai"|custom id
+    provider = "auto",                        -- "auto"|"claude"|"ollama"|"openai"|"gemini"|"loomai"|"claude-cli"|custom id
     provider_order = { "claude", "ollama", "openai", "gemini", "loomai" },  -- "auto" resolution order
     policy = {
       allowed = {},                           -- provider ids this machine may use; empty = no restriction
@@ -386,6 +391,14 @@ require("ai.context").assemble({opts})
            via SSE. Requires a running loomAI instance (default
            http://127.0.0.1:8080, override with `LOOMAI_HOST`). Last in the
            default `provider_order` -- see |ai-scope|.
+  claude-cli  Claude Code CLI (`claude -p`), text only, streaming via its
+           stream-json output. Uses the account the CLI is logged in as, so
+           no API key is configured in ai.nvim -- the CLI's own credential
+           variables are removed from the child process so a stray variable
+           cannot override the login. Runs without tools, hooks or session
+           state in a neutral directory; the prompt goes to its stdin, never
+           to argv. Opt-in (not in `provider_order`). A billing or login
+           problem comes back as an `api_error` carrying the CLI's message.
 
 `provider = "auto"` (the default) walks `provider_order` and uses the first
 provider whose `available()` is true -- a cheap, synchronous check (an
@@ -440,6 +453,7 @@ What each provider can carry:
   openai   image              `image_url` part whose url is a `data:` URI
   ollama   image              bare `images` array on the message
   loomai   --                 text only
+  claude-cli --               text only (the CLI is run without tools)
 
 A provider that cannot carry an attachment FAILS the request
 (`err.kind == "invalid_request"`) before sending anything -- it is never

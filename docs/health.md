@@ -23,7 +23,7 @@ What each section reports:
   becomes visible. Also a warning for a configured `model`/`completion.model`
   that isn't a known id for its provider, per
   `lua/ai/providers/models.lua`'s registry (Claude/Gemini/OpenAI only --
-  `ollama`/`loomai` run arbitrary local models, so any id is accepted for
+  `ollama`/`loomai`/`claude-cli` run arbitrary local or CLI-side models, so any id is accepted for
   them). Reporting only: an unrecognized model still reaches the provider
   and fails there as a normal API error, `opts.model` is never blocked here.
   See [configuration.md](configuration.md#model-ids).
