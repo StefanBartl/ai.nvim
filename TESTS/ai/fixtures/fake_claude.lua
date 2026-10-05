@@ -4,7 +4,19 @@
 -- newline-delimited stream-json events the real CLI prints.
 local stdin = io.stdin:read("*a") or ""
 local scenario = "OK"
-for _, name in ipairs({ "ECHO", "BILLING", "CRASH", "SLEEP", "NOPARTIAL" }) do
+-- Order matters: a name must precede any shorter name it contains
+-- (PARTIALCRASH before CRASH, PARTIALSLEEP before SLEEP).
+for _, name in ipairs({
+  "ECHO",
+  "BILLING",
+  "PARTIALCRASH",
+  "PARTIALSLEEP",
+  "RESULTEXIT",
+  "ASSISTANTONLY",
+  "CRASH",
+  "SLEEP",
+  "NOPARTIAL",
+}) do
   if stdin:find(name, 1, true) then
     scenario = name
     break
@@ -43,11 +55,32 @@ if scenario == "BILLING" then
 elseif scenario == "CRASH" then
   io.stderr:write("boom\n")
   os.exit(3)
+elseif scenario == "PARTIALCRASH" then
+  -- dies mid-answer: some text was streamed, no result event ever comes
+  delta("Hel")
+  io.stderr:write("boom\n")
+  os.exit(1)
+elseif scenario == "PARTIALSLEEP" then
+  -- streams the first chunk, then hangs so the spec can kill it mid-answer
+  delta("Hel")
+  vim.uv.sleep(20000)
+elseif scenario == "RESULTEXIT" then
+  -- a complete answer, then a non-zero exit: the answer is still whole
+  delta("Hello")
+  result("Hello")
+  os.exit(1)
 elseif scenario == "SLEEP" then
   vim.uv.sleep(20000)
 elseif scenario == "NOPARTIAL" then
   emit({ type = "assistant", message = { content = { { type = "text", text = "whole answer" } } } })
   result("whole answer")
+elseif scenario == "ASSISTANTONLY" then
+  -- a success result that carries no `result` field: only the assistant event has the text
+  emit({
+    type = "assistant",
+    message = { content = { { type = "text", text = "assistant only" } } },
+  })
+  result(nil)
 elseif scenario == "ECHO" then
   local info = vim.json.encode({
     argv = vim.list_slice(arg, 1, #arg),

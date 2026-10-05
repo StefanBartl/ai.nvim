@@ -85,10 +85,22 @@ describe("ai.providers.claude_cli", function()
     assert.are.equal("Hello", done.text)
   end)
 
-  it("falls back to the assistant/result text when no partial events arrive", function()
+  it("falls back to the result text when no partial events arrive", function()
     local ok, res = ask({ prompt = "NOPARTIAL" })
     assert.is_true(ok)
     assert.are.equal("whole answer", res.text)
+  end)
+
+  it("uses the assistant event text when there is neither a delta nor a result text", function()
+    local ok, res = ask({ prompt = "ASSISTANTONLY" })
+    assert.is_true(ok)
+    assert.are.equal("assistant only", res.text)
+  end)
+
+  it("accepts a complete result even if the process exits non-zero afterwards", function()
+    local ok, res = ask({ prompt = "RESULTEXIT" })
+    assert.is_true(ok)
+    assert.are.equal("Hello", res.text)
   end)
 
   describe("what the child process gets", function()
@@ -163,6 +175,49 @@ describe("ai.providers.claude_cli", function()
       assert.is_false(ok)
       assert.are.equal("network_error", err.kind)
       assert.is_truthy(err.message:find("boom", 1, true))
+    end)
+
+    it("reports a crash after partial output as network_error, not a shortened answer", function()
+      local chunks = {}
+      local ok, err
+      cli.stream({ prompt = "PARTIALCRASH" }, {
+        on_chunk = function(t)
+          chunks[#chunks + 1] = t
+        end,
+        on_done = function()
+          ok = true
+        end,
+        on_error = function(e)
+          ok, err = false, e
+        end,
+      })
+      assert.is_true(vim.wait(15000, function()
+        return ok ~= nil
+      end, 20))
+      assert.are.same({ "Hel" }, chunks)
+      assert.is_false(ok)
+      assert.are.equal("network_error", err.kind)
+      assert.is_truthy(err.message:find("boom", 1, true))
+    end)
+
+    it("reports a process killed mid-answer as an error, never as done", function()
+      local proc, done, err
+      proc = cli.stream({ prompt = "PARTIALSLEEP" }, {
+        on_chunk = function()
+          proc:kill(15)
+        end,
+        on_done = function(res)
+          done = res
+        end,
+        on_error = function(e)
+          err = e
+        end,
+      })
+      assert.is_true(vim.wait(15000, function()
+        return done ~= nil or err ~= nil
+      end, 20))
+      assert.is_nil(done)
+      assert.are.equal("network_error", err.kind)
     end)
 
     it("reports a timeout as such", function()
