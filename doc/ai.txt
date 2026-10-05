@@ -423,14 +423,16 @@ require("ai.context").assemble({opts})
            default `provider_order` -- see |ai-scope|.
   claude-cli  Claude Code CLI (`claude -p`), text only, streaming via its
            stream-json output. Uses the account the CLI is logged in as, so
-           no API key is configured in ai.nvim -- the CLI's own credential
-           variables are removed from the child process so a stray variable
-           cannot override the login. Runs without tools, hooks or session
-           state in a neutral directory; the prompt goes to its stdin, never
-           to argv. Opt-in (not in `provider_order`). A billing or login
-           problem comes back as an `api_error` carrying the CLI's message; a
-           process that dies before its answer is complete is a
-           `network_error`, never a shortened answer.
+           no API key is configured in ai.nvim -- the variables that would
+           replace the login (an API key or token, a long-lived OAuth token,
+           the Bedrock/Vertex/Foundry/AWS/Mantle switches) are removed from
+           the child process so a stray variable cannot override it. Runs
+           without tools, hooks or session state in a neutral directory; the
+           prompt goes to its stdin, never to argv. Opt-in (not in
+           `provider_order`). A billing or login problem comes back as an
+           `api_error` carrying the CLI's message; a process that dies
+           before its answer is complete is a `network_error`, never a
+           shortened answer.
 
 `provider = "auto"` (the default) walks `provider_order` and uses the first
 provider whose `available()` is true -- a cheap, synchronous check (an

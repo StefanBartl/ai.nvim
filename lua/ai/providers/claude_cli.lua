@@ -18,9 +18,10 @@
 ---   (argv is visible in the process list and capped on Windows); the system
 ---   text, if any, is sent as a labelled preamble of the same message.
 --- - **The logged-in account is used, not a key from the environment.**
----   `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` are removed from the child's
----   environment -- otherwise a stray variable would silently override the
----   login and bill a different account than the one the user is looking at.
+---   The variables that would replace the login or send the request elsewhere
+---   (`CREDENTIAL_ENV`) are removed from the child's environment -- otherwise a
+---   stray variable would silently override the login and bill a different
+---   account than the one the user is looking at.
 --- - **Errors are in-band.** A billing or auth failure is not a non-zero exit:
 ---   the CLI prints a `result` event with `is_error = true` and exits 1. That
 ---   event's text is the error message (`kind = "api_error"`). A process that
@@ -50,9 +51,23 @@ local M = {
 ---@type string[]
 M.command = { "claude" }
 
----Child environment variables that would override the CLI's own login.
+---Child environment variables that would override the CLI's own login: an API
+---key or token, a long-lived OAuth token (`claude setup-token`), and the
+---switches that route it to Bedrock/Vertex/Foundry/AWS/Mantle instead. Not
+---removed on purpose: `CLAUDE_CONFIG_DIR` (where the login lives),
+---`CLAUDE_CODE_GIT_BASH_PATH` (needed on Windows) and `ANTHROPIC_BASE_URL`
+---(a company gateway may be the only way to reach the API).
 ---@type string[]
-local CREDENTIAL_ENV = { "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN" }
+local CREDENTIAL_ENV = {
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
+  "CLAUDE_CODE_USE_ANTHROPIC_AWS",
+  "CLAUDE_CODE_USE_MANTLE",
+}
 
 local MODEL_PATTERN = "^[%w][%w%.%-_:%[%]]*$"
 local DEFAULT_TIMEOUT_MS = 120000

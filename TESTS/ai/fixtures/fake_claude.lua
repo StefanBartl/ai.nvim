@@ -82,10 +82,16 @@ elseif scenario == "ASSISTANTONLY" then
   })
   result(nil)
 elseif scenario == "ECHO" then
+  -- names only, never values: the editor may be started with real credentials
+  local env = {}
+  for name in pairs(vim.fn.environ()) do
+    if name:find("^ANTHROPIC_") or name:find("^CLAUDE") then
+      env[name] = true
+    end
+  end
   local info = vim.json.encode({
     argv = vim.list_slice(arg, 1, #arg),
-    key = os.getenv("ANTHROPIC_API_KEY"),
-    token = os.getenv("ANTHROPIC_AUTH_TOKEN"),
+    env = env,
     path = os.getenv("PATH") ~= nil,
     cwd = vim.uv.cwd(),
     stdin = stdin,
