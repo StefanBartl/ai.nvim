@@ -179,18 +179,24 @@ from; `:Ai key <profile>` picks one for the session:
   (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`). A per-request
   `api_key` still wins over everything.
 - A profile has exactly one source: `env` (the name of an environment variable)
-  or `file` (a path; `~` is expanded, the file is re-read when it changes).
+  or `file` (a path; `~` is expanded, the file is re-read when it changes; UTF-8
+  with or without a BOM, or UTF-16 with a BOM as Windows PowerShell 5.1 writes it).
   A command or password-manager source is not offered yet -- it needs an
   asynchronous lookup and is a follow-up.
 - **A chosen profile never falls back to the default variable.** If its source
   is empty, the request fails with `missing_api_key` naming the profile; it does
-  not quietly send with the other account's key.
+  not quietly send with the other account's key. `provider = "auto"` does not move
+  on to another provider either. This holds for `active` too: one that names no
+  defined profile (a typo, a profile that is not a table) gives no key, and
+  `:checkhealth ai` says why. `active = false` means no profile.
 - `:Ai key firma` switches every provider that defines a `firma` profile for
   this session (`:Ai key firma claude` only that one), `:Ai key reset` goes back
   to `active` / the default variable, `:Ai key` shows the setup. Nothing is
   written; the next start is back at `active`.
 - A key is never printed: `:Ai info`, `:Ai key` and `:checkhealth ai` show the
-  profile, the kind of source and "key present"/"KEY MISSING", nothing else.
+  profile, the kind of source and "key present"/"KEY MISSING", nothing else. An
+  `env` that is not shaped like a variable name (a key pasted there by mistake) is
+  not echoed either.
 - `claude-cli` and the local providers have no key and are not affected.
 
 Keys switch the *account*; whether customer data may go to that account at all

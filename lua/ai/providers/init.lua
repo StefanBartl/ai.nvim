@@ -123,12 +123,28 @@ local function is_available(p, req)
   return type(p.available) == "function" and p.available(req) or false
 end
 
+---The `missing_api_key` error for `id` when it is unavailable *because* its
+---chosen key profile has no key (`ai.keys`), `nil` otherwise. Naming the
+---profile is the point: a bare "not available" hides what to fix, and under
+---`"auto"` skipping the provider would send the request on to another one.
+---@param id string
+---@return LibErrorValue|nil
+local function profile_key_error(id)
+  if require("ai.keys").blocked(id) then
+    -- The variable name is only used without a profile, and `blocked` means one is active.
+    return require("ai.providers.util").missing_key_error(id, "")
+  end
+  return nil
+end
+
 ---Resolve `id` to a concrete, available provider. `id == "auto"` walks
 ---`order` in sequence and returns the first entry whose `available()` is
 ---true; an explicit `id` is looked up directly and must itself be
 ---available. A provider absent from `order` is only ever reachable by
 ---naming it explicitly -- see the module doc for why that matters for
----`"loomai"`.
+---`"loomai"`. A provider that is unavailable only because its chosen key
+---profile has no key fails the request with `missing_api_key` (explicit or
+---`"auto"`): the walk never moves on to another provider from there.
 ---@param id string
 ---@param order string[]
 ---@param req? Ai.Request the request being resolved -- passed on to each candidate's `available()`, so a per-request `api_key` counts towards availability the same way the provider's own env var does
@@ -174,6 +190,10 @@ function M.resolve(id, order, req)
         )
     end
     if not is_available(p, req) then
+      local key_err = profile_key_error(id)
+      if key_err then
+        return nil, key_err
+      end
       return nil,
         lib_error.new(
           "provider_resolution",
@@ -192,6 +212,12 @@ function M.resolve(id, order, req)
     local p = registered[candidate_id]
     if p and is_available(p, req) then
       return p, nil
+    end
+    -- A chosen key profile without a key ends the walk instead of being
+    -- skipped, or the request would quietly go out under another provider.
+    local key_err = p and profile_key_error(candidate_id)
+    if key_err then
+      return nil, key_err
     end
   end
   local message = "ai: no provider available (checked: " .. table.concat(walk, ", ") .. ")"

@@ -198,9 +198,11 @@ A profile has exactly one source: `env` (a variable name) or `file` (a path;
 the first non-empty line, re-read when the file changes). Without `keys`
 nothing changes. A chosen profile never falls back to the provider's default
 variable: with an empty source the request fails (`missing_api_key`, naming
-the profile). Keys are never printed -- `:Ai info`, `:Ai key` and |:checkhealth|
-show profile, source kind and "key present"/"KEY MISSING" only. The switch is
-for the session; nothing is written.
+the profile; `provider = "auto"` does not move on to another provider), and
+the same goes for an `active` that names no defined profile. A key file may be
+UTF-8 (BOM allowed) or UTF-16 with a BOM. Keys are never printed -- `:Ai info`,
+`:Ai key` and |:checkhealth| show profile, source kind and "key present" or
+"KEY MISSING" only. The switch is for the session; nothing is written.
 
 ==============================================================================
 5. COMMANDS                                                     *ai-commands*
