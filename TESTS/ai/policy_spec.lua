@@ -183,6 +183,39 @@ describe("ai.policy", function()
       assert.are.equal("other", p.id)
     end)
 
+    it("a session grant does not widen auto: only the explicit id passes", function()
+      require("ai.config").setup({ policy = { allowed = { "second" } } })
+      local providers = require("ai.providers")
+      register_all(providers, { "first", "second" })
+      local policy = require("ai.policy")
+      policy.grant("first")
+      local p = providers.resolve("auto", { "first", "second" })
+      assert.are.equal("second", p.id)
+      assert.are.same({ "second" }, policy.filter({ "first", "second" }))
+      local named = providers.resolve("first", { "first", "second" })
+      assert.are.equal("first", named.id)
+    end)
+
+    it("auto with allow_unlisted may walk the whole order", function()
+      require("ai.config").setup({ policy = { allowed = { "second" } } })
+      local providers = require("ai.providers")
+      register_all(providers, { "first", "second" })
+      local p = providers.resolve("auto", { "first", "second" }, { allow_unlisted = true })
+      assert.are.equal("first", p.id)
+    end)
+
+    it("auto that fails only on availability is not tagged as a policy refusal", function()
+      require("ai.config").setup({ policy = { allowed = { "first" } } })
+      local providers = require("ai.providers")
+      providers.register(fake("first", false))
+      local p, err = providers.resolve("auto", { "first" })
+      assert.is_nil(p)
+      assert.are.equal("provider_resolution", err.kind)
+      assert.is_nil(err.data.reason)
+      assert.is_nil(err.message:find("allowed:", 1, true))
+      assert.are.same({ "first" }, err.data.checked)
+    end)
+
     it("an unknown id still reports 'unknown provider', not the policy", function()
       require("ai.config").setup({ policy = { allowed = { "claude" } } })
       local providers = require("ai.providers")
@@ -288,12 +321,81 @@ describe("ai.policy", function()
       assert.are.same({ "copilot", "claude" }, config.get().policy.allowed)
     end)
 
-    it("drops a wrong-typed policy.allowed to the default and records an issue", function()
+    -- A malformed allow-list must not degrade to the default: the default is
+    -- "no restriction", so a typo would switch the machine's rule off.
+    for label, malformed in pairs({
+      string = "claude",
+      number = 5,
+      ["a list with a non-string entry"] = { "claude", 5 },
+      ["a map instead of a list"] = { claude = true, copilot = true },
+      ["a list with a hole"] = { [1] = "claude", [3] = "copilot" },
+    }) do
+      it(("fails closed on a malformed policy.allowed (%s)"):format(label), function()
+        local notices = {}
+        vim.notify = function(msg)
+          notices[#notices + 1] = msg
+        end
+        local config = require("ai.config")
+        config.setup({ policy = { allowed = malformed } })
+        local policy = require("ai.policy")
+        assert.is_true(policy.restricted())
+        assert.is_false(policy.is_allowed("gemini"))
+        assert.is_false(policy.is_allowed("claude"))
+        assert.are.equal(1, #config.issues())
+        assert.is_truthy(config.issues()[1]:find("policy.allowed", 1, true))
+        assert.is_truthy(config.issues()[1]:find("refused", 1, true))
+        assert.are.equal(1, #notices)
+        assert.is_truthy(notices[1]:find("every provider is refused", 1, true))
+      end)
+    end
+
+    it("fails closed when policy itself is not a table", function()
+      local notices = {}
+      vim.notify = function(msg)
+        notices[#notices + 1] = msg
+      end
       local config = require("ai.config")
-      config.setup({ policy = { allowed = "claude" } })
-      assert.are.same({}, config.get().policy.allowed)
+      config.setup({ policy = "claude" })
+      local policy = require("ai.policy")
+      assert.is_true(policy.restricted())
+      assert.is_false(policy.is_allowed("claude"))
       assert.are.equal(1, #config.issues())
-      assert.is_truthy(config.issues()[1]:find("policy.allowed", 1, true))
+      assert.are.equal(1, #notices)
+    end)
+
+    it("a refused request under a malformed policy.allowed says why", function()
+      require("ai.config").setup({ policy = { allowed = { claude = true } } })
+      local providers = require("ai.providers")
+      register_all(providers, { "claude" })
+      local p, err = providers.resolve("claude", { "claude" })
+      assert.is_nil(p)
+      assert.are.equal("policy", err.data.reason)
+      assert.is_truthy(err.message:find("<invalid policy.allowed>", 1, true))
+      local _, auto_err = providers.resolve("auto", { "claude" })
+      assert.are.equal("policy", auto_err.data.reason)
+    end)
+
+    it("an empty or absent policy.allowed is still no restriction, and quiet", function()
+      local notices = {}
+      vim.notify = function(msg)
+        notices[#notices + 1] = msg
+      end
+      local config = require("ai.config")
+      config.setup({ policy = { allowed = {} } })
+      assert.is_false(require("ai.policy").restricted())
+      config.setup({ policy = {} })
+      assert.is_false(require("ai.policy").restricted())
+      config.setup({})
+      assert.is_false(require("ai.policy").restricted())
+      assert.are.same({}, config.issues())
+      assert.are.same({}, notices)
+    end)
+
+    it("a dict-shaped provider_order degrades to the default like any other bad value", function()
+      local config = require("ai.config")
+      config.setup({ provider_order = { claude = true } })
+      assert.are.same(require("ai.config.DEFAULTS").provider_order, config.get().provider_order)
+      assert.are.equal(1, #config.issues())
     end)
 
     it("still warns about a typo'd key inside policy", function()
@@ -308,15 +410,17 @@ describe("ai.policy", function()
   end)
 
   describe(":Ai provider and :Ai info", function()
-    local notices, popup_lines, confirm_answer
+    local notices, popup_lines, confirm_answer, confirm_calls
     local saved_kit, saved_notify
 
     before_each(function()
-      notices, popup_lines = {}, nil
+      notices, popup_lines, confirm_calls = {}, nil, {}
       saved_kit = package.loaded["ui.kit"]
       saved_notify = package.loaded["lib.nvim.notify"]
       package.loaded["ui.kit"] = {
+        -- ui.kit's custom-choices contract: the chosen label, or nil on cancel.
         confirm = function(opts)
+          confirm_calls[#confirm_calls + 1] = opts
           opts.on_answer(confirm_answer)
         end,
         popup = function(opts)
@@ -361,7 +465,7 @@ describe("ai.policy", function()
     end)
 
     it("asks before switching to an unlisted provider and grants it only on yes", function()
-      confirm_answer = true
+      confirm_answer = "Yes"
       local config = require("ai.config")
       config.setup({ provider = "claude", policy = { allowed = { "claude" } } })
       require("ai.bindings.actions").set_provider("gemini")
@@ -371,13 +475,44 @@ describe("ai.policy", function()
     end)
 
     it("leaves everything unchanged when the confirmation is declined", function()
-      confirm_answer = false
+      confirm_answer = "No"
       local config = require("ai.config")
       config.setup({ provider = "claude", policy = { allowed = { "claude" } } })
       require("ai.bindings.actions").set_provider("gemini")
       assert.are.equal("claude", config.get().provider)
       assert.is_false(require("ai.policy").is_allowed("gemini"))
       assert.are.same({ "warn: provider unchanged" }, notices)
+    end)
+
+    it("treats a cancelled dialog (<Esc>, q, no answer) as declined", function()
+      confirm_answer = nil
+      local config = require("ai.config")
+      config.setup({ provider = "claude", policy = { allowed = { "claude" } } })
+      require("ai.bindings.actions").set_provider("gemini")
+      assert.are.equal("claude", config.get().provider)
+      assert.is_false(require("ai.policy").is_allowed("gemini"))
+      assert.are.same({ "warn: provider unchanged" }, notices)
+    end)
+
+    it("opens the confirmation on 'No', so a stray <CR> declines", function()
+      confirm_answer = "No"
+      require("ai.config").setup({ provider = "claude", policy = { allowed = { "claude" } } })
+      require("ai.bindings.actions").set_provider("gemini")
+      assert.are.equal(1, #confirm_calls)
+      assert.are.same({ "No", "Yes" }, confirm_calls[1].choices)
+    end)
+
+    it("does not ask again for a provider already granted in this session", function()
+      confirm_answer = "Yes"
+      local config = require("ai.config")
+      config.setup({ provider = "claude", policy = { allowed = { "claude" } } })
+      local actions = require("ai.bindings.actions")
+      actions.set_provider("gemini")
+      actions.set_provider("claude")
+      actions.set_provider("gemini")
+      assert.are.equal(1, #confirm_calls)
+      assert.are.equal("gemini", config.get().provider)
+      assert.is_truthy(notices[#notices]:find("this session only", 1, true))
     end)
 
     it("info shows the policy and marks providers outside it", function()
@@ -435,6 +570,32 @@ describe("ai.policy", function()
       package.loaded["ai.health"] = nil
       require("ai.health").check()
       assert.is_true(reported("no allow-list"))
+    end)
+
+    it("does not call a session-granted provider refused", function()
+      require("ai.config").setup({
+        provider = "gemini",
+        completion = { provider = "gemini" },
+        policy = { allowed = { "claude" } },
+      })
+      require("ai.policy").grant("gemini")
+      package.loaded["ai.health"] = nil
+      require("ai.health").check()
+      assert.is_false(reported('provider = "gemini" is not on the allow-list'))
+      assert.is_false(reported('completion.provider = "gemini" is not on the allow-list'))
+      assert.is_true(reported("gemini: allowed for this session outside the allow-list"))
+    end)
+
+    it("reports a malformed policy.allowed as an error, not as an allow-list", function()
+      local original_notify = vim.notify
+      vim.notify = function() end
+      require("ai.config").setup({ policy = { allowed = "claude" } })
+      vim.notify = original_notify
+      package.loaded["ai.health"] = nil
+      require("ai.health").check()
+      assert.is_true(reported("error: config.policy.allowed is malformed"))
+      assert.is_true(reported("warn: policy.allowed: invalid value"))
+      assert.is_false(reported("<invalid policy.allowed>: listed"))
     end)
 
     it(

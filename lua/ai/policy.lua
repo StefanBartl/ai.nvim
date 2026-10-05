@@ -10,12 +10,15 @@
 --- leave `<leader>as` on a file full of customer data wide open. The rule is
 --- per machine (an employer's allow-list), so it is plain config: empty, the
 --- default, means "no restriction" and the plugin behaves exactly as before.
+--- A malformed list is not an empty one: `ai.config` replaces it with a marker
+--- no provider matches, so a typo refuses everything instead of lifting the rule.
 ---
 --- Deliberately small: a list, a membership test, and an explicit way to step
 --- outside it that has to be asked for (`Ai.Request.allow_unlisted` per
 --- request, or `grant()` for the session after `:Ai provider <other>` was
---- confirmed). Nothing here persists, and nothing here validates ids against
---- the provider registry -- an id may be listed before its provider exists.
+--- confirmed -- for that provider named explicitly, never for `"auto"`).
+--- Nothing here persists, and nothing here validates ids against the provider
+--- registry -- an id may be listed before its provider exists.
 
 local M = {}
 
@@ -70,14 +73,18 @@ function M.is_listed(id)
   return vim.tbl_contains(list, id)
 end
 
----`order` reduced to the entries `req` may use, in the same order.
+---`order` reduced to the listed entries, in the same order -- what
+---`provider = "auto"` may walk. A session grant does not widen it: it answers
+---for the one provider that `:Ai provider <id>` named, not for `"auto"`. Only
+---a request that says `allow_unlisted` passes every entry.
 ---@param order string[]
 ---@param req? Ai.Request
 ---@return string[]
 function M.filter(order, req)
+  local open = req ~= nil and req.allow_unlisted == true
   local out = {}
   for _, id in ipairs(order or {}) do
-    if M.is_allowed(id, req) then
+    if open or M.is_listed(id) then
       out[#out + 1] = id
     end
   end

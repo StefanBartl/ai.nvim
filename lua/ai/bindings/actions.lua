@@ -343,11 +343,12 @@ function M.set_key(profile, provider)
   )
 end
 
----`:Ai provider <name>`. A provider on the machine's allow-list (or any
----provider, when there is none) is set at once. One outside it is a deliberate
----step, not an accident: the user is asked, and a yes allows it for this
----session only (`ai.policy.grant`) -- nothing is written anywhere, the next
----Neovim starts back inside the list.
+---`:Ai provider <name>`. A provider that is allowed -- on the machine's
+---allow-list, granted earlier in this session, or any provider when there is no
+---list -- is set at once. One outside it is a deliberate step, not an accident:
+---the user is asked, and a yes allows it for this session only
+---(`ai.policy.grant`) -- nothing is written anywhere, the next Neovim starts
+---back inside the list.
 ---@param name string
 ---@return nil
 function M.set_provider(name)
@@ -355,9 +356,17 @@ function M.set_provider(name)
   local config = require("ai.config")
   local notify = require("lib.nvim.notify").create("[ai]")
 
-  if policy.is_listed(name) then
+  local function switch()
     config.set_provider(name)
-    notify.info("provider set to " .. name)
+    if policy.is_listed(name) then
+      notify.info("provider set to " .. name)
+    else
+      notify.warn(("provider set to %s (outside the allow-list, this session only)"):format(name))
+    end
+  end
+
+  if policy.is_allowed(name) then
+    switch()
     return
   end
 
@@ -366,14 +375,17 @@ function M.set_provider(name)
       name,
       policy.describe()
     ),
-    on_answer = function(yes)
-      if not yes then
+    -- "No" first: the dialog opens on the first button, so a stray <CR> (a double
+    -- tap, a typed-ahead key) must decline. Anything but "Yes" -- <Esc>, `q`, a
+    -- dialog that failed to open (`nil`) -- declines too.
+    choices = { "No", "Yes" },
+    on_answer = function(choice)
+      if choice ~= "Yes" then
         notify.warn("provider unchanged")
         return
       end
       policy.grant(name)
-      config.set_provider(name)
-      notify.warn(("provider set to %s (outside the allow-list, this session only)"):format(name))
+      switch()
     end,
   })
 end
