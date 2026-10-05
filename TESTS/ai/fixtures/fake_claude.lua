@@ -104,6 +104,8 @@ elseif scenario == "ECHO" then
   local info = vim.json.encode({
     argv = vim.list_slice(arg, 1, #arg),
     env = env,
+    -- the one value echoed: a switch, never a credential
+    disable_attachments = os.getenv("CLAUDE_CODE_DISABLE_ATTACHMENTS"),
     path = os.getenv("PATH") ~= nil,
     cwd = vim.uv.cwd(),
     stdin = stdin,

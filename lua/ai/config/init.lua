@@ -221,8 +221,8 @@ end
 ---Switch the active provider id directly, without a full `setup()` merge --
 ---the one runtime write this module needs to support (`:Ai provider
 ---<name>`). `id` is trusted here: the composer route already constrains it
----to a known provider id via its own `enum`, so no validation happens on
----this side too.
+---to a known provider id or `auto` via its own `enum`, so no validation
+---happens on this side too.
 ---@param id string
 ---@return nil
 function M.set_provider(id)

@@ -118,7 +118,7 @@ this combination.
 provider whose `available()` is true -- a cheap, synchronous check (an
 executable on `PATH` and/or an env var set), never a network round trip.
 Set `provider` to an explicit id to always use one provider; `:Ai provider
-<name>` switches it at runtime.
+<name>` switches it at runtime, and `:Ai provider auto` returns to the walk.
 
 ## Provider policy
 
@@ -148,7 +148,8 @@ list:
   "No"). A yes allows it for **this Neovim session only**, and it is not asked
   again for that provider in the same session; nothing is written, the next start
   is back inside the list. `:Ai info` marks such a provider, and `:checkhealth ai`
-  reports it.
+  reports it. `:Ai provider auto` is never asked about: `auto` is the walk above,
+  already limited to the list, and it is not a provider that could be outside it.
 - A caller that has asked the user itself (a plugin with its own test mode) can set
   `allow_unlisted = true` on that one request. It is an explicit step, never a
   default.
@@ -203,8 +204,10 @@ from; `:Ai key <profile>` picks one for the session:
   written; the next start is back at `active`.
 - A key is never printed: `:Ai info`, `:Ai key` and `:checkhealth ai` show the
   profile, the kind of source and "key present"/"KEY MISSING", nothing else. An
-  `env` that is not shaped like a variable name (a key pasted there by mistake) is
-  not echoed either.
+  `env` that is a vendor's key and not a variable name (a key pasted there by
+  mistake: anything with a hyphen, or a Gemini `AIza...` key) is not echoed
+  either. A long mixed-case name such as `Company_Anthropic_Key_Production_2` is a
+  name and is shown.
 - `claude-cli` and the local providers have no key and are not affected.
 
 Keys switch the *account*; whether customer data may go to that account at all

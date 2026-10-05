@@ -59,7 +59,8 @@ migration is what |ai-attachments| were built for.
              (`claude auth status`). Opt-in: not in the default
              `provider_order`, select it with `:Ai provider claude-cli`.
              Uses whatever account the CLI is logged in as; needs no API key
-             of its own.
+             of its own, and the variables that would override that login
+             are not passed on to it (see |ai-providers|).
 
 No provider is required at install time -- |:checkhealth| ai reports which
 ones are usable on this machine, and `provider = "auto"` (the default) picks
@@ -171,7 +172,8 @@ restriction and nothing changes. With a list:
   - A request naming another provider fails before anything is sent
     (`provider_resolution`, `err.data.reason == "policy"`), for every caller.
   - `:Ai provider {name}` for an unlisted provider asks first; a yes allows
-    it for this Neovim session only, nothing is written.
+    it for this Neovim session only, nothing is written. `:Ai provider auto`
+    needs no question: it is the walk above, already limited to the list.
   - A caller that asked the user itself may set `allow_unlisted = true` on
     one request.
 
@@ -239,9 +241,9 @@ UTF-8 (BOM allowed) or UTF-16 with a BOM. Keys are never printed -- `:Ai info`,
   A range on any other `:Ai` subcommand is ignored with a warning.
 
 :Ai provider {name}                                           *:Ai-provider*
-  Switch the active provider. `<Tab>`-completes registered ids. A provider
-  outside `policy.allowed` (|ai-policy|) asks first; a yes allows it for
-  this session only.
+  Switch the active provider, or back to `auto`. `<Tab>`-completes registered
+  ids and `auto`. A provider outside `policy.allowed` (|ai-policy|) asks
+  first; a yes allows it for this session only.
 
 :Ai key [{profile}|reset] [{provider}]                              *:Ai-key*
   Choose the API-key profile (|ai-keys|) for this session on every provider
@@ -429,19 +431,21 @@ require("ai.context").assemble({opts})
            default `provider_order` -- see |ai-scope|.
   claude-cli  Claude Code CLI (`claude -p`), text only, streaming via its
            stream-json output. Uses the account the CLI is logged in as, so
-           no API key is configured in ai.nvim -- the variables that would
-           replace the login (an API key or token, a long-lived OAuth token,
-           the Bedrock/Vertex/Foundry/AWS/Mantle switches) are removed from
-           the child process so a stray variable cannot override it. Runs
-           without tools, hooks or session state in a neutral directory; the
-           prompt goes to its stdin, never to argv. `@path` mentions in the
-           text are denied (the CLI would otherwise read the file and send
-           it along) and a prompt starting with `/` is labelled so the CLI
-           does not answer it as one of its own commands. Opt-in (not in
-           `provider_order`). A billing or login problem comes back as an
-           `api_error` carrying the CLI's message; a process that dies
-           before its answer is complete is a `network_error`, never a
-           shortened answer.
+           no API key is configured in ai.nvim -- every variable the CLI
+           ranks above its own login (an API key or token, a long-lived OAuth
+           token, the Bedrock/Vertex/Foundry/AWS/Mantle switches, a named
+           Anthropic profile, the federation pair) is removed from the child
+           process so a stray variable cannot override it; the gateway URL
+           is passed on. Runs without tools, hooks or session state in a
+           neutral directory; the prompt goes to its stdin, never to argv.
+           `@path` mentions in the text are denied and the CLI's own
+           expansion of them is switched off (it would otherwise read the
+           file and send it along), and a prompt starting with `/` is
+           labelled so the CLI does not answer it as one of its own
+           commands. Opt-in (not in `provider_order`). A billing or login
+           problem comes back as an `api_error` carrying the CLI's message;
+           a process that dies before its answer is complete is a
+           `network_error`, never a shortened answer.
 
 `provider = "auto"` (the default) walks `provider_order` and uses the first
 provider whose `available()` is true -- a cheap, synchronous check (an

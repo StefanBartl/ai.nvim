@@ -19,7 +19,9 @@
 ---   tool call, no permission prompt -- `--tools ""` does not stop it), and a
 ---   prompt that starts with `/cost`, `/context`, ... is answered locally
 ---   as a success. Logs and ticket text are untrusted, so a `Read` deny rule
----   (`--settings`) blocks the first and a leading `/` is labelled away (see
+---   (`--settings`) blocks the first -- backed by a second, independent layer
+---   that changes no text, the CLI's own attachment switch in the child's
+---   environment (see `child_env`) -- and a leading `/` is labelled away (see
 ---   `build_stdin`) for the second.
 --- - **The prompt never reaches argv.** It is written to the child's stdin
 ---   (argv is visible in the process list and capped on Windows); the system
@@ -58,12 +60,22 @@ local M = {
 ---@type string[]
 M.command = { "claude" }
 
----Child environment variables that would override the CLI's own login: an API
----key or token, a long-lived OAuth token (`claude setup-token`), and the
----switches that route it to Bedrock/Vertex/Foundry/AWS/Mantle instead. Not
----removed on purpose: `CLAUDE_CONFIG_DIR` (where the login lives),
----`CLAUDE_CODE_GIT_BASH_PATH` (needed on Windows) and `ANTHROPIC_BASE_URL`
----(a company gateway may be the only way to reach the API).
+---Child environment variables that would override the CLI's own login: every
+---credential source the CLI's authentication precedence ranks above its
+---`/login` credential (code.claude.com/docs/en/authentication). That is an API
+---key or token, a long-lived OAuth token (`claude setup-token`), the switches
+---that route it to Bedrock/Vertex/Foundry/AWS/Mantle instead, a named Anthropic
+---profile (`ANTHROPIC_PROFILE`) and the Workload Identity Federation pair
+---(`ANTHROPIC_FEDERATION_RULE_ID` + `ANTHROPIC_ORGANIZATION_ID`; their identity
+---token variables are inert without it).
+---
+---Not removed on purpose: `CLAUDE_CONFIG_DIR` (where the login lives),
+---`CLAUDE_CODE_GIT_BASH_PATH` (needed on Windows), `ANTHROPIC_BASE_URL` (a
+---company gateway may be the only way to reach the API) and
+---`CLAUDE_CODE_OAUTH_REFRESH_TOKEN` (documented as the input of
+---`claude auth login`, not as a credential of a request, and absent from the
+---precedence list). Not reachable from here, because they are settings and not
+---environment: an `apiKeyHelper` script and an active federation profile file.
 ---@type string[]
 local CREDENTIAL_ENV = {
   "ANTHROPIC_API_KEY",
@@ -74,6 +86,9 @@ local CREDENTIAL_ENV = {
   "CLAUDE_CODE_USE_FOUNDRY",
   "CLAUDE_CODE_USE_ANTHROPIC_AWS",
   "CLAUDE_CODE_USE_MANTLE",
+  "ANTHROPIC_PROFILE",
+  "ANTHROPIC_FEDERATION_RULE_ID",
+  "ANTHROPIC_ORGANIZATION_ID",
 }
 
 ---Settings passed inline: the CLI turns `@<path>` in the prompt into the file's
@@ -91,12 +106,17 @@ function M.available()
 end
 
 ---@internal
----@return table<string,string> env the current environment minus `CREDENTIAL_ENV`
+---@return table<string,string> env the current environment minus `CREDENTIAL_ENV`, with the CLI's attachment handling off
 local function child_env()
   local env = vim.fn.environ()
   for _, name in ipairs(CREDENTIAL_ENV) do
     env[name] = nil
   end
+  -- Second layer behind the `Read` deny rule, and independent of it, so a rule
+  -- that is not applied (a settings format the CLI no longer reads, say) does
+  -- not leave `@path` expanded: the CLI sends such mentions as plain text. Set
+  -- last, so a value the editor was started with cannot switch it back on.
+  env.CLAUDE_CODE_DISABLE_ATTACHMENTS = "1"
   return env
 end
 

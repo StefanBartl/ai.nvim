@@ -36,7 +36,7 @@ see [configuration.md](configuration.md)):
 | `:[range]Ai rewrite [prompt?]` | Replace the range (default: current line) with AI-generated code |
 | `:[range]Ai append [prompt?]` | Insert AI-generated code after the range (default: current line) |
 | `:[range]Ai prepend [prompt?]` | Insert AI-generated code before the range (default: current line) |
-| `:Ai provider <name>` | Switch the active provider |
+| `:Ai provider <name>` | Switch the active provider, or back to `auto` |
 | `:Ai key [profile\|reset] [provider]` | Choose the API-key profile for this session |
 | `:Ai info` | Show active provider + availability |
 
