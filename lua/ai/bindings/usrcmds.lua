@@ -98,11 +98,10 @@ function M.setup()
         args = {
           { name = "name", type = "STRING", enum = provider_ids },
         },
-        desc = "Switch the active provider",
+        desc = "Switch the active provider (one outside the allow-list asks first)",
         run = function(ctx)
           warn_if_ranged(ctx)
-          require("ai.config").set_provider(ctx.args.name)
-          require("lib.nvim.notify").create("[ai]").info("provider set to " .. ctx.args.name)
+          actions.set_provider(ctx.args.name)
         end,
       },
       {

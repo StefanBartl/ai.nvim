@@ -146,6 +146,8 @@ function M.resolve(id, order, req)
     M.load_builtin()
   end
 
+  local policy = require("ai.policy")
+
   if id ~= "auto" then
     local p = registered[id]
     if not p then
@@ -154,6 +156,20 @@ function M.resolve(id, order, req)
           "provider_resolution",
           string.format("ai: unknown provider '%s'", id),
           { id = id }
+        )
+    end
+    -- Before availability, so a refused provider says "not allowed" rather
+    -- than "no key": the allow-list is the more useful thing to hear about.
+    if not policy.is_allowed(id, req) then
+      return nil,
+        lib_error.new(
+          "provider_resolution",
+          string.format(
+            "ai: provider '%s' is not on this machine's allow-list (%s)",
+            id,
+            policy.describe()
+          ),
+          { id = id, reason = "policy", allowed = policy.allowed() }
         )
     end
     if not is_available(p, req) then
@@ -167,17 +183,25 @@ function M.resolve(id, order, req)
     return p, nil
   end
 
-  for _, candidate_id in ipairs(order or {}) do
+  -- "auto" only ever walks `order` (see the module doc), and with an
+  -- allow-list only the part of it the policy admits: a provider that happens
+  -- to have a key set must not be picked when the machine does not list it.
+  local walk = policy.filter(order or {}, req)
+  for _, candidate_id in ipairs(walk) do
     local p = registered[candidate_id]
     if p and is_available(p, req) then
       return p, nil
     end
   end
+  local message = "ai: no provider available (checked: " .. table.concat(walk, ", ") .. ")"
+  if policy.restricted() and #walk < #(order or {}) then
+    message = message .. "; " .. policy.describe()
+  end
   return nil,
     lib_error.new(
       "provider_resolution",
-      "ai: no provider available (checked: " .. table.concat(order or {}, ", ") .. ")",
-      { order = order }
+      message,
+      { order = order, checked = walk, reason = policy.restricted() and "policy" or nil }
     )
 end
 

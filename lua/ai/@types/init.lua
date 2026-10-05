@@ -6,6 +6,7 @@
 ---@class Ai.Config
 ---@field provider? string Active provider id, or `"auto"` (default) to pick the first available id in `provider_order`
 ---@field provider_order? string[] `"auto"` resolution order (default `{"claude","ollama","openai","gemini","loomai"}`) -- `"loomai"` is last since it needs a local server the user must run themselves; see `ai.providers`'s module doc
+---@field policy? Ai.PolicyOptions Which providers this machine may use at all (`lua/ai/policy.lua`)
 ---@field model? table<string, string> Default model per provider id, e.g. `{ claude = "claude-opus-4-5" }`
 ---@field timeout_ms? integer Request timeout in ms, passed through to lib.nvim.net.curl (default 60000)
 ---@field ui? Ai.UiOptions
@@ -15,6 +16,9 @@
 ---@field context? Ai.ContextDefaults Default context assembly for the quick-action keymaps
 ---@field completion? Ai.CompletionOptions Inline completion suggestions (ghost text)
 ---@field log_level? integer vim.log.levels
+
+---@class Ai.PolicyOptions
+---@field allowed? string[] Provider ids this machine may use. Empty or absent (the default) means no restriction. Non-empty: `provider = "auto"` walks only these, and a request or `:Ai provider` naming anything else is refused unless the caller asked for it explicitly (`Ai.Request.allow_unlisted`, or a confirmed `:Ai provider`). Ids are not checked against the registry, so an id may be listed before its provider exists.
 
 ---@class Ai.UiOptions
 ---@field enable boolean
@@ -83,6 +87,7 @@
 ---@field attachments? Ai.Attachment[] Binary payloads sent with the prompt. A provider that cannot carry one fails the request with `"invalid_request"` before sending -- an attachment is never silently dropped.
 ---@field api_key? string Overrides the provider's own env-var lookup for this request only. For an embedding plugin that already has the key in its own config (`pdfport.nvim`'s `claude_api_key`) and must not have to write it into the user's environment to use ai.nvim. Ignored by providers that need no key. **Set `provider` explicitly alongside it** -- a key belongs to one specific API, and under `provider = "auto"` it would be offered to whichever provider resolves first.
 ---@field host? string Overrides a self-hosted provider's base URL for this request only (`ollama`, `loomai`) -- same reasoning as `api_key`. Ignored by the cloud providers, whose endpoint is not a user choice.
+---@field allow_unlisted? boolean This request may use a provider outside `config.policy.allowed`. Set it only after asking the user; it exists so a caller with its own confirmation (a test mode for a provider the machine does not list) can go through, and so nothing steps outside the list by accident.
 
 ---@class Ai.Response
 ---@field text string

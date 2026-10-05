@@ -27,5 +27,12 @@ What each section reports:
   them). Reporting only: an unrecognized model still reaches the provider
   and fails there as a normal API error, `opts.model` is never blocked here.
   See [configuration.md](configuration.md#model-ids).
+- **provider policy** -- whether `policy.allowed` is set, and a warning for a
+  `provider`, a `completion.provider` or a `provider_order` that falls outside
+  it (requests that use them are refused, `provider = "auto"` could never
+  resolve), plus one for a provider allowed only for this session after a
+  confirmed `:Ai provider`. An allowed id with no registered provider (yet) is
+  an info line, not a warning. See
+  [configuration.md](configuration.md#provider-policy).
 - **composer route pre-flight** -- `:Ai`'s own route table, validated by
   `lib.nvim.bindings.usercmd.composer`.

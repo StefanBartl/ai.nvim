@@ -7,6 +7,9 @@ truth; this table mirrors it):
 require("ai").setup({
   provider = "auto",                         -- "auto" | "claude" | "ollama" | "openai" | "gemini" | "loomai" | a custom id
   provider_order = { "claude", "ollama", "openai", "gemini", "loomai" }, -- "auto" resolution order; "loomai" last, see docs/scope.md
+  policy = {
+    allowed = {},                             -- provider ids this machine may use; empty = no restriction, see "Provider policy"
+  },
   model = {},                                 -- e.g. { claude = "claude-opus-4-5" } -- not validated here, see "Model ids" below
   timeout_ms = 60000,
 
@@ -115,6 +118,40 @@ provider whose `available()` is true -- a cheap, synchronous check (an
 executable on `PATH` and/or an env var set), never a network round trip.
 Set `provider` to an explicit id to always use one provider; `:Ai provider
 <name>` switches it at runtime.
+
+## Provider policy
+
+Some machines may only use some providers -- an employer's allow-list, say.
+`policy.allowed` says which, once, for everything that goes through ai.nvim:
+
+```lua
+-- the options passed to setup():
+{
+  provider = "claude",
+  policy = { allowed = { "copilot", "claude" } },
+}
+```
+
+Empty or absent (the default) means no restriction, and nothing changes. With a
+list:
+
+- `provider = "auto"` walks only the entries of `provider_order` that are listed.
+  A provider that happens to have a key set is never picked when the machine does
+  not list it.
+- A request that names another provider (`provider = "gemini"`) fails before
+  anything is sent, with `err.kind == "provider_resolution"` and
+  `err.data.reason == "policy"`. This applies to every caller, including
+  `pdfport.nvim` and the inline completion (`completion.provider`).
+- `:Ai provider <name>` for an unlisted provider asks first. A yes allows it for
+  **this Neovim session only**; nothing is written, the next start is back inside
+  the list. `:Ai info` marks such a provider, and `:checkhealth ai` reports it.
+- A caller that has asked the user itself (a plugin with its own test mode) can set
+  `allow_unlisted = true` on that one request. It is an explicit step, never a
+  default.
+
+The list is not checked against the registry: an id may be listed before its
+provider exists (`"copilot"` today). A plugin on top of ai.nvim reads the policy
+with `require("ai").policy()` and may restrict further, never widen it.
 
 ## Registering a custom provider
 

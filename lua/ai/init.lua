@@ -94,6 +94,19 @@ function M.config()
   return require("ai.config").get()
 end
 
+---The machine's provider policy, for a plugin that sits on top of ai.nvim and
+---wants to narrow it further (it may restrict, never widen). A copy: changing
+---the result changes nothing.
+---@return { allowed: string[]|nil, restricted: boolean, granted: string[] } allowed `nil` when unrestricted; `granted` ids confirmed for this session outside the list
+function M.policy()
+  local policy = require("ai.policy")
+  return {
+    allowed = policy.allowed(),
+    restricted = policy.restricted(),
+    granted = policy.granted(),
+  }
+end
+
 ---@internal
 ---Prefix `req.prompt` with the assembled context block, if any.
 ---@param req Ai.Request

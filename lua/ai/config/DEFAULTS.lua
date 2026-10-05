@@ -13,6 +13,15 @@ local DEFAULTS = {
   -- not shadow a cloud/CLI provider that is already configured and working.
   provider_order = { "claude", "ollama", "openai", "gemini", "loomai" },
 
+  -- Which providers this machine may use at all (see lua/ai/policy.lua). An
+  -- empty `allowed` list means no restriction -- the default, and the
+  -- behaviour before this option existed. Non-empty: `provider = "auto"`
+  -- walks only these, and a request or `:Ai provider` naming anything else
+  -- is refused (or has to be confirmed, see docs/configuration.md).
+  policy = {
+    allowed = {},
+  },
+
   -- Per-provider default model, e.g. { claude = "claude-opus-4-5" }. Empty
   -- means each provider module's own built-in default.
   model = {},
