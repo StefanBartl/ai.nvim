@@ -14,6 +14,13 @@
 ---   `--no-session-persistence` keep the call from reading or writing session
 ---   state. It runs in a neutral working directory so no project `CLAUDE.md`
 ---   is picked up from wherever Neovim happens to be.
+--- - **The text is not interpreted.** The CLI scans the prompt itself, before
+---   any model call: an `@<path>` mention is read from disk and sent along (no
+---   tool call, no permission prompt -- `--tools ""` does not stop it), and a
+---   prompt that starts with `/cost`, `/context`, ... is answered locally
+---   as a success. Logs and ticket text are untrusted, so a `Read` deny rule
+---   (`--settings`) blocks the first and a leading `/` is labelled away (see
+---   `build_stdin`) for the second.
 --- - **The prompt never reaches argv.** It is written to the child's stdin
 ---   (argv is visible in the process list and capped on Windows); the system
 ---   text, if any, is sent as a labelled preamble of the same message.
@@ -69,6 +76,12 @@ local CREDENTIAL_ENV = {
   "CLAUDE_CODE_USE_MANTLE",
 }
 
+---Settings passed inline: the CLI turns `@<path>` in the prompt into the file's
+---content before the model is called, and this deny rule is what that read is
+---checked against (relative, home and absolute paths).
+local DENY_READ_SETTINGS =
+  vim.json.encode({ permissions = { deny = { "Read(**)", "Read(//**)" } } })
+
 local MODEL_PATTERN = "^[%w][%w%.%-_:%[%]]*$"
 local DEFAULT_TIMEOUT_MS = 120000
 
@@ -99,6 +112,8 @@ local function build_argv(req)
     "",
     "--no-session-persistence",
     "--disable-slash-commands",
+    "--settings",
+    DENY_READ_SETTINGS,
     "--output-format",
     "stream-json",
     "--verbose",
@@ -117,6 +132,12 @@ end
 local function build_stdin(req)
   if req.system and req.system ~= "" then
     return "Instructions for this conversation:\n" .. req.system .. "\n\n---\n\n" .. req.prompt
+  end
+  -- `/cost`, `/context`, ... at the start are answered by the CLI itself (exit 0,
+  -- no model call, the local message as the "answer") even with
+  -- --disable-slash-commands; a label keeps the user's text a plain prompt.
+  if req.prompt:match("^%s*/") then
+    return "User message:\n" .. req.prompt
   end
   return req.prompt
 end
