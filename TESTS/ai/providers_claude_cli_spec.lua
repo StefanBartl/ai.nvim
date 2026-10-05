@@ -7,8 +7,22 @@
 local FAKE = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h")
   .. "/fixtures/fake_claude.lua"
 
+-- Variables that would replace the CLI's own login or route it to another
+-- cloud: they must never reach the child. And two it needs, which must.
+local STRIPPED = {
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
+  "CLAUDE_CODE_USE_ANTHROPIC_AWS",
+  "CLAUDE_CODE_USE_MANTLE",
+}
+local KEPT = { "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_GIT_BASH_PATH" }
+
 describe("ai.providers.claude_cli", function()
-  local cli, saved_key, saved_token
+  local cli, saved_env
 
   ---Run `ask` and wait for the callback.
   local function ask(req)
@@ -34,11 +48,18 @@ describe("ai.providers.claude_cli", function()
     package.loaded["ai.providers.claude_cli"] = nil
     cli = require("ai.providers.claude_cli")
     cli.command = { vim.v.progpath, "-u", "NONE", "-l", FAKE }
-    saved_key, saved_token = vim.env.ANTHROPIC_API_KEY, vim.env.ANTHROPIC_AUTH_TOKEN
+    saved_env = {}
+    for _, list in ipairs({ STRIPPED, KEPT }) do
+      for _, name in ipairs(list) do
+        saved_env[name] = vim.env[name]
+      end
+    end
   end)
 
   after_each(function()
-    vim.env.ANTHROPIC_API_KEY, vim.env.ANTHROPIC_AUTH_TOKEN = saved_key, saved_token
+    for name, value in pairs(saved_env) do
+      vim.env[name] = value
+    end
     package.loaded["ai.providers.claude_cli"] = nil
   end)
 
@@ -147,12 +168,19 @@ describe("ai.providers.claude_cli", function()
       assert.are.equal("sonnet", argv[index_of(argv, "--model") + 1])
     end)
 
-    it("removes credential variables so the logged-in account is used", function()
-      vim.env.ANTHROPIC_API_KEY = "sk-test-should-not-leak"
-      vim.env.ANTHROPIC_AUTH_TOKEN = "tok-test-should-not-leak"
+    it("removes the variables that override the login, keeps the rest", function()
+      for _, list in ipairs({ STRIPPED, KEPT }) do
+        for _, name in ipairs(list) do
+          vim.env[name] = "test-value-for-" .. name
+        end
+      end
       local info = echo({})
-      assert.is_nil(info.key)
-      assert.is_nil(info.token)
+      for _, name in ipairs(STRIPPED) do
+        assert.is_nil(info.env[name], name .. " reached the child")
+      end
+      for _, name in ipairs(KEPT) do
+        assert.is_true(info.env[name], name .. " must still reach the child")
+      end
       assert.is_true(info.path, "the rest of the environment must still reach the child")
     end)
 

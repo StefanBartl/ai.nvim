@@ -30,7 +30,9 @@
   - **claude-cli**: the Claude Code CLI (`claude`) on `PATH`, logged in
     (`claude auth status`). Opt-in -- not in the default `provider_order`;
     select it with `:Ai provider claude-cli`. It uses the account the CLI is
-    logged in as, so no API key is configured here.
+    logged in as, so no API key is configured here -- `ANTHROPIC_API_KEY`,
+    `CLAUDE_CODE_OAUTH_TOKEN` and the Bedrock/Vertex/Foundry/AWS/Mantle
+    switches are not passed on to it.
 
 The two external tools -- `curl`, and `ollama` for that provider -- are
 declared in [install.json](install.json) and read by lib.nvim's
