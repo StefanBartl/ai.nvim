@@ -69,6 +69,7 @@ end
 ---@type table<string, string|string[]>
 local VALUE_SCHEMA = {
   provider_order = "string[]",
+  policy = "table",
   ["policy.allowed"] = "string[]",
   timeout_ms = "number",
   log_level = "number",
@@ -77,6 +78,29 @@ local VALUE_SCHEMA = {
   ["completion.trigger"] = { "manual", "auto" },
   ["completion.idle_ms"] = "number",
   ["completion.max_context_lines"] = "number",
+}
+
+---What `policy.allowed` holds when its configured value is malformed: a
+---non-empty list that matches no provider id, so every provider is refused
+---(`ai.policy` reads it like any other list, `describe()` shows it).
+---@type string
+M.INVALID_ALLOWED = "<invalid policy.allowed>"
+
+---@internal
+---Values that must not degrade to their default, because the default is the
+---permissive state: an empty `policy.allowed` means "no restriction", so a
+---malformed one dropped to `{}` would switch the allow-list off without a
+---word. These are replaced by a value that refuses instead (ERR-22's
+---"degrade to the default" is for values where the default is harmless), and
+---`setup()` says so right away rather than leaving it to `:checkhealth`.
+---@type table<string, fun(): any>
+local FAIL_CLOSED = {
+  ["policy.allowed"] = function()
+    return { M.INVALID_ALLOWED }
+  end,
+  policy = function()
+    return { allowed = { M.INVALID_ALLOWED } }
+  end,
 }
 
 ---@internal
@@ -93,7 +117,9 @@ local function value_ok(kind, value)
     return false
   end
   if kind == "string[]" then
-    if type(value) ~= "table" then
+    -- A list, not a map: `{ claude = true }` has no `ipairs` entries and would
+    -- otherwise pass as an empty list.
+    if type(value) ~= "table" or not vim.islist(value) then
       return false
     end
     for _, item in ipairs(value) do
@@ -114,6 +140,7 @@ end
 ---consumer unchecked. Every drop is recorded into `issues` for `:checkhealth`
 ---to surface (see `M.issues()`); silently degrading with no visible trace
 ---would just move the same problem from "crashes" to "quietly ignored".
+---The `FAIL_CLOSED` keys are the exception: they are replaced, not dropped.
 ---@param opts table
 ---@param path string dotted prefix, e.g. `"completion."`
 ---@param issues string[]
@@ -122,8 +149,17 @@ local function sanitize_values(opts, path, issues)
   for key, value in pairs(opts) do
     local full_key = path .. tostring(key)
     local kind = VALUE_SCHEMA[full_key]
-    if kind then
-      if not value_ok(kind, value) then
+    if kind and not value_ok(kind, value) then
+      local closed = FAIL_CLOSED[full_key]
+      if closed then
+        local issue = ("%s: invalid value (%s) -- every provider is refused until it is fixed"):format(
+          full_key,
+          vim.inspect(value)
+        )
+        issues[#issues + 1] = issue
+        require("lib.nvim.notify").create("[ai]").warn(issue)
+        opts[key] = closed()
+      else
         issues[#issues + 1] = ("%s: invalid value (%s) -- using the default instead"):format(
           full_key,
           vim.inspect(value)

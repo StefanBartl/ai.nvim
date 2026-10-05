@@ -113,6 +113,183 @@ describe("ai.keys", function()
     end)
   end)
 
+  describe("a configured active that resolves to nothing", function()
+    -- The default variable holds the *other* account's key here. Every shape of
+    -- "active names nothing usable" has to give no key, never that one.
+    it("a typo'd active fails closed instead of reading the default variable", function()
+      local keys = setup({
+        claude = { active = "Firma", profiles = { firma = { env = "AI_TEST_KEY_PRIVATE" } } },
+      })
+      assert.are.equal("Firma", keys.active("claude"))
+      assert.is_nil(keys.get("claude", "ANTHROPIC_API_KEY"))
+      assert.is_true(keys.blocked("claude"))
+      local text = keys.describe("claude")
+      assert.is_truthy(text:find("Firma", 1, true))
+      assert.is_truthy(text:find("KEY MISSING", 1, true))
+      assert.is_false(require("ai.providers.claude").available())
+    end)
+
+    it("a profile spec that is not a table fails closed too", function()
+      local keys = setup({
+        claude = { active = "firma", profiles = { firma = "AI_TEST_KEY_PRIVATE" } },
+      })
+      assert.is_nil(keys.get("claude", "ANTHROPIC_API_KEY"))
+      assert.is_truthy(keys.describe("claude"):find("KEY MISSING", 1, true))
+    end)
+
+    it("an active without any profiles fails closed", function()
+      local keys = setup({ claude = { active = "firma" } })
+      assert.is_nil(keys.get("claude", "ANTHROPIC_API_KEY"))
+    end)
+
+    it("the missing-key error names the profile", function()
+      setup({ claude = { active = "Firma", profiles = { firma = { env = "X" } } } })
+      local ok, err
+      require("ai.providers.claude").ask({ prompt = "x" }, function(a, b)
+        ok, err = a, b
+      end)
+      assert.is_false(ok)
+      assert.are.equal("missing_api_key", err.kind)
+      assert.is_truthy(err.message:find("Firma", 1, true))
+      assert.is_nil(err.message:find("ANTHROPIC_API_KEY", 1, true))
+    end)
+
+    it("the broken setup still shows in providers(), so :Ai info can print it", function()
+      local keys = setup({ claude = { active = "firma", profiles = { firma = "X" } } })
+      assert.are.same({ "claude" }, keys.providers())
+    end)
+
+    it("active = false means no profile: the default variable applies", function()
+      local keys = setup({
+        claude = { active = false, profiles = { firma = { env = "AI_TEST_KEY_PRIVATE" } } },
+      })
+      assert.is_nil(keys.active("claude"))
+      assert.is_false(keys.blocked("claude"))
+      assert.are.equal("default-key", keys.get("claude", "ANTHROPIC_API_KEY"))
+      assert.are.same({}, keys.issues())
+    end)
+
+    it("a stale session choice is ignored and the configured active applies", function()
+      local keys = setup({
+        claude = {
+          active = "private",
+          profiles = { private = { env = "AI_TEST_KEY_PRIVATE" }, other = { env = "X" } },
+        },
+      })
+      keys.use("other")
+      require("ai.config").setup({
+        keys = {
+          claude = { active = "private", profiles = { private = { env = "AI_TEST_KEY_PRIVATE" } } },
+        },
+      })
+      assert.are.equal("private", keys.active("claude"))
+    end)
+
+    it("the issue says requests fail until it is fixed", function()
+      local keys = setup({ claude = { active = "ghost", profiles = { a = { env = "X" } } } })
+      assert.is_truthy(table.concat(keys.issues(), "\n"):find("requests fail", 1, true))
+    end)
+  end)
+
+  describe("key files", function()
+    ---@param text string
+    ---@return string|nil
+    local function key_of(text)
+      local path = write_file("k.key", text)
+      local keys = setup({ claude = { active = "c", profiles = { c = { file = path } } } })
+      return keys.get("claude", "ANTHROPIC_API_KEY")
+    end
+
+    ---@param text string
+    ---@return string
+    local function utf16le(text)
+      return (text:gsub(".", "%0\0"))
+    end
+
+    it("strips a UTF-8 BOM", function()
+      assert.are.equal("sk-ant-abc", key_of("\239\187\191sk-ant-abc\r\n"))
+    end)
+
+    it("strips the BOM before trimming, and skips a first line that is only the BOM", function()
+      assert.are.equal("sk-ant-abc", key_of("\239\187\191   sk-ant-abc  \n"))
+      assert.are.equal("sk-ant-abc", key_of("\239\187\191\nsk-ant-abc\n"))
+    end)
+
+    it("decodes UTF-16LE with a BOM (PowerShell 5.1's `>` and Out-File)", function()
+      assert.are.equal("sk-ant-abc", key_of("\255\254" .. utf16le("sk-ant-abc\r\n")))
+    end)
+
+    it("decodes UTF-16BE with a BOM", function()
+      local be = ("sk-ant-abc\n"):gsub(".", "\0%0")
+      assert.are.equal("sk-ant-abc", key_of("\254\255" .. be))
+    end)
+
+    it("UTF-16 that is not plain ASCII is not a key", function()
+      local path = write_file("k.key", "\255\254" .. utf16le("k\233y\n"))
+      local keys = setup({ claude = { active = "c", profiles = { c = { file = path } } } })
+      assert.is_nil(keys.get("claude", "ANTHROPIC_API_KEY"))
+    end)
+
+    it("UTF-16 without a BOM is not a key: nothing is reported as present", function()
+      local path = write_file("k.key", utf16le("sk-ant-abc\r\n"))
+      local keys = setup({ claude = { active = "c", profiles = { c = { file = path } } } })
+      assert.is_nil(keys.get("claude", "ANTHROPIC_API_KEY"))
+      assert.is_truthy(keys.describe("claude"):find("KEY MISSING", 1, true))
+    end)
+
+    it("a directory instead of a file gives no key and no error", function()
+      local keys = setup({ claude = { active = "c", profiles = { c = { file = dir } } } })
+      assert.is_nil(keys.get("claude", "ANTHROPIC_API_KEY"))
+      assert.is_truthy(keys.describe("claude"):find("KEY MISSING", 1, true))
+    end)
+
+    it("a failed open is not cached: the key appears once the file can be read again", function()
+      local path = write_file("k.key", "locked-then-free")
+      local keys = setup({ claude = { active = "c", profiles = { c = { file = path } } } })
+      -- A sharing violation (editor, antivirus, sync client) fails the open but
+      -- leaves mtime and size alone, so nothing else would ever invalidate it.
+      local real_open = io.open
+      io.open = function()
+        return nil, "Permission denied"
+      end
+      local ok, locked = pcall(keys.get, "claude", "ANTHROPIC_API_KEY")
+      io.open = real_open
+      assert.is_true(ok)
+      assert.is_nil(locked)
+      assert.are.equal("locked-then-free", keys.get("claude", "ANTHROPIC_API_KEY"))
+    end)
+  end)
+
+  describe("an env that is not a variable name", function()
+    -- A key pasted where the variable name belongs: an Anthropic- and an
+    -- OpenAI-style one (hyphens) and a Gemini-style one (no hyphen at all).
+    local pasted = {
+      "sk-ant-api03-REALKEYVALUE",
+      "sk-proj-AbCd1234EfGh5678",
+      "AIzaSyD4kFq8xV2mN7pLrT9wZcB3eH6jU1oYgXs",
+    }
+
+    for _, key in ipairs(pasted) do
+      it(("is never echoed: %s..."):format(key:sub(1, 8)), function()
+        local keys = setup({ claude = { active = "c", profiles = { c = { env = key } } } })
+        assert.is_nil(keys.describe("claude"):find(key, 1, true))
+        assert.is_truthy(keys.describe("claude"):find("KEY MISSING", 1, true))
+        local issues = table.concat(keys.issues(), "\n")
+        assert.is_truthy(issues:find("not a variable name", 1, true))
+        assert.is_nil(issues:find(key, 1, true))
+        local err = require("ai.providers.util").missing_key_error("claude", "ANTHROPIC_API_KEY")
+        assert.is_nil(err.message:find(key, 1, true))
+      end)
+    end
+
+    it("a conventional name is still shown, and is no issue", function()
+      local keys =
+        setup({ claude = { active = "c", profiles = { c = { env = "AI_TEST_KEY_COMPANY" } } } })
+      assert.is_truthy(keys.describe("claude"):find("env AI_TEST_KEY_COMPANY", 1, true))
+      assert.are.same({}, keys.issues())
+    end)
+  end)
+
   describe("the session switch", function()
     local function two_profiles()
       return setup({
@@ -250,6 +427,93 @@ describe("ai.keys", function()
       assert.is_false(ok)
       assert.are.equal("claude: ANTHROPIC_API_KEY not set", err.message)
       assert.are.same({ env_var = "ANTHROPIC_API_KEY" }, err.data)
+    end)
+  end)
+
+  -- Through the public path: a provider that is unavailable *because* its chosen
+  -- profile has no key must fail the request naming the profile, and "auto" must
+  -- not move on to another provider (and so another account).
+  describe("through providers.resolve and ai.ask", function()
+    ---@param id string
+    ---@param available boolean
+    local function fake(id, available)
+      return {
+        id = id,
+        available = function()
+          return available
+        end,
+        ask = function(_, cb)
+          cb(true, { text = "ok", provider = id })
+        end,
+      }
+    end
+
+    local function company_without_key()
+      setup({
+        claude = { active = "company", profiles = { company = { env = "AI_TEST_KEY_COMPANY" } } },
+      })
+    end
+
+    it("an explicit provider fails with missing_api_key naming the profile", function()
+      company_without_key()
+      local providers = require("ai.providers")
+      providers.register(fake("claude", false))
+      local p, err = providers.resolve("claude", { "claude" })
+      assert.is_nil(p)
+      assert.are.equal("missing_api_key", err.kind)
+      assert.is_truthy(err.message:find("company", 1, true))
+    end)
+
+    it("auto stops at the blocked provider instead of moving on to the next one", function()
+      company_without_key()
+      local providers = require("ai.providers")
+      providers.register(fake("claude", false))
+      providers.register(fake("second", true))
+      local p, err = providers.resolve("auto", { "claude", "second" })
+      assert.is_nil(p)
+      assert.are.equal("missing_api_key", err.kind)
+      assert.is_truthy(err.message:find("company", 1, true))
+    end)
+
+    it("auto still reaches a provider listed before the blocked one", function()
+      company_without_key()
+      local providers = require("ai.providers")
+      providers.register(fake("claude", false))
+      providers.register(fake("first", true))
+      local p = providers.resolve("auto", { "first", "claude" })
+      assert.are.equal("first", p.id)
+    end)
+
+    it("an unavailable provider without a profile is skipped as before", function()
+      company_without_key()
+      local providers = require("ai.providers")
+      providers.register(fake("first", false))
+      providers.register(fake("second", true))
+      local p = providers.resolve("auto", { "first", "second" })
+      assert.are.equal("second", p.id)
+      local _, err = providers.resolve("first", { "first" })
+      assert.are.equal("provider_resolution", err.kind)
+    end)
+
+    it("a present key does not block, and neither does a per-request api_key", function()
+      company_without_key()
+      local providers = require("ai.providers")
+      local p = providers.resolve("claude", { "claude" }, { prompt = "x", api_key = "explicit" })
+      assert.are.equal("claude", p.id)
+      vim.env.AI_TEST_KEY_COMPANY = "now-set"
+      assert.is_false(require("ai.keys").blocked("claude"))
+      assert.are.equal("claude", providers.resolve("claude", { "claude" }).id)
+    end)
+
+    it("ai.ask reports it to the caller", function()
+      company_without_key()
+      local ok, err
+      require("ai").ask({ prompt = "x", provider = "claude" }, function(a, b)
+        ok, err = a, b
+      end)
+      assert.is_false(ok)
+      assert.are.equal("missing_api_key", err.kind)
+      assert.is_truthy(err.message:find("company", 1, true))
     end)
   end)
 end)

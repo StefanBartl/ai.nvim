@@ -20,7 +20,9 @@ What each section reports:
   dropped back to its default instead of surviving the merge (e.g.
   `provider_order = "claude"` instead of a list, or `completion.trigger =
   "atuo"`) -- the value degrades silently everywhere else, this is where it
-  becomes visible. Also a warning for a configured `model`/`completion.model`
+  becomes visible (a malformed `policy.allowed` is the exception: it is not
+  dropped but refuses every provider, and is reported as an error under *provider
+  policy*). Also a warning for a configured `model`/`completion.model`
   that isn't a known id for its provider, per
   `lua/ai/providers/models.lua`'s registry (Claude/Gemini/OpenAI only --
   `ollama`/`loomai`/`claude-cli` run arbitrary local or CLI-side models, so any id is accepted for
@@ -30,8 +32,9 @@ What each section reports:
 - **provider policy** -- whether `policy.allowed` is set, and a warning for a
   `provider`, a `completion.provider` or a `provider_order` that falls outside
   it (requests that use them are refused, `provider = "auto"` could never
-  resolve), plus one for a provider allowed only for this session after a
-  confirmed `:Ai provider`. An allowed id with no registered provider (yet) is
+  resolve; a provider granted for this session is not counted as refused), plus
+  one for a provider allowed only for this session after a confirmed `:Ai
+  provider`. An allowed id with no registered provider (yet) is
   an info line, not a warning. See
   [configuration.md](configuration.md#provider-policy).
 - **composer route pre-flight** -- `:Ai`'s own route table, validated by

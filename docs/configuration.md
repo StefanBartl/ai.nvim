@@ -138,17 +138,25 @@ list:
 
 - `provider = "auto"` walks only the entries of `provider_order` that are listed.
   A provider that happens to have a key set is never picked when the machine does
-  not list it.
+  not list it -- and a session grant (see below) does not change that: it is for
+  the one provider you named, not for `auto`.
 - A request that names another provider (`provider = "gemini"`) fails before
   anything is sent, with `err.kind == "provider_resolution"` and
   `err.data.reason == "policy"`. This applies to every caller, including
   `pdfport.nvim` and the inline completion (`completion.provider`).
-- `:Ai provider <name>` for an unlisted provider asks first. A yes allows it for
-  **this Neovim session only**; nothing is written, the next start is back inside
-  the list. `:Ai info` marks such a provider, and `:checkhealth ai` reports it.
+- `:Ai provider <name>` for an unlisted provider asks first (the dialog opens on
+  "No"). A yes allows it for **this Neovim session only**, and it is not asked
+  again for that provider in the same session; nothing is written, the next start
+  is back inside the list. `:Ai info` marks such a provider, and `:checkhealth ai`
+  reports it.
 - A caller that has asked the user itself (a plugin with its own test mode) can set
   `allow_unlisted = true` on that one request. It is an explicit step, never a
   default.
+
+A malformed `policy.allowed` -- a string, a list with a non-string entry, a map such
+as `{ claude = true }`, or a `policy` that is not a table -- is **not** treated as
+empty: a typo must not switch the rule off. Every provider is refused until it is
+fixed, `setup()` warns right away, and `:checkhealth ai` reports it.
 
 The list is not checked against the registry: an id may be listed before its
 provider exists (`"copilot"` today). A plugin on top of ai.nvim reads the policy
@@ -179,18 +187,24 @@ from; `:Ai key <profile>` picks one for the session:
   (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`). A per-request
   `api_key` still wins over everything.
 - A profile has exactly one source: `env` (the name of an environment variable)
-  or `file` (a path; `~` is expanded, the file is re-read when it changes).
+  or `file` (a path; `~` is expanded, the file is re-read when it changes; UTF-8
+  with or without a BOM, or UTF-16 with a BOM as Windows PowerShell 5.1 writes it).
   A command or password-manager source is not offered yet -- it needs an
   asynchronous lookup and is a follow-up.
 - **A chosen profile never falls back to the default variable.** If its source
   is empty, the request fails with `missing_api_key` naming the profile; it does
-  not quietly send with the other account's key.
+  not quietly send with the other account's key. `provider = "auto"` does not move
+  on to another provider either. This holds for `active` too: one that names no
+  defined profile (a typo, a profile that is not a table) gives no key, and
+  `:checkhealth ai` says why. `active = false` means no profile.
 - `:Ai key firma` switches every provider that defines a `firma` profile for
   this session (`:Ai key firma claude` only that one), `:Ai key reset` goes back
   to `active` / the default variable, `:Ai key` shows the setup. Nothing is
   written; the next start is back at `active`.
 - A key is never printed: `:Ai info`, `:Ai key` and `:checkhealth ai` show the
-  profile, the kind of source and "key present"/"KEY MISSING", nothing else.
+  profile, the kind of source and "key present"/"KEY MISSING", nothing else. An
+  `env` that is not shaped like a variable name (a key pasted there by mistake) is
+  not echoed either.
 - `claude-cli` and the local providers have no key and are not affected.
 
 Keys switch the *account*; whether customer data may go to that account at all

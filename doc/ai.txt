@@ -166,13 +166,17 @@ Some machines may only use some providers. `policy.allowed` lists them, once,
 for everything that goes through ai.nvim; empty (the default) means no
 restriction and nothing changes. With a list:
 
-  - `provider = "auto"` walks only the listed entries of `provider_order`.
+  - `provider = "auto"` walks only the listed entries of `provider_order`
+    (a session grant, below, does not widen it).
   - A request naming another provider fails before anything is sent
     (`provider_resolution`, `err.data.reason == "policy"`), for every caller.
   - `:Ai provider {name}` for an unlisted provider asks first; a yes allows
     it for this Neovim session only, nothing is written.
   - A caller that asked the user itself may set `allow_unlisted = true` on
     one request.
+
+A malformed `policy.allowed` (not a list of strings) is not read as empty: every
+provider is refused until it is fixed, `setup()` warns, |:checkhealth| reports it.
 
 The list is not checked against the registry, so an id may be listed before
 its provider exists. Plugins on top of ai.nvim read it with |ai.policy()| and
@@ -198,9 +202,11 @@ A profile has exactly one source: `env` (a variable name) or `file` (a path;
 the first non-empty line, re-read when the file changes). Without `keys`
 nothing changes. A chosen profile never falls back to the provider's default
 variable: with an empty source the request fails (`missing_api_key`, naming
-the profile). Keys are never printed -- `:Ai info`, `:Ai key` and |:checkhealth|
-show profile, source kind and "key present"/"KEY MISSING" only. The switch is
-for the session; nothing is written.
+the profile; `provider = "auto"` does not move on to another provider), and
+the same goes for an `active` that names no defined profile. A key file may be
+UTF-8 (BOM allowed) or UTF-16 with a BOM. Keys are never printed -- `:Ai info`,
+`:Ai key` and |:checkhealth| show profile, source kind and "key present" or
+"KEY MISSING" only. The switch is for the session; nothing is written.
 
 ==============================================================================
 5. COMMANDS                                                     *ai-commands*
