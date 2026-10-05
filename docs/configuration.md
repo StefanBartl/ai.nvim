@@ -138,17 +138,25 @@ list:
 
 - `provider = "auto"` walks only the entries of `provider_order` that are listed.
   A provider that happens to have a key set is never picked when the machine does
-  not list it.
+  not list it -- and a session grant (see below) does not change that: it is for
+  the one provider you named, not for `auto`.
 - A request that names another provider (`provider = "gemini"`) fails before
   anything is sent, with `err.kind == "provider_resolution"` and
   `err.data.reason == "policy"`. This applies to every caller, including
   `pdfport.nvim` and the inline completion (`completion.provider`).
-- `:Ai provider <name>` for an unlisted provider asks first. A yes allows it for
-  **this Neovim session only**; nothing is written, the next start is back inside
-  the list. `:Ai info` marks such a provider, and `:checkhealth ai` reports it.
+- `:Ai provider <name>` for an unlisted provider asks first (the dialog opens on
+  "No"). A yes allows it for **this Neovim session only**, and it is not asked
+  again for that provider in the same session; nothing is written, the next start
+  is back inside the list. `:Ai info` marks such a provider, and `:checkhealth ai`
+  reports it.
 - A caller that has asked the user itself (a plugin with its own test mode) can set
   `allow_unlisted = true` on that one request. It is an explicit step, never a
   default.
+
+A malformed `policy.allowed` -- a string, a list with a non-string entry, a map such
+as `{ claude = true }`, or a `policy` that is not a table -- is **not** treated as
+empty: a typo must not switch the rule off. Every provider is refused until it is
+fixed, `setup()` warns right away, and `:checkhealth ai` reports it.
 
 The list is not checked against the registry: an id may be listed before its
 provider exists (`"copilot"` today). A plugin on top of ai.nvim reads the policy
