@@ -41,9 +41,12 @@ account it is logged in as (a subscription login, a company account), so
 nothing about keys is configured in ai.nvim and switching accounts is
 `claude auth login` outside of Neovim. It is deliberately a chat endpoint and
 nothing more: no tools, no hooks or plugins (`--safe-mode`), no session
-persistence, a neutral working directory, the prompt on stdin, and the
-variables that would replace the login removed from the child's environment.
-It is opt-in (not in `provider_order`) and, like every provider, subject to
+persistence, a neutral working directory, the prompt on stdin, the variables
+that would replace the login removed from the child's environment, and the
+CLI's own prompt handling switched off where it matters: `@path` mentions in
+the text are denied (the CLI would otherwise read local files into the
+request) and a leading `/` cannot turn the prompt into a CLI command. It is
+opt-in (not in `provider_order`) and, like every provider, subject to
 `policy.allowed`.
 
 ## The allow-list narrows, it never widens

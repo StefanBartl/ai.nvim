@@ -145,6 +145,35 @@ describe("ai.providers.claude_cli", function()
       assert.is_truthy(info.stdin:find("be brief", 1, true))
     end)
 
+    it("passes a plain prompt through unchanged", function()
+      assert.are.equal("ECHO\nq", echo({ prompt = "q" }).stdin)
+    end)
+
+    it("keeps a leading slash from being the first byte, or the CLI answers it itself", function()
+      -- `claude -p` handles `/cost`, `/context`, ... locally even with
+      -- --disable-slash-commands: no model call, and the local message would
+      -- come back as a successful answer.
+      for _, prompt in ipairs({ "/cost ECHO", "  /context what does this do ECHO" }) do
+        local ok, res = ask({ prompt = prompt })
+        assert.is_true(ok)
+        assert.is_nil(res.text:find("isn't available", 1, true), "answered locally: " .. res.text)
+        local info = vim.json.decode(res.text)
+        assert.is_falsy(info.stdin:find("^/"))
+        assert.is_truthy(info.stdin:find(prompt, 1, true), "the user text must arrive intact")
+      end
+    end)
+
+    it("denies the Read tool so @path mentions cannot pull local files into the request", function()
+      -- the CLI expands `@<path>` in the prompt itself (no tool call, no
+      -- permission prompt); a deny rule is what stops it
+      local argv = echo({}).argv
+      local at = index_of(argv, "--settings")
+      assert.is_truthy(at, "--settings missing")
+      local deny = vim.json.decode(argv[at + 1]).permissions.deny
+      assert.is_true(vim.tbl_contains(deny, "Read(**)"))
+      assert.is_true(vim.tbl_contains(deny, "Read(//**)"))
+    end)
+
     it("runs without tools, hooks or session state", function()
       local info = echo({})
       for _, flag in ipairs({

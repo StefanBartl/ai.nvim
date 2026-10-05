@@ -23,6 +23,14 @@ for _, name in ipairs({
   end
 end
 
+-- The real CLI answers its own built-in commands locally when the prompt
+-- *starts* with one (no model call, exit 0), even with --disable-slash-commands.
+local LOCAL_COMMANDS = { cost = true, context = true, help = true, clear = true, compact = true }
+local local_command = stdin:match("^/(%a+)")
+if local_command and LOCAL_COMMANDS[local_command] then
+  scenario = "LOCALCOMMAND"
+end
+
 local function emit(ev)
   io.stdout:write(vim.json.encode(ev), "\n")
   io.stdout:flush()
@@ -81,6 +89,10 @@ elseif scenario == "ASSISTANTONLY" then
     message = { content = { { type = "text", text = "assistant only" } } },
   })
   result(nil)
+elseif scenario == "LOCALCOMMAND" then
+  local text = "/" .. local_command .. " isn't available in this environment."
+  emit({ type = "assistant", message = { content = { { type = "text", text = text } } } })
+  result(text)
 elseif scenario == "ECHO" then
   -- names only, never values: the editor may be started with real credentials
   local env = {}

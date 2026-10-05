@@ -428,7 +428,10 @@ require("ai.context").assemble({opts})
            the Bedrock/Vertex/Foundry/AWS/Mantle switches) are removed from
            the child process so a stray variable cannot override it. Runs
            without tools, hooks or session state in a neutral directory; the
-           prompt goes to its stdin, never to argv. Opt-in (not in
+           prompt goes to its stdin, never to argv. `@path` mentions in the
+           text are denied (the CLI would otherwise read the file and send
+           it along) and a prompt starting with `/` is labelled so the CLI
+           does not answer it as one of its own commands. Opt-in (not in
            `provider_order`). A billing or login problem comes back as an
            `api_error` carrying the CLI's message; a process that dies
            before its answer is complete is a `network_error`, never a
