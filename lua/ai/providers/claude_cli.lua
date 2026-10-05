@@ -23,7 +23,9 @@
 ---   login and bill a different account than the one the user is looking at.
 --- - **Errors are in-band.** A billing or auth failure is not a non-zero exit:
 ---   the CLI prints a `result` event with `is_error = true` and exits 1. That
----   event's text is the error message (`kind = "api_error"`).
+---   event's text is the error message (`kind = "api_error"`). A process that
+---   exits non-zero or is killed before its `result` event is a `network_error`:
+---   what it streamed up to then is a cut-off answer, not a finished one.
 ---
 --- Attachments: none (`vision`/`documents` false), as for `loomai` -- a request
 --- carrying one fails with `invalid_request` rather than losing it. Opt-in:
@@ -137,7 +139,7 @@ local function run(req, h)
   local timeout_ms = req.timeout_ms or DEFAULT_TIMEOUT_MS
   local text_parts, assistant_text = {}, {}
   local usage, stop_reason, result_text
-  local failure, finished = nil, false
+  local failure, finished, got_result = nil, false, false
   local stderr_parts = {}
   local pending = ""
 
@@ -180,6 +182,7 @@ local function run(req, h)
         end
       end
     elseif decoded.type == "result" then
+      got_result = true
       usage = decoded.usage
       stop_reason = decoded.stop_reason or decoded.subtype
       if decoded.is_error then
@@ -246,13 +249,17 @@ local function run(req, h)
       local text = #text_parts > 0 and table.concat(text_parts, "")
         or result_text
         or table.concat(assistant_text, "")
-      if obj.code ~= 0 and text == "" then
+      -- Dead (crashed, killed, cancelled) before its `result` event: whatever it
+      -- streamed is a cut-off answer. A signal can leave the exit code at 0.
+      local died = obj.code ~= 0 or (obj.signal or 0) ~= 0
+      if died and (not got_result or text == "") then
         fail(
           lib_error.new(
             "network_error",
             string.format(
-              "claude-cli: exited %d: %s",
+              "claude-cli: exited %d (signal %d) before a complete answer: %s",
               obj.code,
+              obj.signal or 0,
               vim.trim(table.concat(stderr_parts, ""))
             ),
             obj

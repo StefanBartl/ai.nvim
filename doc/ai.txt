@@ -428,7 +428,9 @@ require("ai.context").assemble({opts})
            cannot override the login. Runs without tools, hooks or session
            state in a neutral directory; the prompt goes to its stdin, never
            to argv. Opt-in (not in `provider_order`). A billing or login
-           problem comes back as an `api_error` carrying the CLI's message.
+           problem comes back as an `api_error` carrying the CLI's message; a
+           process that dies before its answer is complete is a
+           `network_error`, never a shortened answer.
 
 `provider = "auto"` (the default) walks `provider_order` and uses the first
 provider whose `available()` is true -- a cheap, synchronous check (an
