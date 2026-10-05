@@ -6,7 +6,7 @@
 :[range]Ai rewrite [prompt?]      -- replace the range with AI-generated code (default: current line)
 :[range]Ai append [prompt?]       -- insert AI-generated code after the range (default: current line)
 :[range]Ai prepend [prompt?]      -- insert AI-generated code before the range (default: current line)
-:Ai provider <name>               -- switch the active provider (Tab-completes registered ids); outside policy.allowed it asks first
+:Ai provider <name>               -- switch the active provider, or back to auto (Tab-completes registered ids and auto); outside policy.allowed it asks first, auto never does
 :Ai key [<profile>|reset] [<provider>] -- choose the API-key profile for this session (config.keys); no argument shows the setup
 :Ai info                          -- active provider, resolution order, provider policy, per-provider availability
 ```

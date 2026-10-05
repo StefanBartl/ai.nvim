@@ -17,8 +17,10 @@
 ---   a chosen profile, so it yields no key, not the default one.
 --- - **The key is never shown.** `describe()`/`info` print the profile name
 ---   and the kind of source (`env NAME`, `file`), never the value -- and an
----   `env` that is not shaped like a variable name (most likely the key itself,
----   pasted where the name belongs) is not echoed either.
+---   `env` that looks like a vendor's key instead of a variable name (the key
+---   itself, pasted where the name belongs) is not echoed either. The test is
+---   the shape of the known keys, not a guess at randomness, so a long
+---   mixed-case name is never mistaken for one (see `env_name_ok`).
 --- - **Sources are `env` (a variable name) and `file` (first non-empty line).**
 ---   Both are read synchronously and are cheap, so `available()` stays cheap;
 ---   a command or a password manager is a later, asynchronous source and is
@@ -232,16 +234,18 @@ end
 
 ---An `env` value is a variable name, i.e. an identifier. Anything else is most
 ---likely the key itself, pasted where the name belongs. Vendor keys carry
----hyphens (Anthropic, OpenAI) or, like Gemini's, are a long run of mixed-case
----letters and digits, which no real name is. Shape only, so a key that happens
----to look like a plain name (all one case, say) still passes.
+---hyphens (Anthropic, OpenAI), which no identifier has; Gemini's may have none,
+---but it is always `AIza` plus 35 characters. Shape only, so a key that happens to
+---look like a plain name still passes -- and so does every legitimate name:
+---`Company_Anthropic_Key_Production_2` is long, mixed-case and holds a digit, and
+---a rule written on length, case and digits rejects it.
 ---@param name string
 ---@return boolean
 local function env_name_ok(name)
   if #name > 64 or not name:match("^[%a_][%w_]*$") then
     return false
   end
-  return not (#name >= 30 and name:find("%l") and name:find("%u") and name:find("%d"))
+  return not (#name == 39 and name:sub(1, 4) == "AIza")
 end
 
 ---Where a profile's key comes from, as text -- the variable name or "file",

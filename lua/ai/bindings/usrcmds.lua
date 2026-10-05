@@ -35,6 +35,9 @@ function M.setup()
   -- closed set that in practice only grows at startup (see NEW-26); the
   -- built-ins are always present.
   local provider_ids = require("ai.providers").ids()
+  -- `:Ai provider` also takes `auto` (back to the walk over `provider_order`),
+  -- which is not a provider id and so not an argument of `:Ai key`.
+  local provider_choices = vim.list_extend({ "auto" }, provider_ids)
   -- Same registration-time snapshot for the profile names of `config.keys`.
   local key_names, seen = { "reset" }, { reset = true }
   local keys = require("ai.keys")
@@ -107,9 +110,9 @@ function M.setup()
       {
         path = { "provider" },
         args = {
-          { name = "name", type = "STRING", enum = provider_ids },
+          { name = "name", type = "STRING", enum = provider_choices },
         },
-        desc = "Switch the active provider (one outside the allow-list asks first)",
+        desc = "Switch the active provider, or back to auto (one outside the allow-list asks first)",
         run = function(ctx)
           warn_if_ranged(ctx)
           actions.set_provider(ctx.args.name)

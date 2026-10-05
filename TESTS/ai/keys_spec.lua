@@ -288,6 +288,39 @@ describe("ai.keys", function()
       assert.is_truthy(keys.describe("claude"):find("env AI_TEST_KEY_COMPANY", 1, true))
       assert.are.same({}, keys.issues())
     end)
+
+    it("a long mixed-case name with a digit is a name: shown, no issue, and it works", function()
+      -- Long, mixed-case, one digit: also the shape of a pasted token, which is why
+      -- a rule on those three cannot tell the two apart. Only a vendor's key shape
+      -- (hyphens, Gemini's `AIza...`) can.
+      for _, name in ipairs({
+        "Company_Anthropic_Key_Production_2",
+        "CompanyAnthropicKeyProductionAccount2",
+      }) do
+        vim.env[name] = "long-name-key"
+        local keys = setup({ claude = { active = "c", profiles = { c = { env = name } } } })
+        local described, issues, key =
+          keys.describe("claude"), keys.issues(), keys.get("claude", "ANTHROPIC_API_KEY")
+        vim.env[name] = nil
+        assert.is_truthy(described:find("env " .. name .. ", key present", 1, true))
+        assert.is_nil(described:find("not a variable name", 1, true))
+        assert.are.same({}, issues)
+        assert.are.equal("long-name-key", key)
+      end
+    end)
+
+    it("39 characters alone are no key; the AIza prefix gives one away", function()
+      local name = "Gemini_Key_" .. ("x"):rep(28)
+      assert.are.equal(39, #name)
+      local keys = setup({ gemini = { active = "g", profiles = { g = { env = name } } } })
+      assert.is_truthy(keys.describe("gemini"):find("env " .. name, 1, true))
+      assert.are.same({}, keys.issues())
+
+      local token = "AIza" .. ("x"):rep(35)
+      keys = setup({ gemini = { active = "g", profiles = { g = { env = token } } } })
+      assert.is_nil(keys.describe("gemini"):find(token, 1, true))
+      assert.is_truthy(keys.describe("gemini"):find("not a variable name", 1, true))
+    end)
   end)
 
   describe("the session switch", function()

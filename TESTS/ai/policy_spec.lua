@@ -494,6 +494,33 @@ describe("ai.policy", function()
       assert.are.same({ "warn: provider unchanged" }, notices)
     end)
 
+    it("sets auto at once on a restricted machine: it is no provider id to confirm", function()
+      confirm_answer = "No"
+      local config = require("ai.config")
+      config.setup({ provider = "claude", policy = { allowed = { "claude" } } })
+      require("ai.bindings.actions").set_provider("auto")
+      assert.are.equal("auto", config.get().provider)
+      assert.are.equal(0, #confirm_calls)
+      -- not reported as a provider outside the list, and nothing granted for it
+      assert.are.same({ "info: provider set to auto" }, notices)
+      assert.are.same({}, require("ai.policy").granted())
+    end)
+
+    it("still walks only the listed providers once auto is set", function()
+      confirm_answer = nil
+      local config = require("ai.config")
+      config.setup({
+        provider = "claude",
+        provider_order = { "gemini", "claude" },
+        policy = { allowed = { "claude" } },
+      })
+      local providers = require("ai.providers")
+      register_all(providers, { "claude", "gemini" })
+      require("ai.bindings.actions").set_provider("auto")
+      local p = providers.resolve(config.get().provider, config.get().provider_order)
+      assert.are.equal("claude", p.id)
+    end)
+
     it("opens the confirmation on 'No', so a stray <CR> declines", function()
       confirm_answer = "No"
       require("ai.config").setup({ provider = "claude", policy = { allowed = { "claude" } } })

@@ -348,24 +348,27 @@ end
 ---list -- is set at once. One outside it is a deliberate step, not an accident:
 ---the user is asked, and a yes allows it for this session only
 ---(`ai.policy.grant`) -- nothing is written anywhere, the next Neovim starts
----back inside the list.
+---back inside the list. `auto` is not a provider but the walk over
+---`provider_order`, which the policy already narrows to the listed entries
+---(and a grant never widens), so it is set at once on every machine.
 ---@param name string
 ---@return nil
 function M.set_provider(name)
   local policy = require("ai.policy")
   local config = require("ai.config")
   local notify = require("lib.nvim.notify").create("[ai]")
+  local auto = name == "auto"
 
   local function switch()
     config.set_provider(name)
-    if policy.is_listed(name) then
+    if auto or policy.is_listed(name) then
       notify.info("provider set to " .. name)
     else
       notify.warn(("provider set to %s (outside the allow-list, this session only)"):format(name))
     end
   end
 
-  if policy.is_allowed(name) then
+  if auto or policy.is_allowed(name) then
     switch()
     return
   end

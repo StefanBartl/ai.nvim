@@ -44,8 +44,9 @@ nothing more: no tools, no hooks or plugins (`--safe-mode`), no session
 persistence, a neutral working directory, the prompt on stdin, the variables
 that would replace the login removed from the child's environment, and the
 CLI's own prompt handling switched off where it matters: `@path` mentions in
-the text are denied (the CLI would otherwise read local files into the
-request) and a leading `/` cannot turn the prompt into a CLI command. It is
+the text are denied and the CLI's expansion of them is switched off (it would
+otherwise read local files into the request), and a leading `/` cannot turn the
+prompt into a CLI command. It is
 opt-in (not in `provider_order`) and, like every provider, subject to
 `policy.allowed`.
 

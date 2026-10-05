@@ -30,9 +30,14 @@
   - **claude-cli**: the Claude Code CLI (`claude`) on `PATH`, logged in
     (`claude auth status`). Opt-in -- not in the default `provider_order`;
     select it with `:Ai provider claude-cli`. It uses the account the CLI is
-    logged in as, so no API key is configured here -- `ANTHROPIC_API_KEY`,
-    `CLAUDE_CODE_OAUTH_TOKEN` and the Bedrock/Vertex/Foundry/AWS/Mantle
-    switches are not passed on to it.
+    logged in as, so no API key is configured here -- every variable that
+    the CLI ranks above its own login is not passed on to it: `ANTHROPIC_API_KEY`,
+    `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, the
+    Bedrock/Vertex/Foundry/AWS/Mantle switches (`CLAUDE_CODE_USE_*`),
+    `ANTHROPIC_PROFILE` and the Workload Identity Federation pair
+    `ANTHROPIC_FEDERATION_RULE_ID` / `ANTHROPIC_ORGANIZATION_ID`.
+    `ANTHROPIC_BASE_URL` (a company gateway) is passed on, so the CLI sends its
+    login to that host -- something `policy.allowed` does not see.
 
 The two external tools -- `curl`, and `ollama` for that provider -- are
 declared in [install.json](install.json) and read by lib.nvim's

@@ -7,8 +7,9 @@
 local FAKE = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h")
   .. "/fixtures/fake_claude.lua"
 
--- Variables that would replace the CLI's own login or route it to another
--- cloud: they must never reach the child. And two it needs, which must.
+-- Every credential source the CLI's authentication precedence ranks above its
+-- own /login (code.claude.com/docs/en/authentication): they must never reach
+-- the child, or a stray variable silently bills another account.
 local STRIPPED = {
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
@@ -18,11 +19,30 @@ local STRIPPED = {
   "CLAUDE_CODE_USE_FOUNDRY",
   "CLAUDE_CODE_USE_ANTHROPIC_AWS",
   "CLAUDE_CODE_USE_MANTLE",
+  "ANTHROPIC_PROFILE",
+  "ANTHROPIC_FEDERATION_RULE_ID",
+  "ANTHROPIC_ORGANIZATION_ID",
 }
-local KEPT = { "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_GIT_BASH_PATH" }
+-- What it needs, or what was left alone on purpose (a company gateway, the
+-- `claude auth login` provisioning input): these must reach it.
+local KEPT = {
+  "CLAUDE_CONFIG_DIR",
+  "CLAUDE_CODE_GIT_BASH_PATH",
+  "ANTHROPIC_BASE_URL",
+  "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+}
+-- Set by the provider itself, whatever the editor was started with.
+local FORCED = "CLAUDE_CODE_DISABLE_ATTACHMENTS"
+
+-- Their state when this file loaded, for the last spec: nothing may leak out.
+local ALL = vim.list_extend(vim.list_extend({ FORCED }, STRIPPED), KEPT)
+local INITIAL = {}
+for _, name in ipairs(ALL) do
+  INITIAL[name] = vim.env[name] or false
+end
 
 describe("ai.providers.claude_cli", function()
-  local cli, saved_env
+  local cli, saved_env, real_system
 
   ---Run `ask` and wait for the callback.
   local function ask(req)
@@ -48,17 +68,21 @@ describe("ai.providers.claude_cli", function()
     package.loaded["ai.providers.claude_cli"] = nil
     cli = require("ai.providers.claude_cli")
     cli.command = { vim.v.progpath, "-u", "NONE", "-l", FAKE }
+    real_system = vim.system
+    -- `false` stands for "was unset": a nil value would leave no key behind for
+    -- after_each to find, and the variable would stay set (ERR-61).
     saved_env = {}
-    for _, list in ipairs({ STRIPPED, KEPT }) do
+    for _, list in ipairs({ STRIPPED, KEPT, { FORCED } }) do
       for _, name in ipairs(list) do
-        saved_env[name] = vim.env[name]
+        saved_env[name] = vim.env[name] or false
       end
     end
   end)
 
   after_each(function()
+    vim.system = real_system
     for name, value in pairs(saved_env) do
-      vim.env[name] = value
+      vim.env[name] = value or nil
     end
     package.loaded["ai.providers.claude_cli"] = nil
   end)
@@ -213,6 +237,17 @@ describe("ai.providers.claude_cli", function()
       assert.is_true(info.path, "the rest of the environment must still reach the child")
     end)
 
+    it(
+      "switches the CLI's @-mention expansion off, whatever the editor was started with",
+      function()
+        -- second layer behind the deny rule; the text itself stays untouched
+        vim.env[FORCED] = nil
+        assert.are.equal("1", echo({}).disable_attachments)
+        vim.env[FORCED] = "0"
+        assert.are.equal("1", echo({}).disable_attachments)
+      end
+    )
+
     it("does not run in the editor's working directory", function()
       local info = echo({})
       assert.are_not.equal(vim.uv.cwd(), info.cwd)
@@ -277,6 +312,65 @@ describe("ai.providers.claude_cli", function()
       assert.are.equal("network_error", err.kind)
     end)
 
+    ---Run `stream` against a `vim.system` that streams `lines` and then exits as
+    ---`exit` says -- the way a kill by signal looks on Unix (code 0, signal 15),
+    ---which a real child on Windows never produces.
+    ---@param lines string[] stdout lines, each a JSON event
+    ---@param exit table what the exit callback receives
+    ---@return string[] chunks, table|nil done, table|nil err
+    local function stream_with_fake_exit(lines, exit)
+      vim.system = function(_, opts, on_exit)
+        vim.schedule(function()
+          opts.stdout(nil, table.concat(lines, "\n") .. "\n")
+          on_exit(vim.tbl_extend("force", { stdout = "", stderr = "" }, exit))
+        end)
+        return { kill = function() end }
+      end
+      local chunks, done, err = {}, nil, nil
+      cli.stream({ prompt = "q" }, {
+        on_chunk = function(t)
+          chunks[#chunks + 1] = t
+        end,
+        on_done = function(res)
+          done = res
+        end,
+        on_error = function(e)
+          err = e
+        end,
+      })
+      assert.is_true(vim.wait(5000, function()
+        return done ~= nil or err ~= nil
+      end, 10))
+      return chunks, done, err
+    end
+
+    local function delta(text)
+      return vim.json.encode({
+        type = "stream_event",
+        event = { type = "content_block_delta", delta = { type = "text_delta", text = text } },
+      })
+    end
+    local RESULT = vim.json.encode({ type = "result", subtype = "success", result = "Hello" })
+
+    it("treats a signal as a death even when the exit code is 0", function()
+      -- Unix: a killed child reports code 0 and signal 15. Without the signal
+      -- clause this cut-off "Hel" would be delivered as the finished answer.
+      local chunks, done, err = stream_with_fake_exit({ delta("Hel") }, { code = 0, signal = 15 })
+      assert.are.same({ "Hel" }, chunks)
+      assert.is_nil(done)
+      assert.are.equal("network_error", err.kind)
+      assert.is_truthy(err.message:find("signal 15", 1, true))
+    end)
+
+    it("still accepts a complete result when a signal ended the process afterwards", function()
+      local _, done, err = stream_with_fake_exit(
+        { delta("Hel"), delta("lo"), RESULT },
+        { code = 0, signal = 15 }
+      )
+      assert.is_nil(err)
+      assert.are.equal("Hello", done.text)
+    end)
+
     it("reports a timeout as such", function()
       local ok, err = ask({ prompt = "SLEEP", timeout_ms = 800 })
       assert.is_false(ok)
@@ -304,5 +398,13 @@ describe("ai.providers.claude_cli", function()
       assert.is_false(ok)
       assert.are.equal("network_error", err.kind)
     end)
+  end)
+
+  -- Last on purpose (a file's specs run in order): the specs above set variables
+  -- that were unset when the file loaded, and after_each has to unset them again.
+  it("leaves the environment as it found it", function()
+    for _, name in ipairs(ALL) do
+      assert.is_true(vim.env[name] == (INITIAL[name] or nil), name .. " leaked out of a spec")
+    end
   end)
 end)
