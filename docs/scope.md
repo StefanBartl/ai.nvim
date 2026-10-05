@@ -34,6 +34,15 @@ provider talking to loomAI's own `/ask`/`/ask/stream` endpoints, nothing more
 -- it does not expose, and will never expose, loomAI's dashboard, sandbox, or
 decision-queue machinery through this interface.
 
+## The allow-list narrows, it never widens
+
+`policy.allowed` (see [configuration.md](configuration.md#provider-policy)) is
+a per-machine restriction, empty by default. It changes nothing else described
+here: `provider = "auto"` still walks only `provider_order`, now only the part
+of it the allow-list admits, and a provider outside the list is reachable only
+by a deliberate step (a confirmed `:Ai provider`, or `allow_unlisted` on one
+request).
+
 ## Fallback guarantee
 
 `provider = "auto"` only ever walks `provider_order` (default `{"claude",

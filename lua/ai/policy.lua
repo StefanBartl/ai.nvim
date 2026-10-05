@@ -1,0 +1,124 @@
+---@module 'ai.policy'
+--- Which providers this machine may use at all -- the allow-list behind
+--- `config.policy.allowed`.
+---
+--- Why it lives here and not in a consumer: every call site that sends text
+--- to a provider (`:Ai`, the quick-action keymaps, inline completion, and any
+--- plugin that goes through `require("ai").ask()`/`.stream()`, such as
+--- `pdfport.nvim`) ends up in `ai.providers.resolve`, which asks this module.
+--- A list kept by one consumer only would protect that consumer's commands and
+--- leave `<leader>as` on a file full of customer data wide open. The rule is
+--- per machine (an employer's allow-list), so it is plain config: empty, the
+--- default, means "no restriction" and the plugin behaves exactly as before.
+---
+--- Deliberately small: a list, a membership test, and an explicit way to step
+--- outside it that has to be asked for (`Ai.Request.allow_unlisted` per
+--- request, or `grant()` for the session after `:Ai provider <other>` was
+--- confirmed). Nothing here persists, and nothing here validates ids against
+--- the provider registry -- an id may be listed before its provider exists.
+
+local M = {}
+
+---Ids that were confirmed for this session although they are not on the
+---allow-list. Module state on purpose: it must die with the Neovim session.
+---@type table<string, true>
+local granted = {}
+
+---The allow-list, or `nil` when the machine is unrestricted.
+---@return string[]|nil
+function M.allowed()
+  local cfg = require("ai.config").get()
+  local list = cfg.policy and cfg.policy.allowed
+  if type(list) ~= "table" or #list == 0 then
+    return nil
+  end
+  return vim.deepcopy(list)
+end
+
+---@return boolean
+function M.restricted()
+  return M.allowed() ~= nil
+end
+
+---Whether `id` may answer a request.
+---@param id string
+---@param req? Ai.Request  a request carrying `allow_unlisted = true` passes
+---@return boolean
+function M.is_allowed(id, req)
+  if req and req.allow_unlisted == true then
+    return true
+  end
+  if granted[id] then
+    return true
+  end
+  local list = M.allowed()
+  if not list then
+    return true
+  end
+  return vim.tbl_contains(list, id)
+end
+
+---Whether `id` is on the allow-list itself (a session grant or a per-request
+---`allow_unlisted` does not count). `true` when the machine is unrestricted.
+---@param id string
+---@return boolean
+function M.is_listed(id)
+  local list = M.allowed()
+  if not list then
+    return true
+  end
+  return vim.tbl_contains(list, id)
+end
+
+---`order` reduced to the entries `req` may use, in the same order.
+---@param order string[]
+---@param req? Ai.Request
+---@return string[]
+function M.filter(order, req)
+  local out = {}
+  for _, id in ipairs(order or {}) do
+    if M.is_allowed(id, req) then
+      out[#out + 1] = id
+    end
+  end
+  return out
+end
+
+---Allow `id` for the rest of this session although it is not listed. The
+---caller is responsible for having asked the user.
+---@param id string
+---@return nil
+function M.grant(id)
+  granted[id] = true
+end
+
+---Forget every session grant.
+---@return nil
+function M.reset()
+  granted = {}
+end
+
+---Ids granted for this session that are not on the allow-list, sorted.
+---@return string[]
+function M.granted()
+  local out = {}
+  for id in pairs(granted) do
+    if not M.is_listed(id) then
+      out[#out + 1] = id
+    end
+  end
+  table.sort(out)
+  return out
+end
+
+---One-line wording for an error or a notification.
+---@return string
+function M.describe()
+  local list = M.allowed()
+  if not list then
+    return "no restriction"
+  end
+  return "allowed: " .. table.concat(list, ", ")
+end
+
+return M

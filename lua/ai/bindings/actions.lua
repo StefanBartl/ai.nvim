@@ -273,19 +273,64 @@ end
 function M.info()
   local cfg = require("ai").config()
   local providers = require("ai.providers")
+  local policy = require("ai.policy")
 
   local lines = {
     "provider: " .. cfg.provider,
     "provider_order: " .. table.concat(cfg.provider_order, ", "),
-    "",
+    "policy: " .. policy.describe(),
   }
+  for _, id in ipairs(policy.granted()) do
+    lines[#lines + 1] = ("  session grant outside the list: %s"):format(id)
+  end
+  lines[#lines + 1] = ""
   for _, id in ipairs(providers.ids()) do
     local p = providers.get(id)
     local avail = p and type(p.available) == "function" and p.available()
-    lines[#lines + 1] = string.format("  %s: %s", id, avail and "available" or "not available")
+    local flag = ""
+    if policy.restricted() and not policy.is_listed(id) then
+      flag = policy.is_allowed(id) and " [outside the allow-list, granted]" or " [not allowed]"
+    end
+    lines[#lines + 1] =
+      string.format("  %s: %s%s", id, avail and "available" or "not available", flag)
   end
 
   require("ui.kit").popup({ type = "viewer", title = "Ai info", lines = lines })
+end
+
+---`:Ai provider <name>`. A provider on the machine's allow-list (or any
+---provider, when there is none) is set at once. One outside it is a deliberate
+---step, not an accident: the user is asked, and a yes allows it for this
+---session only (`ai.policy.grant`) -- nothing is written anywhere, the next
+---Neovim starts back inside the list.
+---@param name string
+---@return nil
+function M.set_provider(name)
+  local policy = require("ai.policy")
+  local config = require("ai.config")
+  local notify = require("lib.nvim.notify").create("[ai]")
+
+  if policy.is_listed(name) then
+    config.set_provider(name)
+    notify.info("provider set to " .. name)
+    return
+  end
+
+  require("ui.kit").confirm({
+    question = ("'%s' is not on this machine's allow-list (%s).\nUse it anyway, for this session only?"):format(
+      name,
+      policy.describe()
+    ),
+    on_answer = function(yes)
+      if not yes then
+        notify.warn("provider unchanged")
+        return
+      end
+      policy.grant(name)
+      config.set_provider(name)
+      notify.warn(("provider set to %s (outside the allow-list, this session only)"):format(name))
+    end,
+  })
 end
 
 return M

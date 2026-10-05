@@ -1,0 +1,458 @@
+-- Test doubles implement only the `Ai.Provider` fields each test exercises, same
+-- as providers_spec.lua. need-check-nil is suppressed: the test body is the guard.
+---@diagnostic disable: missing-fields, need-check-nil
+
+describe("ai.policy", function()
+  local function reload()
+    for _, name in ipairs({ "ai.config", "ai.policy", "ai.providers", "ai" }) do
+      package.loaded[name] = nil
+    end
+  end
+
+  ---@param id string
+  ---@param available? boolean
+  local function fake(id, available)
+    return {
+      id = id,
+      available = function()
+        return available ~= false
+      end,
+    }
+  end
+
+  ---@param providers table
+  ---@param ids string[]
+  local function register_all(providers, ids)
+    for _, id in ipairs(ids) do
+      providers.register(fake(id))
+    end
+  end
+
+  before_each(reload)
+  after_each(reload)
+
+  describe("the allow-list itself", function()
+    it("is unrestricted by default: every id is allowed and allowed() is nil", function()
+      require("ai.config").setup({})
+      local policy = require("ai.policy")
+      assert.is_nil(policy.allowed())
+      assert.is_false(policy.restricted())
+      assert.is_true(policy.is_allowed("gemini"))
+      assert.are.equal("no restriction", policy.describe())
+    end)
+
+    it("treats an empty allowed list as no restriction", function()
+      require("ai.config").setup({ policy = { allowed = {} } })
+      assert.is_false(require("ai.policy").restricted())
+    end)
+
+    it("restricts to exactly the listed ids", function()
+      require("ai.config").setup({ policy = { allowed = { "copilot", "claude" } } })
+      local policy = require("ai.policy")
+      assert.is_true(policy.restricted())
+      assert.is_true(policy.is_allowed("claude"))
+      assert.is_true(policy.is_allowed("copilot"))
+      assert.is_false(policy.is_allowed("gemini"))
+      assert.are.equal("allowed: copilot, claude", policy.describe())
+    end)
+
+    it("allowed() returns a copy: changing it changes nothing", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      local policy = require("ai.policy")
+      table.insert(policy.allowed(), "gemini")
+      assert.is_false(policy.is_allowed("gemini"))
+    end)
+
+    it("does not check ids against the registry: an id may be listed before it exists", function()
+      require("ai.config").setup({ policy = { allowed = { "copilot" } } })
+      assert.is_true(require("ai.policy").is_allowed("copilot"))
+    end)
+
+    it("filter() keeps the order and drops what is not allowed", function()
+      require("ai.config").setup({ policy = { allowed = { "gemini", "claude" } } })
+      local policy = require("ai.policy")
+      assert.are.same({ "claude", "gemini" }, policy.filter({ "claude", "ollama", "gemini" }))
+    end)
+
+    it("a request with allow_unlisted passes for any id; without it nothing changes", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      local policy = require("ai.policy")
+      assert.is_true(policy.is_allowed("gemini", { prompt = "x", allow_unlisted = true }))
+      assert.is_false(policy.is_allowed("gemini", { prompt = "x" }))
+      assert.is_false(policy.is_allowed("gemini", { prompt = "x", allow_unlisted = false }))
+    end)
+
+    it("grant() allows an id for the session and reset() takes it back", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      local policy = require("ai.policy")
+      policy.grant("gemini")
+      assert.is_true(policy.is_allowed("gemini"))
+      assert.is_false(policy.is_listed("gemini"))
+      assert.are.same({ "gemini" }, policy.granted())
+      policy.reset()
+      assert.is_false(policy.is_allowed("gemini"))
+      assert.are.same({}, policy.granted())
+    end)
+
+    it("granted() does not list an id that is on the allow-list anyway", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      local policy = require("ai.policy")
+      policy.grant("claude")
+      assert.are.same({}, policy.granted())
+    end)
+  end)
+
+  describe("provider resolution", function()
+    it("auto skips an available provider that the policy does not allow", function()
+      require("ai.config").setup({ policy = { allowed = { "second" } } })
+      local providers = require("ai.providers")
+      register_all(providers, { "first", "second" })
+      local p, err = providers.resolve("auto", { "first", "second" })
+      assert.is_nil(err)
+      assert.are.equal("second", p.id)
+    end)
+
+    it("auto behaves exactly as before without a policy", function()
+      require("ai.config").setup({})
+      local providers = require("ai.providers")
+      register_all(providers, { "first", "second" })
+      local p = providers.resolve("auto", { "first", "second" })
+      assert.are.equal("first", p.id)
+    end)
+
+    it("auto with no allowed provider in the order fails and names the policy", function()
+      require("ai.config").setup({ policy = { allowed = { "copilot" } } })
+      local providers = require("ai.providers")
+      register_all(providers, { "first" })
+      local p, err = providers.resolve("auto", { "first" })
+      assert.is_nil(p)
+      assert.are.equal("provider_resolution", err.kind)
+      assert.are.equal("policy", err.data.reason)
+      assert.is_truthy(err.message:find("allowed: copilot", 1, true))
+    end)
+
+    it("auto lists in the error only the providers it was allowed to check", function()
+      require("ai.config").setup({ policy = { allowed = { "second" } } })
+      local providers = require("ai.providers")
+      providers.register(fake("first", true))
+      providers.register(fake("second", false))
+      local p, err = providers.resolve("auto", { "first", "second" })
+      assert.is_nil(p)
+      assert.are.same({ "second" }, err.data.checked)
+    end)
+
+    it("an explicit id outside the list is refused before availability is asked", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      local providers = require("ai.providers")
+      local asked = false
+      providers.register({
+        id = "other",
+        available = function()
+          asked = true
+          return true
+        end,
+      })
+      local p, err = providers.resolve("other", { "other" })
+      assert.is_nil(p)
+      assert.are.equal("provider_resolution", err.kind)
+      assert.are.equal("policy", err.data.reason)
+      assert.are.equal("other", err.data.id)
+      assert.are.same({ "claude" }, err.data.allowed)
+      assert.is_false(asked)
+    end)
+
+    it("an explicit id outside the list passes with allow_unlisted", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      local providers = require("ai.providers")
+      register_all(providers, { "other" })
+      local p, err = providers.resolve(
+        "other",
+        { "other" },
+        { prompt = "x", allow_unlisted = true }
+      )
+      assert.is_nil(err)
+      assert.are.equal("other", p.id)
+    end)
+
+    it("an explicit id outside the list passes after a session grant", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      local providers = require("ai.providers")
+      register_all(providers, { "other" })
+      require("ai.policy").grant("other")
+      local p = providers.resolve("other", { "other" })
+      assert.are.equal("other", p.id)
+    end)
+
+    it("an unknown id still reports 'unknown provider', not the policy", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      local providers = require("ai.providers")
+      register_all(providers, { "claude" })
+      local _, err = providers.resolve("nope", {})
+      assert.is_truthy(err.message:find("unknown provider", 1, true))
+    end)
+  end)
+
+  describe("require('ai')", function()
+    it("ask() fails with provider_resolution for a refused provider and never calls it", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      local called = false
+      require("ai.providers").register({
+        id = "other",
+        available = function()
+          return true
+        end,
+        ask = function()
+          called = true
+        end,
+      })
+      local ok, err
+      require("ai").ask({ prompt = "hi", provider = "other" }, function(a, b)
+        ok, err = a, b
+      end)
+      assert.is_false(ok)
+      assert.are.equal("provider_resolution", err.kind)
+      assert.are.equal("policy", err.data.reason)
+      assert.is_false(called)
+    end)
+
+    it("ask() reaches the provider when the request says allow_unlisted", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      require("ai.providers").register({
+        id = "other",
+        available = function()
+          return true
+        end,
+        ask = function(_, cb)
+          cb(true, { text = "ok", provider = "other" })
+        end,
+      })
+      local ok, res
+      require("ai").ask({ prompt = "hi", provider = "other", allow_unlisted = true }, function(a, b)
+        ok, res = a, b
+      end)
+      assert.is_true(ok)
+      assert.are.equal("other", res.provider)
+    end)
+
+    it("stream() reports a refused provider through on_error", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      register_all(require("ai.providers"), { "other" })
+      local err
+      require("ai").stream({ prompt = "hi", provider = "other" }, {
+        on_error = function(e)
+          err = e
+        end,
+      })
+      assert.are.equal("policy", err.data.reason)
+    end)
+
+    it("policy() reports the list, the restriction and the session grants, as a copy", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      require("ai.policy").grant("gemini")
+      local p = require("ai").policy()
+      assert.is_true(p.restricted)
+      assert.are.same({ "claude" }, p.allowed)
+      assert.are.same({ "gemini" }, p.granted)
+      table.insert(p.allowed, "x")
+      assert.are.same({ "claude" }, require("ai").policy().allowed)
+    end)
+
+    it("policy() on an unrestricted machine has allowed = nil", function()
+      require("ai.config").setup({})
+      local p = require("ai").policy()
+      assert.is_false(p.restricted)
+      assert.is_nil(p.allowed)
+    end)
+  end)
+
+  describe("config", function()
+    local original_notify
+
+    before_each(function()
+      original_notify = vim.notify
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+    end)
+
+    it("accepts policy.allowed without any unknown-key warning", function()
+      local warnings = {}
+      vim.notify = function(msg)
+        warnings[#warnings + 1] = msg
+      end
+      local config = require("ai.config")
+      config.setup({ policy = { allowed = { "copilot", "claude" } } })
+      assert.are.same({}, warnings)
+      assert.are.same({}, config.issues())
+      assert.are.same({ "copilot", "claude" }, config.get().policy.allowed)
+    end)
+
+    it("drops a wrong-typed policy.allowed to the default and records an issue", function()
+      local config = require("ai.config")
+      config.setup({ policy = { allowed = "claude" } })
+      assert.are.same({}, config.get().policy.allowed)
+      assert.are.equal(1, #config.issues())
+      assert.is_truthy(config.issues()[1]:find("policy.allowed", 1, true))
+    end)
+
+    it("still warns about a typo'd key inside policy", function()
+      local warnings = {}
+      vim.notify = function(msg)
+        warnings[#warnings + 1] = msg
+      end
+      require("ai.config").setup({ policy = { alowed = { "claude" } } })
+      assert.is_true(#warnings >= 1)
+      assert.is_truthy(warnings[1]:find("policy.alowed", 1, true))
+    end)
+  end)
+
+  describe(":Ai provider and :Ai info", function()
+    local notices, popup_lines, confirm_answer
+    local saved_kit, saved_notify
+
+    before_each(function()
+      notices, popup_lines = {}, nil
+      saved_kit = package.loaded["ui.kit"]
+      saved_notify = package.loaded["lib.nvim.notify"]
+      package.loaded["ui.kit"] = {
+        confirm = function(opts)
+          opts.on_answer(confirm_answer)
+        end,
+        popup = function(opts)
+          popup_lines = opts.lines
+        end,
+      }
+      package.loaded["lib.nvim.notify"] = {
+        create = function()
+          return {
+            info = function(m)
+              notices[#notices + 1] = "info: " .. m
+            end,
+            warn = function(m)
+              notices[#notices + 1] = "warn: " .. m
+            end,
+          }
+        end,
+      }
+      package.loaded["ai.bindings.actions"] = nil
+    end)
+
+    after_each(function()
+      package.loaded["ui.kit"] = saved_kit
+      package.loaded["lib.nvim.notify"] = saved_notify
+      package.loaded["ai.bindings.actions"] = nil
+    end)
+
+    it("sets a listed provider at once, without asking", function()
+      confirm_answer = nil
+      local config = require("ai.config")
+      config.setup({ policy = { allowed = { "claude", "copilot" } } })
+      require("ai.bindings.actions").set_provider("copilot")
+      assert.are.equal("copilot", config.get().provider)
+      assert.are.same({ "info: provider set to copilot" }, notices)
+    end)
+
+    it("sets any provider at once when there is no allow-list", function()
+      local config = require("ai.config")
+      config.setup({})
+      require("ai.bindings.actions").set_provider("gemini")
+      assert.are.equal("gemini", config.get().provider)
+    end)
+
+    it("asks before switching to an unlisted provider and grants it only on yes", function()
+      confirm_answer = true
+      local config = require("ai.config")
+      config.setup({ provider = "claude", policy = { allowed = { "claude" } } })
+      require("ai.bindings.actions").set_provider("gemini")
+      assert.are.equal("gemini", config.get().provider)
+      assert.is_true(require("ai.policy").is_allowed("gemini"))
+      assert.is_truthy(notices[1]:find("this session only", 1, true))
+    end)
+
+    it("leaves everything unchanged when the confirmation is declined", function()
+      confirm_answer = false
+      local config = require("ai.config")
+      config.setup({ provider = "claude", policy = { allowed = { "claude" } } })
+      require("ai.bindings.actions").set_provider("gemini")
+      assert.are.equal("claude", config.get().provider)
+      assert.is_false(require("ai.policy").is_allowed("gemini"))
+      assert.are.same({ "warn: provider unchanged" }, notices)
+    end)
+
+    it("info shows the policy and marks providers outside it", function()
+      local config = require("ai.config")
+      config.setup({ policy = { allowed = { "claude" } } })
+      local providers = require("ai.providers")
+      register_all(providers, { "claude", "gemini" })
+      require("ai.bindings.actions").info()
+      local text = table.concat(popup_lines, "\n")
+      assert.is_truthy(text:find("policy: allowed: claude", 1, true))
+      assert.is_truthy(text:find("gemini: available [not allowed]", 1, true))
+      assert.is_nil(text:find("claude: available [", 1, true))
+    end)
+
+    it("info says there is no restriction when there is no allow-list", function()
+      require("ai.config").setup({})
+      require("ai.bindings.actions").info()
+      assert.is_truthy(table.concat(popup_lines, "\n"):find("policy: no restriction", 1, true))
+    end)
+  end)
+
+  describe(":checkhealth", function()
+    local report, saved
+
+    before_each(function()
+      report = {}
+      saved = {}
+      for _, fn in ipairs({ "start", "ok", "info", "warn", "error" }) do
+        saved[fn] = vim.health[fn]
+        vim.health[fn] = function(msg)
+          report[#report + 1] = fn .. ": " .. tostring(msg)
+        end
+      end
+    end)
+
+    after_each(function()
+      for fn, original in pairs(saved) do
+        vim.health[fn] = original
+      end
+    end)
+
+    ---@param needle string
+    ---@return boolean
+    local function reported(needle)
+      for _, line in ipairs(report) do
+        if line:find(needle, 1, true) then
+          return true
+        end
+      end
+      return false
+    end
+
+    it("says there is no allow-list on an unrestricted machine", function()
+      require("ai.config").setup({})
+      package.loaded["ai.health"] = nil
+      require("ai.health").check()
+      assert.is_true(reported("no allow-list"))
+    end)
+
+    it(
+      "warns when provider, completion.provider or the auto order fall outside the list",
+      function()
+        require("ai.config").setup({
+          provider = "gemini",
+          provider_order = { "gemini" },
+          completion = { provider = "ollama" },
+          policy = { allowed = { "claude", "copilot" } },
+        })
+        package.loaded["ai.health"] = nil
+        require("ai.health").check()
+        assert.is_true(reported('provider = "gemini" is not on the allow-list'))
+        assert.is_true(reported('completion.provider = "ollama" is not on the allow-list'))
+        assert.is_true(reported("provider_order shares no entry with the allow-list"))
+        assert.is_true(reported("copilot: listed, but no provider with that id is registered"))
+      end
+    )
+  end)
+end)

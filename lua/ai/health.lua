@@ -126,6 +126,49 @@ function M.check()
     vim.health.warn(issue, { "Check the provider's current docs for supported model ids" })
   end
 
+  -- ── Policy ──────────────────────────────────────────────────────────────
+  vim.health.start("ai.nvim: provider policy")
+  local policy = require("ai.policy")
+  if not policy.restricted() then
+    vim.health.info("no allow-list (config.policy.allowed is empty) -- every provider may be used")
+  else
+    local allowed = policy.allowed() or {}
+    vim.health.info("allowed = " .. table.concat(allowed, ", "))
+    for _, id in ipairs(allowed) do
+      if not providers.get(id) then
+        vim.health.info(id .. ": listed, but no provider with that id is registered (yet)")
+      end
+    end
+    if cfg.provider ~= "auto" and not policy.is_listed(cfg.provider) then
+      vim.health.warn(
+        ("provider = %q is not on the allow-list -- requests that use it are refused"):format(
+          cfg.provider
+        ),
+        { "Set provider to one of: " .. table.concat(allowed, ", ") }
+      )
+    end
+    local completion_provider = cfg.completion and cfg.completion.provider
+    if completion_provider and not policy.is_listed(completion_provider) then
+      vim.health.warn(
+        ("completion.provider = %q is not on the allow-list -- completion requests are refused"):format(
+          completion_provider
+        ),
+        { "Set completion.provider to one of: " .. table.concat(allowed, ", ") }
+      )
+    end
+    if #policy.filter(cfg.provider_order) == 0 then
+      vim.health.warn(
+        'provider_order shares no entry with the allow-list -- provider = "auto" can never resolve',
+        { "Add an allowed provider to provider_order" }
+      )
+    end
+    for _, id in ipairs(policy.granted()) do
+      vim.health.warn(
+        id .. ": allowed for this session outside the allow-list (a confirmed :Ai provider)"
+      )
+    end
+  end
+
   -- ── Completion ──────────────────────────────────────────────────────────
   vim.health.start("ai.nvim: completion")
   if not cfg.completion or not cfg.completion.enable then

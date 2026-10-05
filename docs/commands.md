@@ -6,8 +6,8 @@
 :[range]Ai rewrite [prompt?]      -- replace the range with AI-generated code (default: current line)
 :[range]Ai append [prompt?]       -- insert AI-generated code after the range (default: current line)
 :[range]Ai prepend [prompt?]      -- insert AI-generated code before the range (default: current line)
-:Ai provider <name>               -- switch the active provider (Tab-completes registered ids)
-:Ai info                          -- active provider, resolution order, per-provider availability
+:Ai provider <name>               -- switch the active provider (Tab-completes registered ids); outside policy.allowed it asks first
+:Ai info                          -- active provider, resolution order, provider policy, per-provider availability
 ```
 
 Bare `:Ai [prompt?]` is the same as `:Ai ask [prompt?]`.
