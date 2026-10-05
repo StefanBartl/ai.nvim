@@ -152,6 +152,11 @@ local function env_reads(source)
   for name in source:gmatch('env_value%("([%u%d_]+)"') do
     names[#names + 1] = name
   end
+  -- A provider whose key may come from a named profile asks `ai.keys`, passing
+  -- its own variable as the default.
+  for name in source:gmatch('keys"%)%.get%("[%w_%-]+", "([%u%d_]+)"') do
+    names[#names + 1] = name
+  end
   return names
 end
 

@@ -103,6 +103,7 @@ DEFAULTS.lua` is the source of truth. >lua
     policy = {
       allowed = {},                           -- provider ids this machine may use; empty = no restriction
     },
+    keys = {},                                -- named API-key profiles per provider; empty = each provider's own variable
     model = {},                               -- e.g. { claude = "claude-opus-4-5" }
     timeout_ms = 60000,
 
@@ -177,6 +178,30 @@ The list is not checked against the registry, so an id may be listed before
 its provider exists. Plugins on top of ai.nvim read it with |ai.policy()| and
 may restrict further, never widen it.
 
+Key profiles ~
+                                                                    *ai-keys*
+More than one credential for the same provider -- a private key now, a company
+account later: `keys` names them per provider and says where each comes from,
+`:Ai key {profile}` picks one for the session. >lua
+
+  keys = {
+    claude = {
+      active = "private",                   -- in force at startup (optional)
+      profiles = {
+        private = { env = "PRIVATEKEY" },   -- a variable name
+        company = { file = "~/.config/ai/company.key" },
+      },
+    },
+  }
+<
+A profile has exactly one source: `env` (a variable name) or `file` (a path;
+the first non-empty line, re-read when the file changes). Without `keys`
+nothing changes. A chosen profile never falls back to the provider's default
+variable: with an empty source the request fails (`missing_api_key`, naming
+the profile). Keys are never printed -- `:Ai info`, `:Ai key` and |:checkhealth|
+show profile, source kind and "key present"/"KEY MISSING" only. The switch is
+for the session; nothing is written.
+
 ==============================================================================
 5. COMMANDS                                                     *ai-commands*
 
@@ -211,6 +236,11 @@ may restrict further, never widen it.
   Switch the active provider. `<Tab>`-completes registered ids. A provider
   outside `policy.allowed` (|ai-policy|) asks first; a yes allows it for
   this session only.
+
+:Ai key [{profile}|reset] [{provider}]                              *:Ai-key*
+  Choose the API-key profile (|ai-keys|) for this session on every provider
+  that defines it, or only on {provider}. `reset` returns to the configured
+  `active` profile / the provider's own variable; no argument shows the setup.
 
 :Ai info                                                          *:Ai-info*
   Show the active provider, resolution order, the provider policy, and

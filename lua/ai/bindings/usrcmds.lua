@@ -35,6 +35,17 @@ function M.setup()
   -- closed set that in practice only grows at startup (see NEW-26); the
   -- built-ins are always present.
   local provider_ids = require("ai.providers").ids()
+  -- Same registration-time snapshot for the profile names of `config.keys`.
+  local key_names, seen = { "reset" }, { reset = true }
+  local keys = require("ai.keys")
+  for _, id in ipairs(keys.providers()) do
+    for _, name in ipairs(keys.profiles(id)) do
+      if not seen[name] then
+        seen[name] = true
+        key_names[#key_names + 1] = name
+      end
+    end
+  end
 
   composer.verb("Ai", {
     desc = "Ask or stream a prompt to the active AI provider",
@@ -102,6 +113,18 @@ function M.setup()
         run = function(ctx)
           warn_if_ranged(ctx)
           actions.set_provider(ctx.args.name)
+        end,
+      },
+      {
+        path = { "key" },
+        args = {
+          { name = "profile", type = "STRING", optional = true, enum = key_names },
+          { name = "provider", type = "STRING", optional = true, enum = provider_ids },
+        },
+        desc = "Choose the API-key profile for this session (reset = back to the configured one)",
+        run = function(ctx)
+          warn_if_ranged(ctx)
+          actions.set_key(ctx.args.profile, ctx.args.provider)
         end,
       },
       {

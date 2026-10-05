@@ -169,6 +169,27 @@ function M.check()
     end
   end
 
+  -- ── Keys ────────────────────────────────────────────────────────────────
+  vim.health.start("ai.nvim: key profiles")
+  local keys = require("ai.keys")
+  local key_issues = keys.issues()
+  if #key_issues == 0 and #keys.providers() == 0 then
+    vim.health.info(
+      "no key profiles (config.keys is empty) -- each provider reads its own variable"
+    )
+  end
+  for _, issue in ipairs(key_issues) do
+    vim.health.warn(issue)
+  end
+  for _, id in ipairs(keys.providers()) do
+    local line = ("%s: %s"):format(id, keys.describe(id))
+    if line:find("KEY MISSING", 1, true) then
+      vim.health.warn(line, { "Set the variable or create the file the profile names" })
+    else
+      vim.health.ok(line)
+    end
+  end
+
   -- ── Completion ──────────────────────────────────────────────────────────
   vim.health.start("ai.nvim: completion")
   if not cfg.completion or not cfg.completion.enable then

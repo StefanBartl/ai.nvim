@@ -283,6 +283,10 @@ function M.info()
   for _, id in ipairs(policy.granted()) do
     lines[#lines + 1] = ("  session grant outside the list: %s"):format(id)
   end
+  local keys = require("ai.keys")
+  for _, id in ipairs(keys.providers()) do
+    lines[#lines + 1] = ("keys.%s: %s"):format(id, keys.describe(id))
+  end
   lines[#lines + 1] = ""
   for _, id in ipairs(providers.ids()) do
     local p = providers.get(id)
@@ -296,6 +300,47 @@ function M.info()
   end
 
   require("ui.kit").popup({ type = "viewer", title = "Ai info", lines = lines })
+end
+
+---`:Ai key [<profile>|reset] [<provider>]`. Chooses the API-key profile for the
+---session on every provider that defines it (or only on `<provider>`); `reset`
+---returns to the configured `active` profile / the default variable; no
+---argument shows the setup. Session only, nothing is written. Never prints a key.
+---@param profile? string
+---@param provider? string
+---@return nil
+function M.set_key(profile, provider)
+  local keys = require("ai.keys")
+  local notify = require("lib.nvim.notify").create("[ai]")
+  if not profile then
+    local lines = {}
+    for _, id in ipairs(keys.providers()) do
+      lines[#lines + 1] = ("%s: %s  [profiles: %s]"):format(
+        id,
+        keys.describe(id),
+        table.concat(keys.profiles(id), ", ")
+      )
+    end
+    if #lines == 0 then
+      lines[1] =
+        "no key profiles configured (config.keys is empty) -- providers use their own variable"
+    end
+    require("ui.kit").popup({ type = "viewer", title = "Ai keys", lines = lines })
+    return
+  end
+  if profile == "reset" then
+    keys.reset(provider)
+    notify.info("key profile reset" .. (provider and (" for " .. provider) or ""))
+    return
+  end
+  local switched = keys.use(profile, provider)
+  if #switched == 0 then
+    notify.warn(("no provider defines a key profile '%s'"):format(profile))
+    return
+  end
+  notify.info(
+    ("key profile '%s' for %s (this session)"):format(profile, table.concat(switched, ", "))
+  )
 end
 
 ---`:Ai provider <name>`. A provider on the machine's allow-list (or any
