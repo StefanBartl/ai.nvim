@@ -34,6 +34,17 @@ provider talking to loomAI's own `/ask`/`/ask/stream` endpoints, nothing more
 -- it does not expose, and will never expose, loomAI's dashboard, sandbox, or
 decision-queue machinery through this interface.
 
+`claude-cli` (`lua/ai/providers/claude_cli.lua`) is the other registered
+provider that is not an HTTP API: it runs `claude -p` as a child process and
+returns its text. The reason it exists is the *credential* -- the CLI uses the
+account it is logged in as (a subscription login, a company account), so
+nothing about keys is configured in ai.nvim and switching accounts is
+`claude auth login` outside of Neovim. It is deliberately a chat endpoint and
+nothing more: no tools, no hooks or plugins (`--safe-mode`), no session
+persistence, a neutral working directory, the prompt on stdin, and the CLI's
+credential variables removed from the child's environment. It is opt-in (not in
+`provider_order`) and, like every provider, subject to `policy.allowed`.
+
 ## The allow-list narrows, it never widens
 
 `policy.allowed` (see [configuration.md](configuration.md#provider-policy)) is

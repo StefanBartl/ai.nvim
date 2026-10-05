@@ -64,7 +64,7 @@ M.KNOWN = {
 ---catalogue but hasn't been filled in yet fails loudly in review/tests
 ---instead of silently behaving like `ollama`/`loomai`.
 ---@type table<string, true>
-M.OPEN_ENDED = { ollama = true, loomai = true }
+M.OPEN_ENDED = { ollama = true, loomai = true, ["claude-cli"] = true }
 
 ---Whether `provider_id` has a fixed catalogue at all in this registry.
 ---False for an open-ended (local) provider, and false for any id this

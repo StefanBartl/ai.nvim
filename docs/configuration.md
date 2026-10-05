@@ -5,7 +5,7 @@ truth; this table mirrors it):
 
 ```lua
 require("ai").setup({
-  provider = "auto",                         -- "auto" | "claude" | "ollama" | "openai" | "gemini" | "loomai" | a custom id
+  provider = "auto",                         -- "auto" | "claude" | "ollama" | "openai" | "gemini" | "loomai" | "claude-cli" | a custom id
   provider_order = { "claude", "ollama", "openai", "gemini", "loomai" }, -- "auto" resolution order; "loomai" last, see docs/scope.md
   policy = {
     allowed = {},                             -- provider ids this machine may use; empty = no restriction, see "Provider policy"

@@ -27,6 +27,7 @@ local BUILTIN = {
   { id = "openai", module = "ai.providers.openai" },
   { id = "gemini", module = "ai.providers.gemini" },
   { id = "loomai", module = "ai.providers.loomai" },
+  { id = "claude-cli", module = "ai.providers.claude_cli" },
 }
 
 ---@type table<string, Ai.Provider>

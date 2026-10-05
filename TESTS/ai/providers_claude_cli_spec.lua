@@ -1,0 +1,196 @@
+-- The provider is exercised against a fake `claude` (fixtures/fake_claude.lua,
+-- run through the test Neovim itself), so these specs cover what ai.nvim does
+-- -- argv, stdin, environment, event parsing, error mapping -- without a
+-- network, an account or a billing balance. The fake mirrors the documented
+-- stream-json shape; it is not a recording of a successful live call.
+---@diagnostic disable: need-check-nil
+local FAKE = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h")
+  .. "/fixtures/fake_claude.lua"
+
+describe("ai.providers.claude_cli", function()
+  local cli, saved_key, saved_token
+
+  ---Run `ask` and wait for the callback.
+  local function ask(req)
+    local ok, res
+    cli.ask(req, function(a, b)
+      ok, res = a, b
+    end)
+    assert.is_true(vim.wait(15000, function()
+      return ok ~= nil
+    end, 20))
+    return ok, res
+  end
+
+  local function index_of(list, value)
+    for i, v in ipairs(list) do
+      if v == value then
+        return i
+      end
+    end
+  end
+
+  before_each(function()
+    package.loaded["ai.providers.claude_cli"] = nil
+    cli = require("ai.providers.claude_cli")
+    cli.command = { vim.v.progpath, "-u", "NONE", "-l", FAKE }
+    saved_key, saved_token = vim.env.ANTHROPIC_API_KEY, vim.env.ANTHROPIC_AUTH_TOKEN
+  end)
+
+  after_each(function()
+    vim.env.ANTHROPIC_API_KEY, vim.env.ANTHROPIC_AUTH_TOKEN = saved_key, saved_token
+    package.loaded["ai.providers.claude_cli"] = nil
+  end)
+
+  it("is registered as an opt-in built-in without attachment support", function()
+    local providers = require("ai.providers")
+    providers.load_builtin()
+    assert.is_truthy(providers.get("claude-cli"))
+    assert.is_false(cli.capabilities.vision)
+    assert.is_false(cli.capabilities.documents)
+    assert.is_false(vim.tbl_contains(require("ai.config.DEFAULTS").provider_order, "claude-cli"))
+  end)
+
+  it("is available exactly when its command is on PATH", function()
+    assert.is_true(cli.available())
+    cli.command = { "definitely-not-a-claude-binary-xyz" }
+    assert.is_false(cli.available())
+  end)
+
+  it("ask returns the streamed text and the provider id", function()
+    local ok, res = ask({ prompt = "OK please" })
+    assert.is_true(ok)
+    assert.are.equal("Hello", res.text)
+    assert.are.equal("claude-cli", res.provider)
+    assert.are.same({ output_tokens = 2 }, res.usage)
+  end)
+
+  it("stream delivers each delta in order, then done with the whole text", function()
+    local chunks, done = {}, nil
+    cli.stream({ prompt = "OK" }, {
+      on_chunk = function(t)
+        chunks[#chunks + 1] = t
+      end,
+      on_done = function(res)
+        done = res
+      end,
+      on_error = function(e)
+        error(vim.inspect(e))
+      end,
+    })
+    assert.is_true(vim.wait(15000, function()
+      return done ~= nil
+    end, 20))
+    assert.are.same({ "Hel", "lo" }, chunks)
+    assert.are.equal("Hello", done.text)
+  end)
+
+  it("falls back to the assistant/result text when no partial events arrive", function()
+    local ok, res = ask({ prompt = "NOPARTIAL" })
+    assert.is_true(ok)
+    assert.are.equal("whole answer", res.text)
+  end)
+
+  describe("what the child process gets", function()
+    local function echo(req)
+      req.prompt = "ECHO\n" .. (req.prompt or "")
+      local ok, res = ask(req)
+      assert.is_true(ok)
+      return vim.json.decode(res.text)
+    end
+
+    it("receives the prompt on stdin and never in argv", function()
+      local info = echo({ prompt = "secret customer text" })
+      assert.is_truthy(info.stdin:find("secret customer text", 1, true))
+      for _, a in ipairs(info.argv) do
+        assert.is_nil(a:find("secret customer text", 1, true))
+      end
+    end)
+
+    it("prefixes the system text onto stdin", function()
+      local info = echo({ prompt = "q", system = "be brief" })
+      assert.is_truthy(info.stdin:find("be brief", 1, true))
+    end)
+
+    it("runs without tools, hooks or session state", function()
+      local info = echo({})
+      for _, flag in ipairs({
+        "-p",
+        "--safe-mode",
+        "--no-session-persistence",
+        "--disable-slash-commands",
+        "stream-json",
+        "--include-partial-messages",
+      }) do
+        assert.is_truthy(index_of(info.argv, flag), "missing " .. flag)
+      end
+      local at = index_of(info.argv, "--tools")
+      assert.is_truthy(at, "--tools missing")
+      assert.are.equal("", info.argv[at + 1])
+    end)
+
+    it("passes --model only when one is requested", function()
+      assert.is_nil(index_of(echo({}).argv, "--model"))
+      local argv = echo({ model = "sonnet" }).argv
+      assert.are.equal("sonnet", argv[index_of(argv, "--model") + 1])
+    end)
+
+    it("removes credential variables so the logged-in account is used", function()
+      vim.env.ANTHROPIC_API_KEY = "sk-test-should-not-leak"
+      vim.env.ANTHROPIC_AUTH_TOKEN = "tok-test-should-not-leak"
+      local info = echo({})
+      assert.is_nil(info.key)
+      assert.is_nil(info.token)
+      assert.is_true(info.path, "the rest of the environment must still reach the child")
+    end)
+
+    it("does not run in the editor's working directory", function()
+      local info = echo({})
+      assert.are_not.equal(vim.uv.cwd(), info.cwd)
+    end)
+  end)
+
+  describe("errors", function()
+    it("maps an is_error result (billing/auth) to api_error carrying its text", function()
+      local ok, err = ask({ prompt = "BILLING" })
+      assert.is_false(ok)
+      assert.are.equal("api_error", err.kind)
+      assert.is_truthy(err.message:find("Credit balance is too low", 1, true))
+    end)
+
+    it("reports a crash without any result event as network_error with stderr", function()
+      local ok, err = ask({ prompt = "CRASH" })
+      assert.is_false(ok)
+      assert.are.equal("network_error", err.kind)
+      assert.is_truthy(err.message:find("boom", 1, true))
+    end)
+
+    it("reports a timeout as such", function()
+      local ok, err = ask({ prompt = "SLEEP", timeout_ms = 800 })
+      assert.is_false(ok)
+      assert.are.equal("timeout", err.kind)
+    end)
+
+    it("rejects an attachment before spawning anything", function()
+      local ok, err = ask({
+        prompt = "OK",
+        attachments = { { kind = "image", media_type = "image/png", data = "AAAA" } },
+      })
+      assert.is_false(ok)
+      assert.are.equal("invalid_request", err.kind)
+    end)
+
+    it("rejects an unsafe model name", function()
+      local ok, err = ask({ prompt = "OK", model = "x; rm -rf /" })
+      assert.is_false(ok)
+      assert.are.equal("invalid_request", err.kind)
+    end)
+
+    it("reports a command that cannot be started", function()
+      cli.command = { "definitely-not-a-claude-binary-xyz" }
+      local ok, err = ask({ prompt = "OK" })
+      assert.is_false(ok)
+      assert.are.equal("network_error", err.kind)
+    end)
+  end)
+end)
