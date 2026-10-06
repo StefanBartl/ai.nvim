@@ -221,8 +221,10 @@ account later: `keys` names them per provider and says where each comes from,
     },
   }
 <
-A profile has exactly one source: `env` (a variable name) or `file` (a path;
-the first non-empty line, re-read when the file changes). Without `keys`
+A profile has exactly one source: `env` (a variable name), `file` (a path;
+the first non-empty line, re-read when the file changes) or `command` (see
+|ai-keys-command|). A key file that does not exist, cannot be read or (on
+POSIX) can be read by group or others is a |:checkhealth| warning. Without `keys`
 nothing changes. A chosen profile never falls back to the provider's default
 variable: with an empty source the request fails (`missing_api_key`, naming
 the profile; `provider = "auto"` does not move on to another provider), and
@@ -233,6 +235,25 @@ UTF-8 (BOM allowed) or UTF-16 with a BOM. Keys are never printed -- `:Ai info`,
 (anything that is not a variable name, or the shape of a vendor key: `AIza...`,
 `gsk_...`, `hf_...`, a bare mixed-case token of 32+ characters). The switch is
 for the session; nothing is written.
+
+                                                            *ai-keys-command*
+A profile can take its key from a command (password manager, secret store): >lua
+
+  firma = {
+    command = { "pass", "show", "anthropic/firma" },  -- argument list, no shell
+    timeout_ms = 10000,                               -- optional
+    cache_ms = 3600000,                               -- optional, default session
+  }
+<
+The command is started directly from the argument list -- a string is refused
+-- asynchronously and with a timeout, never from `available()`: a configured
+command counts as available and `ai.ask`/`ai.stream` run it before the first
+request. The first non-empty line of stdout is the key, kept in memory only
+(`cache_ms`, at least one second, default the whole session; a failed run is
+not cached). stderr is discarded. Errors name the profile and a reason (exit
+code, timeout, no output), never output or an argument; `:Ai info` shows
+`command {executable}` and "key present", "key not fetched yet" or "KEY
+MISSING: reason".
 
 ==============================================================================
 5. COMMANDS                                                     *ai-commands*

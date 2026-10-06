@@ -25,10 +25,13 @@
 ---@field active? string|false Profile in force at startup; must be one of `profiles` (one that is not still counts as chosen and yields no key). `false` or absent = none. A chosen profile never falls back to the provider's default variable.
 ---@field profiles table<string, Ai.KeyProfile>
 
----One credential's source: exactly one of `env` or `file`.
+---One credential's source: exactly one of `env`, `file` or `command`.
 ---@class Ai.KeyProfile
 ---@field env? string Name of an environment variable holding the key
 ---@field file? string Path of a file whose first non-empty line is the key (`~` is expanded; re-read when the file changes)
+---@field command? string[] Argument list of a command whose first non-empty stdout line is the key; started without a shell, asynchronously, cached in memory (see `lua/ai/keys.lua`)
+---@field timeout_ms? integer `command` only: kill the command after this many ms (default 10000)
+---@field cache_ms? integer `command` only: how long the key stays cached (at least 1000; default the whole session)
 
 ---@class Ai.UiOptions
 ---@field enable boolean

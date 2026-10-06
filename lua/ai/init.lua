@@ -172,6 +172,16 @@ local function resolve(req)
   return provider, nil, resolved, context_errors
 end
 
+---@internal
+---True when `provider` takes its key from a command source that has not run
+---yet (or whose cached key expired) and the request brings no key of its own.
+---@param provider Ai.Provider
+---@param req Ai.Request
+---@return boolean
+local function needs_key_fetch(provider, req)
+  return not req.api_key and require("ai.keys").needs_fetch(provider.id)
+end
+
 ---Ask once, non-streaming.
 ---@param req Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
@@ -184,6 +194,17 @@ function M.ask(req, cb)
     return
   end
   warn_context_errors(context_errors)
+  if needs_key_fetch(provider, resolved) then
+    -- A command key source (ai.keys): run it off the UI thread, then go on.
+    require("ai.keys").fetch(provider.id, function(ok, kerr)
+      if ok then
+        provider.ask(resolved, cb)
+      else
+        cb(false, kerr)
+      end
+    end)
+    return
+  end
   provider.ask(resolved, cb)
 end
 
@@ -203,6 +224,30 @@ function M.stream(req, handlers)
     return nil
   end
   warn_context_errors(context_errors)
+  if needs_key_fetch(provider, resolved) then
+    -- The caller gets a handle at once; `kill()` cancels the wait for the key
+    -- or, later, the stream itself.
+    local inner, killed = nil, false
+    local handle = {}
+    function handle.kill(_, signal)
+      killed = true
+      if inner then
+        inner:kill(signal)
+      end
+    end
+    require("ai.keys").fetch(provider.id, function(ok, kerr)
+      if killed then
+        return
+      end
+      if ok then
+        inner = provider.stream(resolved, handlers)
+      elseif handlers.on_error then
+        handlers.on_error(kerr)
+      end
+    end)
+    ---@diagnostic disable-next-line: return-type-mismatch
+    return handle
+  end
   return provider.stream(resolved, handlers)
 end
 

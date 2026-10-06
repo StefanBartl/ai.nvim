@@ -423,8 +423,10 @@ describe("ai.keys", function()
   describe("validation (config issues)", function()
     it("is silent for a good config and for none", function()
       assert.are.same({}, setup({}).issues())
+      local path = write_file("y.key", "k")
+      vim.uv.fs_chmod(path, tonumber("600", 8))
       local keys = setup({
-        claude = { active = "a", profiles = { a = { env = "X" }, b = { file = "y" } } },
+        claude = { active = "a", profiles = { a = { env = "X" }, b = { file = path } } },
       })
       assert.are.same({}, keys.issues())
     end)

@@ -209,8 +209,9 @@ from; `:Ai key <profile>` picks one for the session:
 - A profile has exactly one source: `env` (the name of an environment variable)
   or `file` (a path; `~` is expanded, the file is re-read when it changes; UTF-8
   with or without a BOM, or UTF-16 with a BOM as Windows PowerShell 5.1 writes it).
-  A command or password-manager source is not offered yet -- it needs an
-  asynchronous lookup and is a follow-up.
+  Or `command` (see "Key from a command" below). `:checkhealth ai` warns about a
+  key file that does not exist, cannot be read or (on POSIX) can be read by group
+  or others; on Windows only existence and readability count.
 - **A chosen profile never falls back to the default variable.** If its source
   is empty, the request fails with `missing_api_key` naming the profile; it does
   not quietly send with the other account's key. `provider = "auto"` does not move
@@ -237,6 +238,50 @@ from; `:Ai key <profile>` picks one for the session:
 
 Keys switch the *account*; whether customer data may go to that account at all
 is a policy question (see "Provider policy" and your employer's rules).
+
+### Key from a command
+
+A profile can take its key from a command, for a password manager or a secret
+store, instead of a variable or a file:
+
+```lua
+-- the options passed to setup():
+{
+  keys = {
+    claude = {
+      active = "firma",
+      profiles = {
+        firma = {
+          command = { "pass", "show", "anthropic/firma" },  -- an argument list, never a string
+          timeout_ms = 10000,                               -- optional, default 10000
+          cache_ms = 3600000,                               -- optional, default: the whole session
+        },
+      },
+    },
+  },
+}
+```
+
+- **No shell.** `command` is an argument vector that is started directly, so
+  nothing in it is interpreted by `sh` or `cmd`. A string, an empty list or a
+  list with a non-string is refused (`:checkhealth ai` says so, a request fails).
+- **Never blocks.** The command runs asynchronously with a timeout; a command
+  that waits for input is killed after `timeout_ms`. `ai.ask` and `ai.stream` run
+  it before the first request and go on when it has finished (`:Ai` shows nothing
+  different; a stream returns a handle at once and `kill()` also cancels the wait).
+- **Available without running.** A configured command counts as available, so
+  `provider = "auto"` and `:Ai info` never start it; it runs when a request is
+  made. `:checkhealth ai` only checks that the executable exists.
+- **Cached in memory, never written.** The key lives in memory for `cache_ms`
+  (at least one second; default the whole session). A failed run is not cached.
+  Requests that arrive while it runs share one run. A per-request `api_key` skips
+  the command.
+- **First non-empty line of stdout is the key.** stderr is discarded. An error
+  (`missing_api_key`) names the profile and a reason (`exited with code 3`,
+  `timed out after 10000 ms`, `printed no key`, `executable not found`), never
+  output and never an argument. `:Ai info`, `:Ai key` and `:checkhealth ai` show
+  `command <executable name>` and "key present", "key not fetched yet" or
+  "KEY MISSING: reason" -- not the arguments, since one may be a secret.
 
 ## Registering a custom provider
 

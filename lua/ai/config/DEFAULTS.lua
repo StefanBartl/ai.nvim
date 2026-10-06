@@ -30,7 +30,8 @@ local DEFAULTS = {
   -- variable, as before. Shape:
   --   keys = { claude = { active = "privat", profiles = {
   --     privat = { env = "ANTHROPIC_API_KEY_PRIVAT" },
-  --     firma = { file = "~/.config/ai/firma.key" } } } }
+  --     firma = { file = "~/.config/ai/firma.key" },
+  --     extern = { command = { "pass", "show", "anthropic" } } } } }
   keys = {},
 
   -- Per-provider default model, e.g. { claude = "claude-opus-4-5" }. Empty
