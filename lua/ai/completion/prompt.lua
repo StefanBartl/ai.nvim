@@ -48,7 +48,9 @@ function M.parse(text)
   if type(text) ~= "string" then
     return ""
   end
-  local trimmed = text:match("^%s*(.-)%s*$")
+  -- Linear trim: the response is unbounded, and `^%s*(.-)%s*$` is quadratic on
+  -- a long run of blanks inside it.
+  local trimmed = require("ai.providers.util").trim(text)
   local fenced = trimmed:match("^```[%w_+-]*\n(.-)\n?```$")
   if fenced then
     return fenced

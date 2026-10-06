@@ -104,16 +104,17 @@ function M.parse_lines(text)
   if type(text) ~= "string" then
     return {}
   end
-  -- `vim.trim`, not the classic `text:match("^%s*(.-)%s*$")` trim idiom:
+  -- `util.trim`, not the classic `text:match("^%s*(.-)%s*$")` trim idiom:
   -- that pattern is quadratic in the length of any whitespace run inside
   -- the string (the lazy `(.-)` re-probes the greedy `%s*$` suffix at every
   -- offset within the run, and a naive `gsub("%s+$", "")` has the same
   -- problem since it isn't `^`-anchored and gets retried at every position)
   -- -- `res.text` here is a full, unstreamed provider response with no
-  -- upper size bound from most of this codebase's providers. `vim.trim`'s
-  -- own source comments on exactly this and does it in two linear passes.
+  -- upper size bound from most of this codebase's providers. Not `vim.trim`
+  -- either: Neovim 0.10/0.11 still ship it as `s:match("^%s*(.*%S)")`, which
+  -- is quadratic on a response of blanks only. `util.trim` is linear everywhere.
   local normalized = text:gsub("\r\n", "\n"):gsub("\r", "\n")
-  local trimmed = vim.trim(normalized)
+  local trimmed = require("ai.providers.util").trim(normalized)
   if trimmed == "" then
     return {}
   end

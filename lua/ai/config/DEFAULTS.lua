@@ -19,7 +19,8 @@ local DEFAULTS = {
   -- walks only these, and a request or `:Ai provider` naming anything else
   -- is refused (or has to be confirmed, see docs/configuration.md). `allowed`
   -- is the only key: another one (a typo such as `alowed`) refuses every
-  -- provider, like a malformed `allowed` does.
+  -- provider, like a malformed `allowed` does -- and so does a top-level key
+  -- that is `policy` itself misspelt (`polcy`, `policies`, within two edits).
   policy = {
     allowed = {},
   },

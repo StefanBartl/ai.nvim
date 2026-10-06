@@ -30,7 +30,13 @@
 ---   The variables that would replace the login or send the request elsewhere
 ---   (`CREDENTIAL_ENV`) are removed from the child's environment -- otherwise a
 ---   stray variable would silently override the login and bill a different
----   account than the one the user is looking at.
+---   account than the one the user is looking at. A known limit: the CLI's own
+---   *settings* can carry a credential that ranks above the login too (an
+---   `apiKeyHelper` script, an active federation profile file). Those are not
+---   environment, ai.nvim does not rewrite another tool's settings, and the
+---   child is not pointed at an empty configuration directory (that would likely
+---   break a login that legitimately lives in a profile). Documented in
+---   `docs/scope.md`, not changed.
 --- - **Errors are in-band.** A billing or auth failure is not a non-zero exit:
 ---   the CLI prints a `result` event with `is_error = true` and exits 1. That
 ---   event's text is the error message (`kind = "api_error"`). A process that
@@ -108,6 +114,15 @@ function M.available()
   return util.executable(M.command[1])
 end
 
+---Longest value `url_host` reads. A URL is 2 kB at most in practice and a gateway
+---URL a few dozen bytes. Checked before any pattern runs: what is longer is not a
+---base URL, and a pattern that backtracks gets no input to be slow on.
+local MAX_URL_BYTES = 2048
+
+---Longest `host[:port]` that is printed: a name is 253 bytes at most, plus the
+---brackets of an IPv6 literal, plus `:65535`.
+local MAX_HOST_BYTES = 262
+
 ---@internal
 ---`host[:port]` of a URL's authority and nothing else: scheme, userinfo, path,
 ---query and fragment are dropped. Strict on purpose, because the result goes on
@@ -115,9 +130,18 @@ end
 ---a `host:port` without scheme) gives `nil` and is not echoed in part. Like a
 ---browser's URL parser, the authority ends at the first `/`, `\`, `?` or `#`,
 ---and the userinfo at its last `@`.
+---
+---Linear by construction, on a value of at most `MAX_URL_BYTES`: every pattern is
+---anchored, and the name and the port are read by two separate matches that cannot
+---give characters back to each other. A single `^(name class)(:?%d*)$` could: the
+---class holds the digits, so a digit run followed by a byte outside the class
+---(`1111...!`) was retried at every split, 55 s for 120 kB.
 ---@param url string
 ---@return string|nil host
 local function url_host(url)
+  if #url > MAX_URL_BYTES then
+    return nil
+  end
   local rest = url:match("^%a[%w+.-]*://(.*)$")
   if not rest then
     return nil
@@ -126,12 +150,18 @@ local function url_host(url)
   -- Anchored on purpose: `([^@]*)$` retries from every start position and takes
   -- quadratic time on a long userinfo (72 s for 120 kB).
   local host = authority:match("^.*@(.*)$") or authority
-  local name, port = host:match("^(%[[%x:.]+%])(:?%d*)$") -- an IPv6 literal
-  if not name then
-    name, port = host:match("^([%w%.%-_\128-\255]+)(:?%d*)$")
+  if #host > MAX_HOST_BYTES then
+    return nil
   end
-  -- Bounded: what is returned is printed (a name is 253 bytes at most, `:65535`).
-  if not name or #name > 253 or #port > 6 then
+  local name = host:match("^%[[%x:.]+%]") -- an IPv6 literal
+    or host:match("^[%w%.%-_\128-\255]+")
+  if not name or #name > 253 then
+    return nil
+  end
+  -- Whatever follows the name is a port or the value is not read: `:`, or `:`
+  -- and up to five digits.
+  local port = host:sub(#name + 1)
+  if port ~= "" and (#port > 6 or not port:match("^:%d*$")) then
     return nil
   end
   return name .. (port == ":" and "" or port)
@@ -375,7 +405,7 @@ local function run(req, h)
               "claude-cli: exited %d (signal %d) before a complete answer: %s",
               obj.code,
               obj.signal or 0,
-              vim.trim(table.concat(stderr_parts, ""))
+              util.trim(table.concat(stderr_parts, ""))
             ),
             obj
           )
@@ -386,7 +416,7 @@ local function run(req, h)
       -- not do what it is run for (a wrapper script, a CLI that changed its
       -- output). stderr is the only clue left.
       if not got_result and text == "" then
-        local stderr = vim.trim(table.concat(stderr_parts, ""))
+        local stderr = util.trim(table.concat(stderr_parts, ""))
         fail(
           lib_error.new(
             "invalid_response",

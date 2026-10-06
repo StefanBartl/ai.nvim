@@ -39,9 +39,13 @@
     `ANTHROPIC_BASE_URL` (a company gateway) is passed on, so the CLI sends its
     login and your prompts to that host -- something `policy.allowed` does not
     see. That is why `:Ai info` (a line under `claude-cli`) and
-    `:checkhealth ai` (a warning under `claude-cli`) name the host while the
-    variable is set: only the host, never the scheme, path, userinfo or query
-    of the URL, and nothing at all when it is unset.
+    `:checkhealth ai` (a warning under `claude-cli`, an info line when the CLI is
+    neither installed nor in use) name the host while the variable is set: only
+    the host, never the scheme, path, userinfo or query of the URL, and nothing
+    at all when it is unset. A known limit: credentials that the CLI reads from
+    its own settings -- an `apiKeyHelper` script, an active federation profile
+    file -- rank above its login too and are not environment variables, so
+    ai.nvim cannot remove them; see [scope.md](scope.md).
 
 The two external tools -- `curl`, and `ollama` for that provider -- are
 declared in [install.json](install.json) and read by lib.nvim's

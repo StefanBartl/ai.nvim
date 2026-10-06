@@ -40,13 +40,70 @@ local CLOSED_TABLES = {
   end,
 }
 
+---The two spellings of the top-level option that holds the allow-list: its name
+---and its plural, which is the other thing it gets called. `policies` is three
+---edits from `policy`, so it needs to be a spelling of its own.
+---@type string[]
+local POLICY_SPELLINGS = { "policy", "policies" }
+
+---How many edits away from a `POLICY_SPELLINGS` entry an unknown top-level key
+---still counts as that option, misspelt (`polcy`, `plicy`, `Policy`).
+local POLICY_TYPO_EDITS = 2
+
+---The longest key that can be within `POLICY_TYPO_EDITS` of a spelling; what is
+---longer is not compared at all.
+local POLICY_KEY_MAX = 10
+
+---@internal
+---Levenshtein distance (insert, delete, substitute) of two short strings.
+---@param a string
+---@param b string
+---@return integer
+local function edit_distance(a, b)
+  local prev, cur = {}, {}
+  for j = 0, #b do
+    prev[j] = j
+  end
+  for i = 1, #a do
+    cur[0] = i
+    for j = 1, #b do
+      local cost = a:byte(i) == b:byte(j) and 0 or 1
+      cur[j] = math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+    end
+    prev, cur = cur, prev
+  end
+  return prev[#b]
+end
+
+---@internal
+---Whether `key`, a top-level key of the options that `DEFAULTS` does not have, is
+---the allow-list's `policy` spelt wrong. Unlike any other unknown key that is not
+---a typo to shrug at: ignoring it leaves the default, which is no restriction, in
+---place (see `close_misspelt_policy`). Only these two are compared -- an unknown
+---key near some other option stays a warning.
+---@param key any
+---@return boolean
+local function misspelt_policy(key)
+  if type(key) ~= "string" or #key > POLICY_KEY_MAX or DEFAULTS[key] ~= nil then
+    return false
+  end
+  local lowered = key:lower()
+  for _, spelling in ipairs(POLICY_SPELLINGS) do
+    if edit_distance(lowered, spelling) <= POLICY_TYPO_EDITS then
+      return true
+    end
+  end
+  return false
+end
+
 ---@internal
 ---Warn about every key in `opts` that `defaults` doesn't know about, at any
 ---nesting level -- a typo in a nested option (`{ ui = { panel_them = "x" } }`)
 ---would otherwise vanish silently into `vim.tbl_deep_extend`'s merge instead
 ---of surfacing anywhere. Warns rather than raising: an unknown/invalid value
 ---degrades to its default (the merge already does that), it does not abort
----`setup()`.
+---`setup()`. A misspelt `policy` is left to `close_misspelt_policy`, which
+---says more than that.
 ---@param opts table
 ---@param defaults table
 ---@param path string dotted prefix for the warning, e.g. `"ui."`
@@ -57,7 +114,7 @@ local function warn_unknown_keys(opts, defaults, path)
     local full_key = path .. tostring(key)
     if not OPEN_SHAPE_KEYS[full_key] then
       if defaults[key] == nil then
-        if not closed then
+        if not closed and not (path == "" and misspelt_policy(key)) then
           require("lib.nvim.notify")
             .create("[ai]")
             .warn(("unknown config key %q -- check for a typo"):format(full_key))
@@ -106,6 +163,11 @@ M.INVALID_ALLOWED = "<invalid policy.allowed>"
 ---the same kind of marker, a different cause (see `CLOSED_TABLES`).
 ---@type string
 M.INVALID_POLICY = "<unknown policy key>"
+
+---What `policy.allowed` holds when the options have a top-level key that is
+---`policy` spelt wrong (see `close_misspelt_policy`).
+---@type string
+M.MISSPELT_POLICY = "<misspelt policy key>"
 
 ---@internal
 ---Values that must not degrade to their default, because the default is the
@@ -227,6 +289,42 @@ local function close_unknown_keys(opts, issues)
   end
 end
 
+---@internal
+---A top-level key of `opts` that is `policy` spelt wrong (`polcy`, `plicy`,
+---`Policy`, `policies`) is a rule that was meant and is not in force: the real
+---`policy` stays at its default, which is no restriction. So it fails closed like a
+---malformed `policy` does -- every provider is refused -- and is reported for
+---`:checkhealth` and warned about right away. Only this key: an unknown key
+---anywhere else, near some other option or near none, stays a warning (a typo in
+---`ui` must not refuse every provider). The misspelt key is dropped from `opts`,
+---and `policy` is replaced even when a valid one stands next to it.
+---@param opts table
+---@param issues string[]
+---@return nil
+local function close_misspelt_policy(opts, issues)
+  local misspelt = {}
+  for key in pairs(opts) do
+    if misspelt_policy(key) then
+      misspelt[#misspelt + 1] = key
+    end
+  end
+  if #misspelt == 0 then
+    return
+  end
+  table.sort(misspelt)
+  local quoted = {}
+  for i, key in ipairs(misspelt) do
+    quoted[i] = ("%q"):format(key)
+    opts[key] = nil
+  end
+  local issue = ("%s: looks like a misspelt `policy` -- every provider is refused until it is fixed"):format(
+    table.concat(quoted, ", ")
+  )
+  issues[#issues + 1] = issue
+  require("lib.nvim.notify").create("[ai]").warn(issue)
+  opts.policy = { allowed = { M.MISSPELT_POLICY } }
+end
+
 ---@type string[]
 local _issues = {}
 
@@ -239,8 +337,9 @@ local _issues = {}
 ---the merge, not after -- by the time `vim.tbl_deep_extend` has run, either
 ---kind of mistake is indistinguishable from "the user meant to leave this at
 ---its default". Where the default is the permissive state, the mistake refuses
----instead (`FAIL_CLOSED`, and an unknown key under `policy`, see
----`close_unknown_keys`).
+---instead (`FAIL_CLOSED`, an unknown key under `policy`, see
+---`close_unknown_keys`, and a top-level key that is `policy` misspelt, see
+---`close_misspelt_policy`).
 ---@param user_opts? Ai.Config|table
 ---@return Ai.Config
 function M.setup(user_opts)
@@ -252,6 +351,7 @@ function M.setup(user_opts)
   _issues = {}
   sanitize_values(user_opts, "", _issues)
   close_unknown_keys(user_opts, _issues)
+  close_misspelt_policy(user_opts, _issues)
   _active = vim.tbl_deep_extend("force", vim.deepcopy(DEFAULTS), user_opts)
   return _active
 end

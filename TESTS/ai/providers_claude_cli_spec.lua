@@ -389,6 +389,44 @@ describe("ai.providers.claude_cli", function()
       assert.is_nil(err.message:find("[:%s]$"), "nothing dangles when stderr is empty")
     end)
 
+    -- What the child wrote to stderr goes into the message, trimmed -- and it is as
+    -- long as the child made it. A trim that is quadratic on a value of blanks only
+    -- (Neovim 0.10/0.11 `vim.trim`, stood in for here) would stall the editor.
+    it("trims a huge blank stderr in linear time, on a crash and on a silent exit", function()
+      local real_trim = vim.trim
+      vim.trim = function(s)
+        return s:match("^%s*(.*%S)") or ""
+      end
+      local blank = (" \n"):rep(60000)
+      local ok, err = pcall(function()
+        for _, exit in ipairs({ { code = 3, signal = 0 }, { code = 0, signal = 0 } }) do
+          vim.system = function(_, opts, on_exit)
+            vim.schedule(function()
+              opts.stderr(nil, blank)
+              on_exit(vim.tbl_extend("force", { stdout = "", stderr = "" }, exit))
+            end)
+            return { kill = function() end }
+          end
+          local failure
+          cli.stream({ prompt = "q" }, {
+            on_done = function() end,
+            on_error = function(e)
+              failure = e
+            end,
+          })
+          local t0 = vim.uv.hrtime()
+          assert.is_true(vim.wait(5000, function()
+            return failure ~= nil
+          end, 10))
+          local ms = (vim.uv.hrtime() - t0) / 1e6
+          assert.is_true(ms < 1000, ("%d ms for %d bytes of stderr"):format(ms, #blank))
+          assert.is_true(#failure.message < 300, "the blanks are trimmed away")
+        end
+      end)
+      vim.trim = real_trim
+      assert.is_true(ok, err)
+    end)
+
     it("reports a timeout as such", function()
       local ok, err = ask({ prompt = "SLEEP", timeout_ms = 800 })
       assert.is_false(ok)

@@ -19,8 +19,9 @@
 ---   and the kind of source (`env NAME`, `file`), never the value -- and an
 ---   `env` that looks like a vendor's key instead of a variable name (the key
 ---   itself, pasted where the name belongs) is not echoed either. The test is
----   the shape of the known keys, not a guess at randomness, so a long
----   mixed-case name is never mistaken for one (see `env_name_ok`).
+---   the shape of the known keys, not a guess at randomness, so a long name
+---   with words in it (`Company_Anthropic_Key_Production_2`) is never mistaken
+---   for one (see `env_name_ok`).
 --- - **Sources are `env` (a variable name) and `file` (first non-empty line).**
 ---   Both are read synchronously and are cheap, so `available()` stays cheap;
 ---   a command or a password manager is a later, asynchronous source and is
@@ -156,7 +157,8 @@ local function first_line(content)
     content = content:sub(4)
   end
   for line in content:gmatch("[^\r\n]+") do
-    local trimmed = line:match("^%s*(.-)%s*$")
+    -- Not `^%s*(.-)%s*$`: quadratic on a long run of blanks inside the line.
+    local trimmed = util.trim(line)
     if trimmed ~= "" then
       return not trimmed:find("\0", 1, true) and trimmed or nil
     end
@@ -232,20 +234,50 @@ function M.blocked(id)
   return M.active(id) ~= nil and M.get(id, "") == nil
 end
 
+---Whether `name`, which is made of identifier characters only, has the shape of a
+---vendor's key: the keys that carry no hyphen. Groq's is `gsk_` and 40 or more
+---letters and digits (52 today), Hugging Face's `hf_` and 34, Gemini's `AIza` and
+---35, and a bare token of 32 or more letters and digits, mixed-case, with no
+---underscore, is what a key looks like when it has no prefix at all. A name that
+---is long but has an underscore between its words (`Company_Anthropic_Key_Production_2`)
+---is none of these. The price is the same shape written as a name without
+---underscores (`CompanyAnthropicKeyProductionAccount2`): it is not echoed either.
+---Anthropic's and OpenAI's (`sk-`) have hyphens and never get this far.
+---@param name string at most 64 bytes, `[%a_][%w_]*`
+---@return boolean
+local function key_shaped(name)
+  local rest = name:match("^gsk_(%w+)$")
+  if rest and #rest >= 40 then
+    return true
+  end
+  rest = name:match("^hf_(%w+)$")
+  if rest and #rest >= 34 then
+    return true
+  end
+  if #name >= 39 and name:sub(1, 4) == "AIza" then
+    return true
+  end
+  return #name >= 32
+    and name:match("^%w+$") ~= nil
+    and name:find("%l") ~= nil
+    and name:find("%u") ~= nil
+end
+
 ---An `env` value is a variable name, i.e. an identifier. Anything else is most
 ---likely the key itself, pasted where the name belongs. Vendor keys carry
----hyphens (Anthropic, OpenAI), which no identifier has; Gemini's may have none,
----but it is always `AIza` plus 35 characters. Shape only, so a key that happens to
----look like a plain name still passes -- and so does every legitimate name:
----`Company_Anthropic_Key_Production_2` is long, mixed-case and holds a digit, and
----a rule written on length, case and digits rejects it.
+---hyphens (Anthropic, OpenAI), which no identifier has; the ones that have none
+---are told by their shape (`key_shaped`). Shape only, so a key that happens to
+---look like a plain name still passes -- and so does every legitimate name with
+---words in it: a rule written on length, case and digits alone would reject
+---`Company_Anthropic_Key_Production_2`.
 ---@param name string
 ---@return boolean
 local function env_name_ok(name)
+  -- Bounded before any pattern runs: no variable name is longer.
   if #name > 64 or not name:match("^[%a_][%w_]*$") then
     return false
   end
-  return not (#name == 39 and name:sub(1, 4) == "AIza")
+  return not key_shaped(name)
 end
 
 ---Where a profile's key comes from, as text -- the variable name or "file",

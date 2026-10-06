@@ -137,6 +137,25 @@ describe("ai.bindings.edit", function()
       assert.are.same({}, edit.parse_lines("   \n  "))
     end)
 
+    -- A response of blanks only is the shape Neovim 0.10/0.11's `vim.trim`
+    -- (`s:match("^%s*(.*%S)")`, stood in for here) is quadratic on: 12 s for 60 kB.
+    it("answers quickly on 120 kB of blanks, whatever vim.trim does", function()
+      local real_trim = vim.trim
+      vim.trim = function(s)
+        return s:match("^%s*(.*%S)") or ""
+      end
+      local ok, err = pcall(function()
+        for _, text in ipairs({ (" "):rep(120000), (" \n"):rep(60000), (" \r\n"):rep(40000) }) do
+          local t0 = vim.uv.hrtime()
+          assert.are.same({}, edit.parse_lines(text))
+          local ms = (vim.uv.hrtime() - t0) / 1e6
+          assert.is_true(ms < 1000, ("%d ms for %d bytes"):format(ms, #text))
+        end
+      end)
+      vim.trim = real_trim
+      assert.is_true(ok, err)
+    end)
+
     it("strips a fence with CRLF line endings", function()
       assert.are.same(
         { "local x = 1", "local y = 2" },

@@ -519,6 +519,182 @@ describe("ai.policy", function()
         assert.are.same({}, config.issues())
       end)
     end)
+
+    -- `policy` itself spelt wrong: the rule that was meant is not in force and the
+    -- real `policy` stays at "no restriction". Within two edits of `policy` (or of
+    -- its plural) that fails closed; any other unknown key stays a warning.
+    describe("a misspelt top-level policy key", function()
+      local notices
+
+      before_each(function()
+        notices = {}
+        vim.notify = function(msg)
+          notices[#notices + 1] = msg
+        end
+      end)
+
+      local misspelt = {
+        "polcy", -- one deleted
+        "plicy",
+        "olicy",
+        "poliy",
+        "policey", -- one inserted
+        "policyy",
+        "pollicy",
+        "pol1cy", -- one substituted
+        "ploicy", -- two neighbours swapped
+        "plcy", -- two deleted
+        "polic", -- two deleted
+        "Policy", -- case
+        "POLICY",
+        "policies", -- the plural
+        "polices",
+        "policys",
+        "Policies",
+      }
+
+      for _, key in ipairs(misspelt) do
+        it(("fails closed for %q"):format(key), function()
+          local config = require("ai.config")
+          config.setup({ [key] = { allowed = { "claude" } } })
+          local policy = require("ai.policy")
+          assert.is_true(policy.restricted())
+          assert.is_false(policy.is_allowed("claude"))
+          assert.is_false(policy.is_allowed("gemini"))
+          assert.is_true(policy.is_allowed("gemini", { prompt = "x", allow_unlisted = true }))
+          assert.are.same({ config.MISSPELT_POLICY }, config.get().policy.allowed)
+          assert.is_nil(config.get()[key], "the stray key is not kept")
+        end)
+      end
+
+      it("is reported as an issue naming the key and what happens", function()
+        local config = require("ai.config")
+        config.setup({ polcy = { allowed = { "claude" } } })
+        assert.are.equal(1, #config.issues())
+        local issue = config.issues()[1]
+        assert.is_truthy(issue:find('"polcy"', 1, true))
+        assert.is_truthy(issue:find("`policy`", 1, true))
+        assert.is_truthy(issue:find("refused", 1, true))
+      end)
+
+      it("says so once when setup() runs, as a warning of its own", function()
+        require("ai.config").setup({ polcy = { allowed = { "claude" } } })
+        assert.are.equal(1, #notices, "not once as an unknown key and once as this")
+        assert.is_truthy(notices[1]:find('"polcy"', 1, true))
+        assert.is_truthy(notices[1]:find("refused", 1, true))
+        assert.is_nil(notices[1]:find("unknown config key", 1, true))
+      end)
+
+      it("beats a valid policy next to it: nothing is allowed", function()
+        local config = require("ai.config")
+        config.setup({ policy = { allowed = { "claude" } }, polcy = { allowed = { "gemini" } } })
+        local policy = require("ai.policy")
+        assert.is_true(policy.restricted())
+        assert.is_false(policy.is_allowed("claude"))
+        assert.is_false(policy.is_allowed("gemini"))
+        assert.are.equal(1, #config.issues())
+      end)
+
+      it("names every such key, in a stable order, and reports a malformed policy too", function()
+        local config = require("ai.config")
+        config.setup({ policies = {}, polcy = {}, policy = "claude" })
+        local text = table.concat(config.issues(), "\n")
+        assert.are.equal(2, #config.issues(), text)
+        assert.is_truthy(text:find("policy: invalid value", 1, true))
+        local first = text:find('"polcy"', 1, true)
+        local second = text:find('"policies"', 1, true)
+        assert.is_truthy(first and second, text)
+        assert.is_true(first < second, "sorted")
+        assert.are.equal(2, #notices)
+        assert.is_false(require("ai.policy").is_allowed("claude"))
+      end)
+
+      it("makes a refused request say why", function()
+        require("ai.config").setup({ polcy = { allowed = { "claude" } } })
+        local providers = require("ai.providers")
+        register_all(providers, { "claude" })
+        local p, err = providers.resolve("claude", { "claude" })
+        assert.is_nil(p)
+        assert.are.equal("policy", err.data.reason)
+        assert.is_truthy(err.message:find("<misspelt policy key>", 1, true), err.message)
+        local _, auto_err = providers.resolve("auto", { "claude" })
+        assert.are.equal("policy", auto_err.data.reason)
+      end)
+
+      it("stays in force on a second setup() with the same, untouched options", function()
+        local config = require("ai.config")
+        local opts = { polcy = { allowed = { "claude" } } }
+        config.setup(opts)
+        assert.are.same({ polcy = { allowed = { "claude" } } }, opts, "the caller's table is kept")
+        config.setup(opts)
+        assert.are.equal(1, #config.issues(), "reported again, not lost")
+        assert.is_false(require("ai.policy").is_allowed("claude"))
+      end)
+
+      it("is replaced by the real policy once the key is fixed", function()
+        local config = require("ai.config")
+        config.setup({ polcy = { allowed = { "claude" } } })
+        config.setup({ policy = { allowed = { "claude" } } })
+        assert.is_true(require("ai.policy").is_allowed("claude"))
+        assert.is_false(require("ai.policy").is_allowed("gemini"))
+        assert.are.same({}, config.issues())
+      end)
+
+      -- Not every unknown key: a typo elsewhere must not refuse every provider.
+      for _, key in ipairs({
+        "pcy", -- three edits from `policy`
+        "plc",
+        "policeman",
+        "provders",
+        "theme",
+        "keymap",
+        "plugin",
+        "profile",
+        "allowed", -- the content of `policy`, in the wrong place
+        "polcy_extra",
+        ("a"):rep(40),
+      }) do
+        it(("stays a plain warning for %q"):format(key), function()
+          local config = require("ai.config")
+          config.setup({ [key] = { allowed = { "claude" } } })
+          assert.is_false(require("ai.policy").restricted())
+          assert.are.same({}, config.issues())
+          assert.are.equal(1, #notices)
+          assert.is_truthy(notices[1]:find("unknown config key", 1, true))
+        end)
+      end
+
+      it("never takes a known option for a misspelling, whatever it is called", function()
+        local DEFAULTS = require("ai.config.DEFAULTS")
+        for key, value in pairs(DEFAULTS) do
+          package.loaded["ai.config"] = nil
+          package.loaded["ai.policy"] = nil
+          local config = require("ai.config")
+          config.setup({ [key] = vim.deepcopy(value) })
+          assert.are.same({}, config.issues(), key)
+          assert.is_false(require("ai.policy").restricted(), key)
+        end
+        assert.are.same({}, notices)
+      end)
+
+      it("ignores a huge key without comparing it (120 kB)", function()
+        local config = require("ai.config")
+        local key = ("p"):rep(120000)
+        local t0 = vim.uv.hrtime()
+        config.setup({ [key] = true })
+        local ms = (vim.uv.hrtime() - t0) / 1e6
+        assert.is_true(ms < 1000, ("%d ms"):format(ms))
+        assert.is_false(require("ai.policy").restricted())
+      end)
+
+      it("is not applied to keys of the nested tables", function()
+        local config = require("ai.config")
+        config.setup({ ui = { polcy = true }, completion = { policy = true } })
+        assert.is_false(require("ai.policy").restricted())
+        assert.are.same({}, config.issues())
+        assert.are.equal(2, #notices)
+      end)
+    end)
   end)
 
   describe(":Ai provider and :Ai info", function()
@@ -748,6 +924,21 @@ describe("ai.policy", function()
       assert.is_true(reported("warn: policy.alowed: unknown key"))
       assert.is_false(reported("config.policy.allowed is malformed"))
       assert.is_false(reported("<unknown policy key>: listed"))
+    end)
+
+    it("reports a misspelt top-level policy key as an error that names the cause", function()
+      local original_notify = vim.notify
+      vim.notify = function() end
+      require("ai.config").setup({ polcy = { allowed = { "claude" } } })
+      vim.notify = original_notify
+      package.loaded["ai.health"] = nil
+      require("ai.health").check()
+      assert.is_true(reported("error: the options have a key that looks like a misspelt `policy`"))
+      assert.is_true(reported('warn: "polcy": looks like a misspelt `policy`'))
+      assert.is_false(reported("config.policy.allowed is malformed"))
+      assert.is_false(reported("config.policy has a key ai.nvim does not know"))
+      assert.is_false(reported("<misspelt policy key>: listed"))
+      assert.is_false(reported("no allow-list"))
     end)
 
     it(

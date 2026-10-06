@@ -18,6 +18,13 @@ describe("ai.completion.prompt", function()
   end)
 
   describe("parse", function()
+    it("stays linear on a long run of blanks inside the response", function()
+      local text = "a" .. (" "):rep(120000) .. "b"
+      local started = vim.uv.hrtime()
+      assert.are.equal(text, prompt.parse(text))
+      assert.is_true((vim.uv.hrtime() - started) / 1e6 < 500)
+    end)
+
     it("returns plain text unchanged, trimmed", function()
       assert.are.equal("local x = 1", prompt.parse("  local x = 1  \n"))
     end)
