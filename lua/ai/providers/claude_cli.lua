@@ -65,7 +65,13 @@ local util = require("ai.providers.util")
 local M = {
   id = "claude-cli",
   name = "Claude Code CLI (logged-in account)",
-  capabilities = { streaming = true, vision = false, documents = false, web = false },
+  capabilities = {
+    streaming = true,
+    vision = false,
+    documents = false,
+    web = false,
+    temperature = false,
+  },
 }
 
 ---The command prefix. Mutable on purpose: the specs point it at a fake CLI

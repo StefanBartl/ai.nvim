@@ -189,7 +189,12 @@ with `require("ai").policy()` and may restrict further, never widen it.
 ## Bulk requests
 
 `bulk.max_session_chars` caps the characters of all `req.bulk` requests of one
-Neovim session (see [bulk.md](bulk.md)). `false`, the default, means no cap. A
+Neovim session (see [bulk.md](bulk.md)). `false`, the default, means no cap; `0`
+refuses every bulk request. It is a cost guard and so it fails closed, like
+`policy.allowed`: a value that is not `false` or a number of at least 0 (`"500000"`,
+`-1`, `true`), or a misspelt key under `bulk` (`max_sesion_chars`), is reported
+at once and under *configuration* in `:checkhealth ai`, and every bulk request is
+refused until it is fixed -- it never becomes "no cap". A
 bulk request has its own, stricter policy rule: a provider outside
 `policy.allowed` needs a confirmation for document text, `allow_unlisted` and
 `:Ai provider` do not count.

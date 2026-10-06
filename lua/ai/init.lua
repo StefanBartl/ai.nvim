@@ -189,10 +189,14 @@ end
 ---@param provider Ai.Provider
 ---@param resolved Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
-local function dispatch(provider, resolved, cb)
+---@param alive? fun(): boolean asked when the key has arrived: `false` means the caller has given up meanwhile (a bulk request that was cancelled or timed out), and the request, which is not sent yet, is then not sent at all
+local function dispatch(provider, resolved, cb, alive)
   if needs_key_fetch(provider, resolved) then
     -- A command key source (ai.keys): run it off the UI thread, then go on.
     require("ai.keys").fetch(provider.id, function(ok, kerr)
+      if alive and not alive() then
+        return
+      end
       if ok then
         provider.ask(resolved, cb)
       else

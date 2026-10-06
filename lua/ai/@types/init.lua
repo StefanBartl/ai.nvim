@@ -34,7 +34,7 @@
 ---@field concurrency? integer Requests of this label in flight at once; the rest wait in a queue (default 1)
 ---@field max_total_chars? integer Cumulative cap for this label in this session; a request that would pass it fails with `bulk_limit` (`require("ai.bulk").reset(label)` starts a fresh budget)
 ---@field allow_unlisted? boolean This one request may use a provider outside `config.policy.allowed`. Set it only after asking the user that document text may go there. The plain `Ai.Request.allow_unlisted` and a `:Ai provider` confirmation do not count for bulk requests.
----@field temperature? number|false Sampling temperature to send (default 0, for repeatable answers); `false` sends none. Only sent to providers that take one (`capabilities.temperature`).
+---@field temperature? number|false Sampling temperature to send (default 0, for repeatable answers); `false` sends none. When set it wins over `Ai.Request.temperature`, which stands when this is not set. Only sent to providers that take one (`capabilities.temperature`); `Ai.BulkResult` says what was sent.
 
 ---What `ai.ask` returns for a bulk request. `kill()` ends the call; the callback runs once with `kind = "cancelled"`.
 ---@class Ai.BulkHandle

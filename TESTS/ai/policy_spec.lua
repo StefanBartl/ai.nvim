@@ -909,6 +909,23 @@ describe("ai.policy", function()
       assert.is_true(reported("gemini: allowed for this session outside the allow-list"))
     end)
 
+    it("lists a bulk grant outside the allow-list, and not a listed one", function()
+      require("ai.config").setup({ policy = { allowed = { "claude" } } })
+      require("ai.policy").grant_bulk("gemini")
+      require("ai.policy").grant_bulk("claude")
+      package.loaded["ai.health"] = nil
+      require("ai.health").check()
+      assert.is_true(reported("warn: gemini: allowed for bulk requests this session"))
+      assert.is_false(reported("claude: allowed for bulk requests"))
+    end)
+
+    it("says what the bulk session cap is and how much of it is used", function()
+      require("ai.config").setup({ bulk = { max_session_chars = 5000 } })
+      package.loaded["ai.health"] = nil
+      require("ai.health").check()
+      assert.is_true(reported("info: bulk: session cap 5000 characters, 0 characters used"))
+    end)
+
     it("reports a malformed policy.allowed as an error, not as an allow-list", function()
       local original_notify = vim.notify
       vim.notify = function() end

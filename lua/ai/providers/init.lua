@@ -150,6 +150,7 @@ function M.capability_names(p)
     { "vision", "image" },
     { "documents", "document" },
     { "web", "web" },
+    { "temperature", "temperature" },
   }) do
     if caps[pair[1]] then
       out[#out + 1] = pair[2]

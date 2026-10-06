@@ -283,6 +283,10 @@ function M.info()
   for _, id in ipairs(policy.granted()) do
     lines[#lines + 1] = ("  session grant outside the list: %s"):format(id)
   end
+  lines[#lines + 1] = "bulk: " .. require("ai.bulk").describe()
+  for _, id in ipairs(policy.bulk_granted()) do
+    lines[#lines + 1] = ("  session grant for bulk requests outside the list: %s"):format(id)
+  end
   local keys = require("ai.keys")
   for _, id in ipairs(keys.providers()) do
     lines[#lines + 1] = ("keys.%s: %s"):format(id, keys.describe(id))

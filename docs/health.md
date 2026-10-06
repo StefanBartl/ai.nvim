@@ -60,7 +60,10 @@ What each section reports:
   dropped but refuses every provider, and is reported as an error under
   *provider policy*; so is an unknown key under `policy`, such as `alowed`, and
   a top-level key that is `policy` misspelt, such as `polcy`, which are named
-  here as well). Also a warning for a configured
+  here as well; `bulk.max_session_chars` is the same kind of value: a string, a
+  negative number or a misspelt key under `bulk` refuses every bulk request and
+  is reported here, see [bulk.md](bulk.md)). One info line says what the bulk
+  session cap is and how much of it this session has used. Also a warning for a configured
   `model`/`completion.model` that isn't a known id for its provider, per
   `lua/ai/providers/models.lua`'s registry (Claude/Gemini/OpenAI only --
   `ollama`/`loomai`/`claude-cli` run arbitrary local or CLI-side models, so any id is accepted for
@@ -74,7 +77,9 @@ What each section reports:
   (requests that use them are refused, `provider = "auto"` could never
   resolve; a provider granted for this session is not counted as refused),
   plus one for a provider allowed only for this session after a confirmed `:Ai
-  provider`. An allowed id with no registered provider (yet) is an info line,
+  provider`, and one for a provider confirmed for bulk requests
+  (`ai.policy.grant_bulk`: document text goes there unattended). An allowed id
+  with no registered provider (yet) is an info line,
   not a warning. See [configuration.md](configuration.md#provider-policy).
 - **composer route pre-flight** -- `:Ai`'s own route table, validated by
   `lib.nvim.bindings.usercmd.composer`.

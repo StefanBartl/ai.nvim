@@ -47,7 +47,7 @@ non-streaming providers do not expose one (see "Cancel").
 | `concurrency` | Requests of this label in flight at once (default 1). The rest wait in a FIFO queue and start as slots free up. |
 | `max_total_chars` | Cumulative characters of this label in this session. A request that would pass it fails with `bulk_limit`. `require("ai.bulk").reset(label)` starts a fresh budget; a new label does too. |
 | `allow_unlisted` | This one request may use a provider outside the allow-list. Set it only after asking the user. |
-| `temperature` | Temperature to send (default `0`); `false` sends none. |
+| `temperature` | Temperature to send (default `0`); `false` sends none. When set it wins over the request's own `temperature`, which stands when this is not set. |
 
 `config.bulk.max_session_chars` (default `false`, no cap) is the same cap over
 every bulk request of the session. A request that is admitted reserves its
@@ -55,14 +55,27 @@ characters at once, so a burst of calls cannot overshoot; one that is cancelled
 before it started gives them back. A request refused with `bulk_limit` costs
 nothing.
 
+This is a cost guard, so it never fails open. `0` is a cap like any other: it
+refuses every bulk request. A value that cannot be a cap -- a string such as
+`"500000"`, a negative number, `true`, or a misspelt key under `bulk` -- is
+reported when `setup()` runs and refuses every bulk request until it is fixed;
+it does not turn into "no cap". Only `false` means none.
+
 Every refusal arrives as `cb(false, err)`, never as an exception, and never
 inside `ask` itself: the callback is always asynchronous and runs exactly once
-(also when `kill()` and an answer race). `err.data.reason` of a `bulk_limit`
-is `max_chars`, `max_total_chars` or `max_session_chars`.
+(also when `kill()` and an answer race). That holds for input that is not what
+it should be, too: a field of the wrong type (`system`, `timeout_ms`,
+`temperature`, ...) is an `invalid_request`, and a NUL byte in the text counts
+as one character like any other. `err.data.reason` of a `bulk_limit` is
+`max_chars`, `max_total_chars` or `max_session_chars`.
 
 A bulk request gathers no editor context and carries no attachments: put the
 text in `prompt`. It does not combine with the plain `allow_unlisted`, and
 `ai.stream` refuses it (`invalid_request`).
+
+A long queue is fine: requests that wait are started one after the other without
+growing the stack, also when the provider answers (or fails) at once, and
+`usage().queued` is a counter, not a scan.
 
 ## Policy
 
@@ -90,8 +103,23 @@ aborted** (the non-streaming providers hand out no process), so its cost is
 spent. `require("ai.bulk").cancel(label)` does this for every queued and
 in-flight request of a label.
 
+A request that is still waiting for a command-sourced key (`config.keys`,
+see [Key profiles](configuration.md#key-profiles)) is not sent yet: if it is cancelled, or the watchdog
+gives up on it, it is not sent when the key command finishes either -- the
+document text does not leave the machine after the cancel.
+
 A provider that never answers does not hang the caller: after the request's
 `timeout_ms` plus 5 s the call fails with `kind = "timeout"` and frees its slot.
+
+## A key that cannot be had
+
+When a request fails with `missing_api_key` -- a locked vault, a cancelled
+passphrase prompt, an unset variable -- the requests of the same label that
+still wait for the same provider fail at once with that error, without being
+sent and without running the key command again. Otherwise a document of 300
+chunks would run the key command 300 times, unattended. The first callback is
+the one of the request that hit the problem; the characters of the others are
+given back. Other errors do not do this: the queue goes on.
 
 ## Repeatable answers and the cache key
 
@@ -105,9 +133,14 @@ plus the `temperature` sent.
 
 Some models accept only their default temperature (for example OpenAI's
 o-series reasoning models) and answer a request with `temperature = 0` with an
-API error. For those, set `bulk.temperature = false`: nothing is sent, and
-`res.bulk.deterministic` is `false`. When a provider error mentions the
-temperature, the error message of the bulk call carries this hint.
+API error. For those, set `bulk.temperature = false`: nothing is sent -- also
+not a `temperature` the request itself carries -- and `res.bulk.deterministic`
+is `false`. When a provider error mentions the temperature, the error message of
+the bulk call carries this hint.
+
+`res.bulk.temperature` and `res.bulk.deterministic` always say what was really
+sent: `bulk.temperature` if set, else the request's own `temperature`, else `0`,
+and none for a provider that has no such parameter.
 
 ## Counters
 
@@ -117,3 +150,8 @@ bulk.usage("mdview:README.md") -- { session_chars, label_chars, active, queued }
 bulk.reset("mdview:README.md") -- forget that label's budget
 bulk.reset()                   -- forget everything (also the session total)
 ```
+
+`:Ai info` and `:checkhealth ai` show the session cap and how much of it is used,
+and list a provider that was confirmed for bulk requests with
+`ai.policy.grant_bulk` (document text goes there without anyone looking at each
+request).

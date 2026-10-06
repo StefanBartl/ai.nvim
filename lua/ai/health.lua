@@ -211,6 +211,7 @@ function M.check()
     -- policy.allowed a refusal) -- a fixed prefix would get one of them wrong.
     vim.health.warn(issue)
   end
+  vim.health.info("bulk: " .. require("ai.bulk").describe())
   -- A model id is never rejected at request time (see
   -- `ai.providers.models`'s module doc) -- this is the surface the roadmap
   -- item asked for: report it here instead, against each provider's own
@@ -286,6 +287,13 @@ function M.check()
         id .. ": allowed for this session outside the allow-list (a confirmed :Ai provider)"
       )
     end
+  end
+  -- Document text goes to these without a look at each request: worth a line
+  -- of its own, whether or not an allow-list is configured.
+  for _, id in ipairs(policy.bulk_granted()) do
+    vim.health.warn(
+      id .. ": allowed for bulk requests this session outside the allow-list (grant_bulk)"
+    )
   end
 
   -- ── Keys ────────────────────────────────────────────────────────────────
