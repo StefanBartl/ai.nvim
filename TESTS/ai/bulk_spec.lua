@@ -264,7 +264,9 @@ describe("ai.bulk", function()
   end)
 
   describe("input that is not what the contract says", function()
-    -- Every refusal is a callback, never an exception out of ask().
+    -- Every refusal is a callback, not an exception out of ask(). The one thing that
+    -- raises is ai.ask's own check of the request (a table with a string prompt),
+    -- as it does without `bulk`; see "a call that is no request at all" below.
     local function asks_without_raising(req, results)
       local ok, err = pcall(ask, req, results)
       assert.is_true(ok, tostring(err))
@@ -359,6 +361,33 @@ describe("ai.bulk", function()
       assert.is_truthy(results[1].res.message:find("context boom", 1, true))
       assert.are.equal(0, bulk.usage().session_chars)
       assert.are.equal(0, #calls)
+    end)
+
+    -- The documented exception (docs/bulk.md, doc/ai.txt, the ai.bulk header): a call
+    -- that is no request at all is a programming error, bulk or not, and asserts in
+    -- ai.ask before bulk is reached. Pinned so that a change either way updates the docs.
+    it("a call that is no request at all raises from ai.ask, as without bulk", function()
+      local results = {}
+      local function collect(ok, res)
+        results[#results + 1] = { ok = ok, res = res }
+      end
+      local bulk_opts = { label = "x", max_chars = 10 }
+      local cases = {
+        { "no request", nil },
+        { "a request that is not a table", "hello" },
+        { "no prompt", { bulk = bulk_opts } },
+        { "a prompt that is not a string", { prompt = 5, bulk = bulk_opts } },
+        { "the same without bulk", { prompt = 5 } },
+      }
+      for _, case in ipairs(cases) do
+        local ok, err = pcall(ai.ask, case[2], collect)
+        assert.is_false(ok, case[1])
+        assert.is_truthy(tostring(err):find("req.prompt is required", 1, true), case[1])
+      end
+      vim.wait(30)
+      assert.are.equal(0, #results)
+      assert.are.equal(0, #calls)
+      assert.are.equal(0, bulk.usage().session_chars)
     end)
   end)
 
@@ -849,15 +878,25 @@ describe("ai.bulk", function()
 
     it("fails the waiting requests of that provider at once, the first callback first", function()
       local results = {}
-      ask(req_of(), results) -- held
+      -- The errors are copies of one another, so the order is told by which request a
+      -- callback belongs to: each request gets its own tagged callback.
+      local order = {}
+      local function ask_tagged(tag, req)
+        return ai.ask(req, function(ok, res)
+          order[#order + 1] = tag
+          results[#results + 1] = { ok = ok, res = res }
+        end)
+      end
+      ask_tagged("sent", req_of()) -- held
       for i = 1, 5 do
-        ask(req_of(nil, { prompt = "p" .. i }), results)
+        ask_tagged("waiting" .. i, req_of(nil, { prompt = "p" .. i }))
       end
       calls[1].cb(false, missing_key())
       wait_for(function()
         return #results == 6
       end)
       assert.are.equal(6, #results)
+      assert.same({ "sent", "waiting1", "waiting2", "waiting3", "waiting4", "waiting5" }, order)
       assert.are.equal(1, #calls) -- nothing was started again, so no key command either
       for _, r in ipairs(results) do
         assert.is_false(r.ok)
@@ -922,6 +961,109 @@ describe("ai.bulk", function()
       calls[1].cb(false, { kind = "api_error", message = "overloaded" })
       assert.are.equal(2, #calls)
       assert.are.equal("second", calls[2].req.prompt)
+    end)
+
+    -- A custom provider (providers.register) answers with whatever it likes. An error
+    -- that is not a well-formed LibErrorValue must still end the waiting requests and
+    -- leave the label usable: the copies are built by lib_error.new, which asserts on
+    -- a message that is not a string.
+    local not_well_formed = {
+      {
+        name = "no message",
+        make = function()
+          return { kind = "missing_api_key" }
+        end,
+      },
+      {
+        name = "a message that is not a string",
+        make = function()
+          return { kind = "missing_api_key", message = 42, data = { profile = "work" } }
+        end,
+      },
+    }
+    for _, case in ipairs(not_well_formed) do
+      it("an error with " .. case.name .. " still ends the waiting requests", function()
+        local results = {}
+        ask(req_of(), results) -- held
+        for _ = 1, 3 do
+          ask(req_of(), results)
+        end
+        local ok, err = pcall(calls[1].cb, false, case.make())
+        assert.is_true(ok, tostring(err))
+        wait_for(function()
+          return #results == 4
+        end)
+        assert.are.equal(4, #results)
+        assert.are.equal(1, #calls)
+        for _, r in ipairs(results) do
+          assert.is_false(r.ok)
+          assert.are.equal("missing_api_key", r.res.kind)
+        end
+        -- the requests that never ran get a well-formed error
+        for i = 2, 4 do
+          assert.is_string(results[i].res.message)
+        end
+        assert.same({ active = 0, queued = 0 }, {
+          active = bulk.usage("run").active,
+          queued = bulk.usage("run").queued,
+        })
+        -- and the label still works: nothing is blocked for good
+        fake_mode = "now"
+        ask(req_of(), results)
+        wait_for(function()
+          return #results == 5
+        end)
+        assert.are.equal(5, #results)
+        assert.is_true(results[5].ok)
+      end)
+    end
+
+    it("an error that is not a table is a plain failure: the queue goes on", function()
+      local results = {}
+      ask(req_of(), results) -- held
+      ask(req_of(nil, { prompt = "second" }), results)
+      local ok, err = pcall(calls[1].cb, false, "missing_api_key")
+      assert.is_true(ok, tostring(err))
+      assert.are.equal(2, #calls)
+      assert.are.equal("second", calls[2].req.prompt)
+      wait_for(function()
+        return #results == 1
+      end)
+      assert.are.equal("missing_api_key", results[1].res)
+    end)
+
+    it("a failure while ending the waiting requests does not block the label", function()
+      local lib_error = require("lib.lua.error")
+      local real_new = lib_error.new
+      local results = {}
+      ask(req_of(), results) -- held
+      ask(req_of(nil, { prompt = "second" }), results) -- waits
+      -- Whatever goes wrong in there, the queue must not stay held: make the copy of
+      -- the error for the waiting request raise.
+      lib_error.new = function(kind, message, data)
+        if kind == "missing_api_key" then
+          error("copy boom")
+        end
+        return real_new(kind, message, data)
+      end
+      pcall(calls[1].cb, false, missing_key())
+      lib_error.new = real_new
+      wait_for(function()
+        return #results >= 1
+      end)
+      assert.are.equal("missing_api_key", results[1].res.kind) -- the first callback was not lost
+      -- the waiting request was not ended by the failure, so the label went on with it
+      assert.are.equal(2, #calls)
+      assert.are.equal("second", calls[2].req.prompt)
+      calls[2].cb(true, { text = "ok", provider = "fake" })
+      fake_mode = "now"
+      ask(req_of(), results)
+      wait_for(function()
+        return #results == 3
+      end)
+      assert.are.equal(3, #results)
+      assert.is_true(results[2].ok)
+      assert.is_true(results[3].ok)
     end)
   end)
 

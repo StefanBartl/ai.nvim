@@ -492,13 +492,17 @@ answer stay with the caller. >lua
     `:Ai provider` do not count for bulk, nothing is silent.
   - The callback runs exactly once and always asynchronously, also for input
     that is not what it should be (a field of the wrong type is an
-    `invalid_request`, a NUL byte in the text is one character); a provider
-    that never answers is failed after its `timeout_ms` plus 5 s. `kill()`
-    cannot abort an HTTP request already sent, it drops the answer (the cost is
-    spent); a request still waiting for a command-sourced key is not sent at
-    all once it was cancelled.
+    `invalid_request`, a NUL byte in the text is one character). Only a call
+    that is no request at all (`req` not a table, `prompt` not a string)
+    raises from `ai.ask` itself, bulk or not. A provider that never answers
+    is failed after its `timeout_ms` plus 5 s. `kill()` cannot abort an HTTP
+    request already sent, it drops the answer (the cost is spent); a request
+    still waiting for a command-sourced key is not sent at all once it was
+    cancelled.
   - A `missing_api_key` failure ends the requests of the label that wait for
     the same provider at once, so the key command does not run for each chunk.
+    The request that hit it gets its callback first; the others get a copy of
+    the error.
   - `temperature = 0` is sent where the provider takes one (`bulk.temperature`
     changes it and wins over the request's own, `false` sends none);
     `res.bulk.temperature` and `res.bulk.deterministic` say what was sent.
