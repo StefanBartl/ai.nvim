@@ -27,11 +27,18 @@ local util = require("ai.providers.util")
 local M = {
   id = "openai",
   name = "OpenAI Chat Completions",
-  capabilities = { streaming = true, vision = true, documents = false, web = false },
+  capabilities = {
+    streaming = true,
+    vision = true,
+    documents = false,
+    web = false,
+    temperature = true,
+  },
 }
 
 local API_URL = "https://api.openai.com/v1/chat/completions"
 local DEFAULT_MODEL = "gpt-4o"
+M.default_model = DEFAULT_MODEL
 
 ---@param req? Ai.Request
 ---@return string|nil
@@ -83,6 +90,7 @@ local function build_body(req, stream)
   return vim.json.encode({
     model = req.model or DEFAULT_MODEL,
     messages = messages,
+    temperature = req.temperature,
     stream = stream or nil,
   })
 end

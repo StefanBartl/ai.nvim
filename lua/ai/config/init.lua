@@ -145,6 +145,8 @@ local VALUE_SCHEMA = {
   policy = "table",
   ["policy.allowed"] = "string[]",
   timeout_ms = "number",
+  bulk = "table",
+  ["bulk.max_session_chars"] = "number|false",
   log_level = "number",
   ["ui.progress_style"] = { "auto", "notify", "statusline", "fidget", "float" },
   ["ui.badge_timeout_ms"] = "number",
@@ -211,6 +213,9 @@ local function value_ok(kind, value)
       end
     end
     return true
+  end
+  if kind == "number|false" then
+    return value == false or type(value) == "number"
   end
   return type(value) == kind
 end

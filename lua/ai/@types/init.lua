@@ -10,6 +10,7 @@
 ---@field keys? table<string, Ai.KeyProvider> Named API-key profiles per provider id (`lua/ai/keys.lua`); empty (default) = each provider reads its own environment variable
 ---@field model? table<string, string> Default model per provider id, e.g. `{ claude = "claude-opus-4-5" }`
 ---@field timeout_ms? integer Request timeout in ms, passed through to lib.nvim.net.curl (default 60000)
+---@field bulk? Ai.BulkConfig Guard rails for unattended bulk requests (`lua/ai/bulk.lua`)
 ---@field ui? Ai.UiOptions
 ---@field keymaps? Ai.KeymapOptions
 ---@field which_key? Ai.WhichKeyOptions
@@ -20,6 +21,34 @@
 
 ---@class Ai.PolicyOptions
 ---@field allowed? string[] Provider ids this machine may use. Empty or absent (the default) means no restriction. Non-empty: `provider = "auto"` walks only these, and a request or `:Ai provider` naming anything else is refused unless the caller asked for it explicitly (`Ai.Request.allow_unlisted`, or a confirmed `:Ai provider`). A malformed value (not a list of strings) refuses every provider until it is fixed, and so does any other key under `policy` (a typo such as `alowed`): `allowed` is the only one. Ids are not checked against the registry, so an id may be listed before its provider exists.
+
+---@class Ai.BulkConfig
+---@field max_session_chars? integer|false Cap on the characters of all bulk requests (`Ai.Request.bulk`) of one Neovim session; past it a bulk request fails with `bulk_limit`. `false` (default) = no cap.
+
+---Guard rails of an unattended bulk request, `Ai.Request.bulk` (`lua/ai/bulk.lua`).
+---ai.nvim enforces them and does nothing else: the prompt, the splitting of the
+---text and the check of the answer stay with the caller.
+---@class Ai.BulkOptions
+---@field label string Names the run: requests with the same label share the concurrency limit and the `max_total_chars` budget. Required.
+---@field max_chars integer Largest request (prompt plus system, in characters) accepted; a bigger one fails with `bulk_limit`, nothing is sent. Required.
+---@field concurrency? integer Requests of this label in flight at once; the rest wait in a queue (default 1)
+---@field max_total_chars? integer Cumulative cap for this label in this session; a request that would pass it fails with `bulk_limit` (`require("ai.bulk").reset(label)` starts a fresh budget)
+---@field allow_unlisted? boolean This one request may use a provider outside `config.policy.allowed`. Set it only after asking the user that document text may go there. The plain `Ai.Request.allow_unlisted` and a `:Ai provider` confirmation do not count for bulk requests.
+---@field temperature? number|false Sampling temperature to send (default 0, for repeatable answers); `false` sends none. Only sent to providers that take one (`capabilities.temperature`).
+
+---What `ai.ask` returns for a bulk request. `kill()` ends the call; the callback runs once with `kind = "cancelled"`.
+---@class Ai.BulkHandle
+---@field kill fun(self: Ai.BulkHandle, signal?: integer|string)
+---@field is_closing fun(self: Ai.BulkHandle): boolean
+
+---What a successful bulk request adds to `Ai.Response.bulk`, for the caller's cache key.
+---@class Ai.BulkResult
+---@field provider string Provider id that answered
+---@field model string Model that was asked: `req.model`, the configured one, the provider's built-in default, or `"default"` where the provider picks it itself
+---@field label string
+---@field temperature? number Temperature sent, nil when none was
+---@field deterministic boolean `true` when temperature 0 was sent (repeatable as far as the provider allows)
+---@field chars integer Characters counted against the budgets
 
 ---@class Ai.KeyProvider
 ---@field active? string|false Profile in force at startup; must be one of `profiles` (one that is not still counts as chosen and yields no key). `false` or absent = none. A chosen profile never falls back to the provider's default variable.
@@ -100,6 +129,8 @@
 ---@field attachments? Ai.Attachment[] Binary payloads sent with the prompt. A provider that cannot carry one fails the request with `"invalid_request"` before sending -- an attachment is never silently dropped.
 ---@field api_key? string Overrides the provider's own env-var lookup for this request only. For an embedding plugin that already has the key in its own config (`pdfport.nvim`'s `claude_api_key`) and must not have to write it into the user's environment to use ai.nvim. Ignored by providers that need no key. **Set `provider` explicitly alongside it** -- a key belongs to one specific API, and under `provider = "auto"` it would be offered to whichever provider resolves first.
 ---@field host? string Overrides a self-hosted provider's base URL for this request only (`ollama`, `loomai`) -- same reasoning as `api_key`. Ignored by the cloud providers, whose endpoint is not a user choice.
+---@field temperature? number Sampling temperature, sent by the providers that take one (`capabilities.temperature`: claude, openai, gemini, ollama); ignored by the others
+---@field bulk? Ai.BulkOptions Run this request under the guard rails for unattended bulk use (`ai.ask` only; see `Ai.BulkOptions`). Not combinable with `allow_unlisted`, `attachments` or `context`.
 ---@field allow_unlisted? boolean This request may use a provider outside `config.policy.allowed`. Set it only after asking the user; it exists so a caller with its own confirmation (a test mode for a provider the machine does not list) can go through, and so nothing steps outside the list by accident.
 
 ---@class Ai.Response
@@ -107,6 +138,7 @@
 ---@field usage? table Provider-specific usage/token accounting, passed through as-is
 ---@field stop_reason? string
 ---@field provider string
+---@field bulk? Ai.BulkResult Present on the answer to a bulk request
 
 ---@class Ai.StreamHandlers
 ---@field on_chunk? fun(delta: string)
@@ -128,6 +160,9 @@
 ---structured error body; `err.data` is that body's own `error` field),
 ---`"invalid_response"` (a 200 response whose body could not be understood),
 ---`"blocked"` (a provider-side safety/policy block, not a hard API error),
+---`"bulk_limit"` (a bulk request went over `bulk.max_chars`, `bulk.max_total_chars` or
+---`config.bulk.max_session_chars`; `err.data.reason` says which), `"cancelled"` (a bulk
+---request was killed through its handle),
 ---or `"provider_resolution"` (`ai.providers.resolve()`/`require("ai").ask()`/
 ---`.stream()` could not resolve a usable provider at all -- no provider
 ---backend was ever reached). See `lib.lua.error` for the `LibErrorValue`
@@ -150,6 +185,7 @@
 ---@field ask fun(req: Ai.Request, cb: fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)): nil
 ---@field stream fun(req: Ai.Request, handlers: Ai.StreamHandlers): vim.SystemObj|nil returns the underlying process handle so a caller can `:kill()` it to cancel
 ---@field capabilities? Ai.ProviderCapabilities
+---@field default_model? string The model the provider asks when `req.model` is unset (named in the result of a bulk request)
 
 ---What a provider backend can carry, as a *transport* fact -- "this API has
 ---a place to put one", not "the model you picked will understand it". The
@@ -163,4 +199,5 @@
 ---@field vision? boolean The API accepts `Ai.Attachment` entries with `kind = "image"`
 ---@field documents? boolean The API accepts `Ai.Attachment` entries with `kind = "document"` (a PDF sent whole, not rasterized by the caller first)
 ---@field web? boolean The request can use web search in one single-turn round-trip, without a tool-use loop in this plugin. Honest `false` everywhere for now: no provider wires a web-search parameter into its request (see `docs/scope.md`), so a caller must not promise web access on the strength of a provider's name
+---@field temperature? boolean The request body can carry `Ai.Request.temperature`
 ---@field max_tokens? integer

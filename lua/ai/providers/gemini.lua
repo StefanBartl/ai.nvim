@@ -41,11 +41,18 @@ local util = require("ai.providers.util")
 local M = {
   id = "gemini",
   name = "Google Gemini API",
-  capabilities = { streaming = true, vision = true, documents = true, web = false },
+  capabilities = {
+    streaming = true,
+    vision = true,
+    documents = true,
+    web = false,
+    temperature = true,
+  },
 }
 
 local API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/"
 local DEFAULT_MODEL = "gemini-2.5-flash"
+M.default_model = DEFAULT_MODEL
 
 -- Unlike claude.lua/openai.lua, `model` here is interpolated straight into
 -- the request URL's path (Gemini has no way to pass it in the JSON body
@@ -92,6 +99,9 @@ local function build_body(req)
   local body = {
     contents = { { role = "user", parts = parts } },
   }
+  if req.temperature ~= nil then
+    body.generationConfig = { temperature = req.temperature }
+  end
   if req.system then
     body.systemInstruction = { parts = { { text = req.system } } }
   end

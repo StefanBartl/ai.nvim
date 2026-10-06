@@ -29,6 +29,13 @@ local M = {}
 ---@type table<string, true>
 local granted = {}
 
+---Ids confirmed for this session to receive *document text* in bulk requests
+---(`ai.bulk`), although they are not on the allow-list. A separate set on
+---purpose: a `:Ai provider <id>` confirmation was about chat with a selection,
+---not about a whole document going out in many unattended requests.
+---@type table<string, true>
+local bulk_granted = {}
+
 ---The allow-list, or `nil` when the machine is unrestricted.
 ---@return string[]|nil
 function M.allowed()
@@ -105,6 +112,62 @@ end
 ---@return nil
 function M.reset()
   granted = {}
+  bulk_granted = {}
+end
+
+---Allow `id` for bulk requests (`req.bulk`) for the rest of this session
+---although it is not listed. The caller is responsible for having asked the
+---user, and for saying that document text leaves the machine.
+---@param id string
+---@return nil
+function M.grant_bulk(id)
+  bulk_granted[id] = true
+end
+
+---Whether `id` may receive a bulk request. Stricter than `is_allowed`: the
+---plain `allow_unlisted` of a request and a `:Ai provider` session grant do
+---not count -- only the allow-list itself, `grant_bulk(id)`, or the explicit
+---`bulk.allow_unlisted = true` of this one request.
+---@param id string
+---@param bulk? Ai.BulkOptions
+---@return boolean
+function M.is_bulk_allowed(id, bulk)
+  if bulk and bulk.allow_unlisted == true then
+    return true
+  end
+  return bulk_granted[id] == true or M.is_listed(id)
+end
+
+---Ids confirmed for bulk requests this session that are not on the allow-list, sorted.
+---@return string[]
+function M.bulk_granted()
+  local out = {}
+  for id in pairs(bulk_granted) do
+    if not M.is_listed(id) then
+      out[#out + 1] = id
+    end
+  end
+  table.sort(out)
+  return out
+end
+
+---The error for a bulk request that named a provider outside the allow-list.
+---@param id string
+---@return LibErrorValue
+function M.bulk_refusal(id)
+  return require("lib.lua.error").new(
+    "provider_resolution",
+    string.format(
+      "ai: bulk requests send document text unattended; provider '%s' is not on this "
+        .. "machine's allow-list (%s). Confirm it once per session with "
+        .. "require('ai.policy').grant_bulk('%s'), or set bulk.allow_unlisted = true "
+        .. "after asking the user",
+      id,
+      M.describe(),
+      id
+    ),
+    { id = id, reason = "policy", bulk = true, allowed = M.allowed() }
+  )
 end
 
 ---Ids granted for this session that are not on the allow-list, sorted.

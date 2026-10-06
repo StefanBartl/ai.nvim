@@ -96,6 +96,13 @@ of it the allow-list admits, and a provider outside the list is reachable only
 by a deliberate step (a confirmed `:Ai provider`, or `allow_unlisted` on one
 request).
 
+## Bulk requests are a leash, not a feature
+
+`req.bulk` ([bulk.md](bulk.md)) gives plugins that send a whole document in many
+small requests one set of limits, a stricter policy rule and a cancel handle.
+It carries no task logic: what to ask, how to split the text and whether the
+answer is usable stay with the calling plugin.
+
 ## Fallback guarantee
 
 `provider = "auto"` only ever walks `provider_order` (default `{"claude",

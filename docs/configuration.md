@@ -14,6 +14,10 @@ require("ai").setup({
   model = {},                                 -- e.g. { claude = "claude-opus-4-5" } -- not validated here, see "Model ids" below
   timeout_ms = 60000,
 
+  bulk = {
+    max_session_chars = false,                -- cap on the characters of all bulk requests of a session; false = none, see bulk.md
+  },
+
   ui = {
     enable = true,
     progress_style = "auto",                  -- "auto" | "notify" | "statusline" | "fidget" | "float"
@@ -181,6 +185,14 @@ every provider.
 The list is not checked against the registry: an id may be listed before its
 provider exists (`"copilot"` today). A plugin on top of ai.nvim reads the policy
 with `require("ai").policy()` and may restrict further, never widen it.
+
+## Bulk requests
+
+`bulk.max_session_chars` caps the characters of all `req.bulk` requests of one
+Neovim session (see [bulk.md](bulk.md)). `false`, the default, means no cap. A
+bulk request has its own, stricter policy rule: a provider outside
+`policy.allowed` needs a confirmation for document text, `allow_unlisted` and
+`:Ai provider` do not count.
 
 ## Key profiles
 
