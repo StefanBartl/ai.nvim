@@ -65,6 +65,10 @@ migration is what |ai-attachments| were built for.
              only way to reach the API): the CLI then sends its login and
              your prompts to that host, which `policy.allowed` does not see.
              `:Ai info` and |:checkhealth| ai name the host while it is set.
+             A known limit: a credential in the CLI's own settings (an
+             `apiKeyHelper`, an active federation profile) ranks above its
+             login and is not environment, so it is not removed -- see
+             |ai-scope|.
 
 No provider is required at install time -- |:checkhealth| ai reports which
 ones are usable on this machine, and `provider = "auto"` (the default) picks
@@ -186,7 +190,10 @@ provider is refused until it is fixed, `setup()` warns, |:checkhealth| reports i
 The same holds for a key under `policy` that does not exist (`alowed`, or a
 list written straight into `policy`): it is a rule that was meant and is not
 in force, so nothing is allowed until the key is fixed -- even next to a
-valid `allowed`.
+valid `allowed`. So does `policy` spelt wrong at the top level of the options
+(`polcy`, `plicy`, `Policy`, `policies`: within two edits of `policy` or of its
+plural): the real `policy` would stay at its default, no restriction. Any other
+unknown key is only a warning.
 
 The list is not checked against the registry, so an id may be listed before
 its provider exists. Plugins on top of ai.nvim read it with |ai.policy()| and
@@ -216,7 +223,10 @@ the profile; `provider = "auto"` does not move on to another provider), and
 the same goes for an `active` that names no defined profile. A key file may be
 UTF-8 (BOM allowed) or UTF-16 with a BOM. Keys are never printed -- `:Ai info`,
 `:Ai key` and |:checkhealth| show profile, source kind and "key present" or
-"KEY MISSING" only. The switch is for the session; nothing is written.
+"KEY MISSING" only, and neither is a key pasted where the `env` name belongs
+(anything that is not a variable name, or the shape of a vendor key: `AIza...`,
+`gsk_...`, `hf_...`, a bare mixed-case token of 32+ characters). The switch is
+for the session; nothing is written.
 
 ==============================================================================
 5. COMMANDS                                                     *ai-commands*
@@ -597,15 +607,19 @@ Reports:
     has every other module present but not this one.
   - providers -- every registered provider id and whether `available()` is
     currently true (missing binary and/or API key otherwise). Never shows a
-    key's value, only whether one is set. While `ANTHROPIC_BASE_URL` is set, a
-    warning under `claude-cli` says the CLI will talk to that host (host
-    only, it can be a company gateway).
+    key's value, only whether one is set. While `ANTHROPIC_BASE_URL` is set,
+    an entry under `claude-cli` says the CLI will talk to that host (host
+    only, it can be a company gateway): a warning when the CLI can be run
+    (`claude` is on PATH, or `claude-cli` is the `provider`, in
+    `provider_order` or the `completion.provider`), an info line otherwise.
   - configuration -- the active `provider` and `provider_order`, and a
     warning for every value that was dropped to its default, for a malformed
-    `policy.allowed` and for an unknown key under `policy`.
+    `policy.allowed`, for an unknown key under `policy` and for a misspelt
+    `policy`.
   - provider policy -- whether there is an allow-list, an error for a
-    malformed `policy.allowed` or an unknown key under `policy` (every
-    provider is refused until it is fixed), and a warning for a `provider`,
+    malformed `policy.allowed`, an unknown key under `policy` or a misspelt
+    `policy` (every provider is refused until it is fixed), and a warning
+    for a `provider`,
     `completion.provider` or `provider_order` that falls outside the list
     and for a provider allowed only for this session.
   - completion -- enabled?, `trigger` mode, the resolved

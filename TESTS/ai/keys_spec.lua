@@ -237,6 +237,25 @@ describe("ai.keys", function()
       assert.is_truthy(keys.describe("claude"):find("KEY MISSING", 1, true))
     end)
 
+    -- The file is read whole and its line trimmed on `available()`: a line with a
+    -- long run of blanks must not take quadratic time (`^%s*(.-)%s*$`: 8 s for 120 kB).
+    it("trims a line with a long run of blanks in linear time (120 kB)", function()
+      local n = 120000
+      local inner = "a" .. (" "):rep(n) .. "b"
+      for _, case in ipairs({
+        { inner .. "\n", inner },
+        { (" "):rep(n) .. "\nkey\n", "key" },
+        { "key" .. (" "):rep(n) .. "\n", "key" },
+      }) do
+        local t0 = vim.uv.hrtime()
+        local value = key_of(case[1])
+        local ms = (vim.uv.hrtime() - t0) / 1e6
+        assert.is_true(ms < 1000, ("%d ms for %d bytes"):format(ms, #case[1]))
+        assert.are.equal(case[2], value)
+      end
+      assert.are.equal("a b", key_of("  a b \t\n"))
+    end)
+
     it("a directory instead of a file gives no key and no error", function()
       local keys = setup({ claude = { active = "c", profiles = { c = { file = dir } } } })
       assert.is_nil(keys.get("claude", "ANTHROPIC_API_KEY"))
@@ -262,11 +281,20 @@ describe("ai.keys", function()
 
   describe("an env that is not a variable name", function()
     -- A key pasted where the variable name belongs: an Anthropic- and an
-    -- OpenAI-style one (hyphens) and a Gemini-style one (no hyphen at all).
+    -- OpenAI-style one (hyphens), and the vendors' keys that have none: Gemini's
+    -- `AIza` and Groq's `gsk_` and Hugging Face's `hf_` prefixes, and a bare
+    -- mixed-case token of 32 or more letters and digits.
     local pasted = {
       "sk-ant-api03-REALKEYVALUE",
       "sk-proj-AbCd1234EfGh5678",
       "AIzaSyD4kFq8xV2mN7pLrT9wZcB3eH6jU1oYgXs",
+      "AIza_" .. ("x"):rep(34),
+      "gsk_" .. ("aB3dE5gH7j"):rep(5) .. "kL",
+      "gsk_" .. ("a"):rep(40),
+      "hf_" .. ("aBcDeFgHiJ"):rep(3) .. "kLmN",
+      "hf_" .. ("a"):rep(34),
+      "xK3mP9qR2sT7uV4wY8zA1bC5dE6fG0hJ",
+      "Gk3mP9qR2sT7uV4wY8zA1bC5dE6fG0hJmN2",
     }
 
     for _, key in ipairs(pasted) do
@@ -289,13 +317,22 @@ describe("ai.keys", function()
       assert.are.same({}, keys.issues())
     end)
 
-    it("a long mixed-case name with a digit is a name: shown, no issue, and it works", function()
+    it("a long name with words in it is a name: shown, no issue, and it works", function()
       -- Long, mixed-case, one digit: also the shape of a pasted token, which is why
-      -- a rule on those three cannot tell the two apart. Only a vendor's key shape
-      -- (hyphens, Gemini's `AIza...`) can.
+      -- a rule on those three cannot tell the two apart. What does is a vendor's
+      -- key shape: hyphens, a prefix with its length, or a bare token of letters
+      -- and digits -- and a name with an underscore between words is none of them.
       for _, name in ipairs({
         "Company_Anthropic_Key_Production_2",
-        "CompanyAnthropicKeyProductionAccount2",
+        "Company_Anthropic_Key_Production_Account_Number_2",
+        "gsk_company_groq_key_for_the_production_team_account",
+        "hf_company_hugging_face_token_for_production",
+        "gsk_" .. ("a"):rep(39),
+        "hf_" .. ("a"):rep(33),
+        ("A"):rep(40),
+        ("a"):rep(40),
+        "ANTHROPIC_API_KEY_COMPANY_PRODUCTION_2",
+        "CompanyAnthropicKey2",
       }) do
         vim.env[name] = "long-name-key"
         local keys = setup({ claude = { active = "c", profiles = { c = { env = name } } } })
@@ -307,6 +344,16 @@ describe("ai.keys", function()
         assert.are.same({}, issues)
         assert.are.equal("long-name-key", key)
       end
+    end)
+
+    -- The price of the bare-token rule: the same shape written as one long
+    -- CamelCase name is not echoed either (and is reported as not being a name).
+    it("a 32+ character mixed-case name without an underscore is taken for a key", function()
+      local name = "CompanyAnthropicKeyProductionAccount2"
+      local keys = setup({ claude = { active = "c", profiles = { c = { env = name } } } })
+      assert.is_nil(keys.describe("claude"):find(name, 1, true))
+      assert.is_truthy(keys.describe("claude"):find("not a variable name", 1, true))
+      assert.is_nil(table.concat(keys.issues(), "\n"):find(name, 1, true))
     end)
 
     it("39 characters alone are no key; the AIza prefix gives one away", function()

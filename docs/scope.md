@@ -51,6 +51,18 @@ company gateway instead, is passed on on purpose and named (host only) by
 `:Ai info` and `:checkhealth ai` while it is set. It is opt-in (not in
 `provider_order`) and, like every provider, subject to `policy.allowed`.
 
+**A known limit of "the logged-in account is used".** ai.nvim removes the
+*environment variables* the CLI ranks above its login. Credentials that the CLI
+reads from its own *settings* rank above the login as well, and are not touched:
+an `apiKeyHelper` script in a settings file, and an active federation profile
+(a profile file selected in the CLI's own configuration). With one of those set
+up, `claude -p` can bill and act as that identity instead of the one
+`claude auth login` set up. This is documented and not changed: pointing the
+child at an empty configuration directory would probably break users whose login
+legitimately lives in such a profile, and ai.nvim does not rewrite another tool's
+settings. If the account matters (a policy question for customer data), check
+the CLI's own settings once.
+
 ## The allow-list narrows, it never widens
 
 `policy.allowed` (see [configuration.md](configuration.md#provider-policy)) is

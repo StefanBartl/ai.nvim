@@ -66,19 +66,106 @@ describe("ai.providers.util", function()
       assert.are.equal("a  b\tc", util.env_value("AI_TEST_ENV_VALUE"))
     end)
 
-    -- `^%s*(.-)%s*$` retries the trailing-space match at every position of a long
-    -- run of whitespace inside the value: 8 s for 120 kB.
-    it("trims in linear time, whatever the whitespace looks like (120 kB)", function()
-      local n = 120000
-      for _, value in ipairs({
+    -- Hostile shapes of whitespace: a run inside the value, only blanks, blanks of
+    -- every kind, a blank run at one end.
+    local function blank_values(n)
+      return {
         "a" .. (" "):rep(n) .. "b",
         (" "):rep(n / 2) .. "a" .. (" "):rep(n / 2),
         (" "):rep(n),
+        (" \t\r\n\v\f"):rep(n / 6),
         ("\t \n"):rep(n / 3) .. "x" .. ("\t \n"):rep(n / 3),
-      }) do
+        "x" .. (" "):rep(n),
+        (" "):rep(n) .. "x",
+      }
+    end
+
+    ---@param fn fun(value: string)
+    ---@param n integer
+    local function every_blank_value(fn, n)
+      for _, value in ipairs(blank_values(n)) do
         vim.env.AI_TEST_ENV_VALUE = value
         local t0 = vim.uv.hrtime()
+        fn(value)
+        local ms = (vim.uv.hrtime() - t0) / 1e6
+        assert.is_true(ms < 1000, ("%d ms for %d bytes"):format(ms, #value))
+      end
+    end
+
+    -- `^%s*(.-)%s*$` retries the trailing-space match at every position of a long
+    -- run of whitespace inside the value: 8 s for 120 kB.
+    it("trims in linear time, whatever the whitespace looks like (120 kB)", function()
+      every_blank_value(function()
         util.env_value("AI_TEST_ENV_VALUE")
+      end, 120000)
+    end)
+
+    -- Neovim 0.10 and 0.11 ship `vim.trim` as `s:match("^%s*(.*%S)") or ""`, which
+    -- is quadratic on a value that is only blanks (12 s for 60 kB) -- and this runs
+    -- on the `:Ai info` and `:checkhealth` path. The machine running the suite may
+    -- have a newer one, so stand in for the old one: the result must not depend on
+    -- which `vim.trim` there is.
+    it("is linear without relying on vim.trim being linear (0.10/0.11 form, 120 kB)", function()
+      local real = vim.trim
+      vim.trim = function(s)
+        return s:match("^%s*(.*%S)") or ""
+      end
+      local ok, err = pcall(function()
+        every_blank_value(function()
+          util.env_value("AI_TEST_ENV_VALUE")
+        end, 120000)
+      end)
+      vim.trim = real
+      assert.is_true(ok, err)
+    end)
+  end)
+
+  describe("trim", function()
+    it("strips blanks of every kind from both ends and keeps what is inside", function()
+      assert.are.equal("a  b\tc", util.trim(" \t\r\n\v\f a  b\tc \n\n\t"))
+      assert.are.equal("x", util.trim("x"))
+      assert.are.equal("x y", util.trim("x y"))
+      assert.are.equal("x", util.trim("  x"))
+      assert.are.equal("x", util.trim("x  "))
+    end)
+
+    it("gives an empty string for an empty or all-blank value", function()
+      assert.are.equal("", util.trim(""))
+      assert.are.equal("", util.trim(" "))
+      assert.are.equal("", util.trim(" \t\r\n\v\f"))
+    end)
+
+    it("does not touch a non-ASCII byte or an embedded NUL", function()
+      assert.are.equal("\195\164 \0 b", util.trim("  \195\164 \0 b \n"))
+    end)
+
+    it("agrees with vim.trim on a spread of values", function()
+      for _, value in ipairs({
+        "",
+        " ",
+        "a",
+        " a ",
+        "a b",
+        "\n\na b\n\n",
+        "  \t a \t  b  \t ",
+        "\v\fx\v\f",
+        "-- x --",
+      }) do
+        assert.are.equal(vim.trim(value), util.trim(value), vim.inspect(value))
+      end
+    end)
+
+    it("is linear on every shape of blank run (120 kB)", function()
+      local n = 120000
+      for _, value in ipairs({
+        (" "):rep(n),
+        "a" .. (" "):rep(n) .. "b",
+        (" "):rep(n) .. "a",
+        "a" .. (" "):rep(n),
+        (" \t\r\n\v\f"):rep(n / 6),
+      }) do
+        local t0 = vim.uv.hrtime()
+        util.trim(value)
         local ms = (vim.uv.hrtime() - t0) / 1e6
         assert.is_true(ms < 1000, ("%d ms for %d bytes"):format(ms, #value))
       end

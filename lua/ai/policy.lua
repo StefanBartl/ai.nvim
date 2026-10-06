@@ -11,7 +11,8 @@
 --- per machine (an employer's allow-list), so it is plain config: empty, the
 --- default, means "no restriction" and the plugin behaves exactly as before.
 --- A malformed list is not an empty one, and neither is a `policy` with a key
---- this plugin does not know (`alowed`): `ai.config` replaces it with a marker
+--- this plugin does not know (`alowed`), nor an option named almost like it at
+--- the top level (`polcy`, `policies`): `ai.config` replaces it with a marker
 --- no provider matches, so a typo refuses everything instead of lifting the rule.
 ---
 --- Deliberately small: a list, a membership test, and an explicit way to step

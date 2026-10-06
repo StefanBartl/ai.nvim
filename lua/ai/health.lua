@@ -71,6 +71,7 @@ function M.check()
 
   -- ── Providers ────────────────────────────────────────────────────────────
   vim.health.start("ai.nvim: providers")
+  local cfg = require("ai").config()
   local providers = require("ai.providers")
   providers.load_builtin()
   for _, id in ipairs(providers.ids()) do
@@ -106,19 +107,29 @@ function M.check()
       -- info() for a plain fact like a version or a path).
       vim.health.info("ℹ️ INFO " .. id .. ": not available (missing binary and/or API key)")
     end
-    -- Under the entry it belongs to, whether or not the CLI is installed right
-    -- now: the variable is passed on to it on purpose, so say where it points.
+    -- Under the entry it belongs to: the variable is passed on to the CLI on
+    -- purpose, so say where it points. A warning only where the CLI can be run (it
+    -- is installed, or it is the provider, in the order or the completion's): for
+    -- someone who set the variable for other tools and never uses claude-cli it is
+    -- a fact to know, not a defect, and must not nag on every :checkhealth.
     local gateway = id == "claude-cli" and require("ai.providers.claude_cli").gateway_note()
     if gateway then
-      vim.health.warn(table.concat(gateway, " "), {
-        "Check that this is the endpoint you mean; unset ANTHROPIC_BASE_URL to reach Anthropic directly",
-      })
+      local in_use = available
+        or cfg.provider == id
+        or vim.tbl_contains(cfg.provider_order, id)
+        or (cfg.completion and cfg.completion.provider) == id
+      if in_use then
+        vim.health.warn(table.concat(gateway, " "), {
+          "Check that this is the endpoint you mean; unset ANTHROPIC_BASE_URL to reach Anthropic directly",
+        })
+      else
+        vim.health.info(table.concat(gateway, " "))
+      end
     end
   end
 
   -- ── Configuration ──────────────────────────────────────────────────────
   vim.health.start("ai.nvim: configuration")
-  local cfg = require("ai").config()
   vim.health.info("provider = " .. cfg.provider)
   vim.health.info("provider_order = " .. table.concat(cfg.provider_order, ", "))
   for _, issue in ipairs(require("ai.config").issues()) do
@@ -153,6 +164,14 @@ function M.check()
       {
         "The warning under configuration names the key; policy has only `allowed`, "
           .. 'a list of provider ids, e.g. policy = { allowed = { "claude", "copilot" } }',
+      }
+    )
+  elseif marker == require("ai.config").MISSPELT_POLICY then
+    vim.health.error(
+      "the options have a key that looks like a misspelt `policy` -- every provider is refused until it is fixed",
+      {
+        "The warning under configuration names the key; the option is called `policy`, "
+          .. 'e.g. policy = { allowed = { "claude", "copilot" } }',
       }
     )
   else

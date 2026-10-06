@@ -44,6 +44,29 @@ function M.executable(name)
   return cached
 end
 
+---`s` without leading and trailing whitespace, in linear time, on every Neovim
+---this plugin supports. Not `^%s*(.-)%s*$` (quadratic on a long run of
+---whitespace inside the value: 8 s for 120 kB) and not `vim.trim`: that one is
+---linear only from the Neovim release that rewrote it, and 0.10/0.11 still ship
+---`s:match("^%s*(.*%S)")`, which takes 12 s for 60 kB of blanks. The same goes
+---for `lib.lua.strings.trim`, which has been linear only since a recent
+---lib.nvim. One `find` for the first non-blank byte, then a walk back over the
+---trailing run: every step is O(1).
+---@nodiscard
+---@param s string
+---@return string
+function M.trim(s)
+  local first = s:find("%S")
+  if not first then
+    return ""
+  end
+  local last = #s
+  while last > first and s:find("^%s", last) do
+    last = last - 1
+  end
+  return s:sub(first, last)
+end
+
 ---Read an environment variable, trimmed of leading/trailing whitespace
 ---(including a trailing newline, a common shape for a value sourced from a
 ---file or `.env` loader via e.g. `export KEY=$(cat key.txt)`). Returns
@@ -59,9 +82,7 @@ function M.env_value(name, fallback)
   if type(value) ~= "string" then
     return fallback
   end
-  -- Not `^%s*(.-)%s*$`: that one takes quadratic time on a long run of
-  -- whitespace inside the value (8 s for 120 kB); `vim.trim` is linear.
-  local trimmed = vim.trim(value)
+  local trimmed = M.trim(value)
   return (trimmed ~= "") and trimmed or fallback
 end
 

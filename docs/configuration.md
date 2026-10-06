@@ -165,9 +165,18 @@ key; any other one is a rule that was meant and is not in force, and ignoring it
 would leave the default, no restriction, in place. So nothing is allowed until
 the key is fixed, even when a valid `allowed` stands next to it. `setup()` warns
 once, naming the key, and `:checkhealth ai` reports it as an error under
-*provider policy* and as a warning under *configuration*. (A misspelt `policy`
-itself, such as `polcy`, is only an unknown top-level key: it is warned about
-and the machine stays unrestricted.)
+*provider policy* and as a warning under *configuration*.
+
+The same goes for `policy` itself spelt wrong: a top-level key that is not an
+option of ai.nvim but is within two edits of `policy` or of its plural
+(`polcy`, `plicy`, `Policy`, `policies`) is a rule that was meant, and the real
+`policy` stays at its default. Nothing is allowed until the key is fixed, even
+when a valid `policy` stands next to it; `setup()` warns once, naming the key
+(the misspelt key is not kept in the config), and `:checkhealth ai` reports it
+as an error under *provider policy* and a warning under *configuration*. This is
+only for that one option: any other unknown top-level key, near some other option
+or near none, is a warning and changes nothing, so a typo in `ui` does not refuse
+every provider.
 
 The list is not checked against the registry: an id may be listed before its
 provider exists (`"copilot"` today). A plugin on top of ai.nvim reads the policy
@@ -215,9 +224,15 @@ from; `:Ai key <profile>` picks one for the session:
 - A key is never printed: `:Ai info`, `:Ai key` and `:checkhealth ai` show the
   profile, the kind of source and "key present"/"KEY MISSING", nothing else. An
   `env` that is a vendor's key and not a variable name (a key pasted there by
-  mistake: anything with a hyphen, or a Gemini `AIza...` key) is not echoed
-  either. A long mixed-case name such as `Company_Anthropic_Key_Production_2` is a
-  name and is shown.
+  mistake) is not echoed either. That is anything that is not an identifier
+  (every `sk-...` key has hyphens), and the keys that have none by their shape: a
+  Gemini `AIza...` key (39 characters or more), a Groq `gsk_` key (40 or more letters and
+  digits after the prefix), a Hugging Face `hf_` key (34 or more), and a bare
+  token of 32 or more letters and digits, mixed-case, without an underscore. A
+  long name with words in it, such as `Company_Anthropic_Key_Production_2`, is a
+  name and is shown; the same shape written without underscores
+  (`CompanyAnthropicKeyProductionAccount2`) is taken for a key, which is the price
+  of the bare-token rule.
 - `claude-cli` and the local providers have no key and are not affected.
 
 Keys switch the *account*; whether customer data may go to that account at all

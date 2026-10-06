@@ -160,6 +160,15 @@ describe("ANTHROPIC_BASE_URL visibility (claude-cli)", function()
         "https://h" .. (" "):rep(n / 2) .. "x",
         "https://" .. ("\200"):rep(n),
         "https://h.example/" .. ("p"):rep(n),
+        -- A digit run is part of the name class AND of the port: followed by a byte
+        -- outside it, the match used to be retried at every split (55 s).
+        "https://" .. ("1"):rep(n) .. "!",
+        "https://" .. ("1"):rep(n) .. ":!",
+        "https://" .. ("1"):rep(n) .. "%",
+        "https://" .. ("1"):rep(n) .. " x",
+        "https://" .. ("1"):rep(n) .. ":" .. ("1"):rep(n) .. "!",
+        "https://" .. ("1."):rep(n / 2) .. ":!",
+        "https://[" .. ("1"):rep(n) .. "]" .. ("1"):rep(n) .. "!",
       }) do
         set(value)
         local t0 = vim.uv.hrtime()
@@ -167,6 +176,50 @@ describe("ANTHROPIC_BASE_URL visibility (claude-cli)", function()
         local ms = (vim.uv.hrtime() - t0) / 1e6
         assert.is_true(ms < 1000, ("%d ms for %d bytes"):format(ms, #value))
         assert.is_true(#note < 400, "the note carries no more than a host")
+      end
+    end)
+
+    -- The same shapes at the size the bound lets through: the parse must not be
+    -- slow there either (it is the bound that keeps it short above, and the parse
+    -- that keeps it linear below), and they are not a host.
+    it("reads a long value up to the bound quickly, and names no host for it", function()
+      for _, value in ipairs({
+        "https://" .. ("1"):rep(2000) .. "!",
+        "https://" .. ("1"):rep(2000) .. ":!",
+        "https://" .. ("1"):rep(1000) .. ":" .. ("1"):rep(1000) .. "!",
+      }) do
+        set(value)
+        local t0 = vim.uv.hrtime()
+        local note = note_text()
+        local ms = (vim.uv.hrtime() - t0) / 1e6
+        assert.is_true(ms < 100, ("%d ms for %d bytes"):format(ms, #value))
+        assert.is_truthy(note:find("not shown", 1, true), note)
+      end
+    end)
+
+    it("is bounded before anything is parsed: a base URL is not 2 kB long", function()
+      -- Within the bound a long path or query is still just dropped ...
+      set("https://gw.example.com/" .. ("p"):rep(1500) .. "?q=" .. ("x"):rep(200))
+      assert.is_truthy(note_text():find("gw.example.com", 1, true))
+      assert.is_nil(note_text():find("not shown", 1, true))
+      -- ... beyond it the value is no base URL: nothing of it is read or echoed.
+      set("https://gw.example.com/" .. ("p"):rep(2100))
+      local note = note_text()
+      assert.is_truthy(note:find("not shown", 1, true), note)
+      assert.is_nil(note:find("gw.example.com", 1, true), note)
+    end)
+
+    it("still reads a host name that is all digits and dots, and a port", function()
+      for url, host in pairs({
+        ["https://10.0.0.5:8443/v1"] = "10.0.0.5:8443",
+        ["https://10.0.0.5/v1"] = "10.0.0.5",
+        ["https://12345"] = "12345",
+        ["http://[2001:db8::1]:8080"] = "[2001:db8::1]:8080",
+      }) do
+        set(url)
+        local note = note_text()
+        assert.is_truthy(note:find(host, 1, true), url .. " -> " .. note)
+        assert.is_nil(note:find("not shown", 1, true), url .. " -> " .. note)
       end
     end)
 
@@ -257,6 +310,8 @@ describe("ANTHROPIC_BASE_URL visibility (claude-cli)", function()
       end
       require("ai.config").setup({})
       package.loaded["ai.health"] = nil
+      -- The CLI is "installed": the test Neovim stands in for `claude`.
+      cli.command = { vim.v.progpath }
     end)
 
     after_each(function()
@@ -307,6 +362,65 @@ describe("ANTHROPIC_BASE_URL visibility (claude-cli)", function()
         or find("info", "claude-cli: not available")
       assert.is_truthy(provider_line, "no claude-cli line in the providers section")
       assert.is_true(warn > provider_line, "under the claude-cli entry")
+    end)
+
+    -- A warning where the CLI can be run; for someone who set the variable for other
+    -- tools and never uses claude-cli, a fact to know and not a defect.
+    describe("without the CLI in sight", function()
+      local URL = "https://gateway.corp.example:8443/v1"
+
+      before_each(function()
+        cli.command = { "definitely-not-a-claude-binary-xyz" }
+        set(URL)
+      end)
+
+      ---@param opts? table
+      local function check(opts)
+        require("ai.config").setup(opts or {})
+        package.loaded["ai.health"] = nil
+        require("ai.health").check()
+      end
+
+      it("is an info line, still naming the host, when claude-cli is not in use", function()
+        check()
+        assert.is_nil(find("ok", "claude-cli: available"))
+        local at = assert(find("info", "gateway.corp.example:8443"), "no info line naming the host")
+        assert.is_truthy(report[at].msg:find("company gateway", 1, true))
+        assert.is_nil(find("warn", "gateway.corp.example"), "not a warning")
+        assert.is_nil(find("warn", VAR))
+        assert.is_truthy(
+          at > find("info", "claude-cli: not available"),
+          "still under the claude-cli entry"
+        )
+      end)
+
+      it("is a warning when the CLI is installed", function()
+        cli.command = { vim.v.progpath }
+        check()
+        assert.is_truthy(find("warn", "gateway.corp.example:8443"))
+        assert.is_nil(find("info", "gateway.corp.example"))
+      end)
+
+      for label, opts in pairs({
+        ["the provider"] = { provider = "claude-cli" },
+        ["in provider_order"] = { provider_order = { "claude", "claude-cli" } },
+        ["the completion's provider"] = { completion = { provider = "claude-cli" } },
+      }) do
+        it(("is a warning when claude-cli is %s, installed or not"):format(label), function()
+          check(opts)
+          assert.is_truthy(find("warn", "gateway.corp.example:8443"))
+          assert.is_nil(find("info", "gateway.corp.example"))
+        end)
+      end
+
+      it("keeps the report of an unreadable value at the same level", function()
+        set("sk-ant-api03-SECRETSECRETSECRET")
+        check()
+        assert.is_truthy(find("info", VAR .. " is set"))
+        assert.is_nil(find("warn", VAR))
+        check({ provider = "claude-cli" })
+        assert.is_truthy(find("warn", VAR .. " is set"))
+      end)
     end)
 
     it("never prints more than the host", function()
