@@ -267,7 +267,11 @@ A profile can take its key from a command (password manager, secret store): >lua
 The command is started directly from the argument list -- a string is refused
 -- asynchronously and with a timeout, never from `available()`: a configured
 command counts as available and `ai.ask`/`ai.stream` run it before the first
-request. The first non-empty line of stdout is the key, kept in memory only
+request. A `.cmd`/`.bat` is refused on Windows (libuv cannot run it, and
+`cmd.exe /c` would re-parse the arguments): use an `.exe` or
+`{ "pwsh", "-NoProfile", "-File", "{script}.ps1" }`. `timeout_ms` is
+a whole number of milliseconds, 1 to 3600000 (default 10000). The first
+non-empty line of stdout is the key, kept in memory only
 (`cache_ms`, at least one second, default the whole session; a failed run is
 not cached). stderr is discarded. Errors name the profile and a reason (exit
 code, timeout, no output), never output or an argument; `:Ai info` shows

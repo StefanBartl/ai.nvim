@@ -250,6 +250,16 @@ describe("ai.keys command source", function()
       assert.is_truthy(err.message:find("timed out after 400 ms", 1, true))
     end)
 
+    it("an unusable or extreme timeout_ms falls back or is clamped, never hangs", function()
+      for _, value in ipairs({ 0, -5, 0.5, 0 / 0, math.huge, -math.huge, 1e300, "soon" }) do
+        reload()
+        local keys = setup({ command = fake("io.write('k')"), timeout_ms = value })
+        local ok, err = fetch(keys)
+        assert.is_true(ok, tostring(value) .. ": " .. vim.inspect(err))
+        assert.is_false(keys.needs_fetch("claude"), tostring(value))
+      end
+    end)
+
     it("empty output is an error, not a nil key", function()
       local keys = setup({ command = fake("io.write('  \\n\\n')") })
       local ok, err = fetch(keys)
@@ -298,6 +308,34 @@ describe("ai.keys command source", function()
     )
   end)
 
+  describe("batch files on Windows", function()
+    it("are recognised by name, only on Windows", function()
+      local keys = setup({ command = fake("io.write('k')") })
+      assert.is_true(keys._batch_file("C:/tools/key.CMD", true))
+      assert.is_true(keys._batch_file("get-key.bat", true))
+      assert.is_false(keys._batch_file("C:/tools/key.exe", true))
+      assert.is_false(keys._batch_file("get-key.cmd", false))
+      assert.is_false(keys._batch_file("pass", false))
+    end)
+
+    it("are refused with a way out instead of being spawned or wrapped in cmd.exe", function()
+      if vim.fn.has("win32") == 0 then
+        return
+      end
+      local path = write_file("get-key.cmd", "@echo the-key\r\n")
+      local keys = setup({ command = { path, "secret-arg" } })
+      local ok, err = fetch(keys)
+      assert.is_false(ok)
+      assert.is_truthy(err.message:find(".cmd/.bat batch file", 1, true))
+      assert.is_truthy(err.message:find("-File", 1, true))
+      assert.is_nil(err.message:find("secret-arg", 1, true))
+      local joined = table.concat(keys.issues(), "\n")
+      assert.is_truthy(joined:find("get-key.cmd", 1, true))
+      assert.is_truthy(joined:find("batch file", 1, true))
+      assert.is_nil(joined:find("secret-arg", 1, true))
+    end)
+  end)
+
   describe("validation", function()
     it("needs exactly one source and positive numbers", function()
       local keys = setup({ command = fake("io.write('k')"), env = "X" })
@@ -307,6 +345,17 @@ describe("ai.keys command source", function()
       local joined = table.concat(keys.issues(), "\n")
       assert.is_truthy(joined:find("timeout_ms", 1, true))
       assert.is_truthy(joined:find("cache_ms", 1, true))
+    end)
+
+    it("a non-finite or NaN timeout_ms is an issue, not accepted", function()
+      for _, value in ipairs({ 0 / 0, math.huge }) do
+        reload()
+        local keys = setup({ command = fake("io.write('k')"), timeout_ms = value })
+        assert.is_truthy(
+          table.concat(keys.issues(), "\n"):find("timeout_ms", 1, true),
+          tostring(value)
+        )
+      end
     end)
 
     it("a good command is no issue", function()
