@@ -103,6 +103,12 @@ key: `res.bulk.provider` and `res.bulk.model` (`req.model`, the configured model
 the provider's built-in default, or `"default"` when the provider chooses itself),
 plus the `temperature` sent.
 
+Some models accept only their default temperature (for example OpenAI's
+o-series reasoning models) and answer a request with `temperature = 0` with an
+API error. For those, set `bulk.temperature = false`: nothing is sent, and
+`res.bulk.deterministic` is `false`. When a provider error mentions the
+temperature, the error message of the bulk call carries this hint.
+
 ## Counters
 
 ```lua

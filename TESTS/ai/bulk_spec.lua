@@ -384,6 +384,49 @@ describe("ai.bulk", function()
       assert.are.equal("cancelled", results[1].res.kind)
     end)
 
+    it(
+      "reset(label) while a job is queued: killing it does not refund into the new budget",
+      function()
+        local results = {}
+        ask(req_of(), results)
+        local queued = ask(req_of(), results)
+        bulk.reset("run")
+        assert.are.equal(0, bulk.usage("run").label_chars)
+        queued:kill()
+        assert.are.equal(0, bulk.usage("run").label_chars)
+        assert.are.equal(0, bulk.usage().session_chars)
+      end
+    )
+
+    it(
+      "reset() keeps running jobs reachable through cancel(label) and never goes negative",
+      function()
+        local results = {}
+        ask(req_of(), results)
+        ask(req_of(), results)
+        bulk.reset()
+        assert.are.equal(0, bulk.usage().session_chars)
+        assert.are.equal(2, bulk.cancel("run"))
+        assert.are.equal(0, bulk.usage().session_chars)
+        assert.are.equal(0, bulk.usage("run").label_chars or 0)
+        wait_for(function()
+          return #results == 2
+        end)
+        assert.are.equal("cancelled", results[1].res.kind)
+        assert.are.equal("cancelled", results[2].res.kind)
+      end
+    )
+
+    it("usage().queued does not count cancelled jobs that are still in the queue", function()
+      local results = {}
+      ask(req_of(), results)
+      local q1 = ask(req_of(), results)
+      ask(req_of(), results)
+      assert.are.equal(2, bulk.usage("run").queued)
+      q1:kill()
+      assert.are.equal(1, bulk.usage("run").queued)
+    end)
+
     it("a request that already started keeps its cost", function()
       local results = {}
       local h = ask(req_of(), results)

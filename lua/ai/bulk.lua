@@ -47,6 +47,7 @@ M.watchdog_grace_ms = 5000
 ---@field chars integer characters admitted under this label
 ---@field queue Ai.Bulk.Job[]
 ---@field jobs table<Ai.Bulk.Job, true> every queued or in-flight job
+---@field gen integer bumped by `reset`; a refund from an older generation is dropped
 
 ---@type table<string, Ai.Bulk.Group>
 local groups = {}
@@ -55,12 +56,16 @@ local groups = {}
 ---@type integer
 local session_chars = 0
 
+---Bumped by a full `reset()`, so a refund admitted before it is dropped.
+---@type integer
+local session_gen = 0
+
 ---@param label string
 ---@return Ai.Bulk.Group
 local function group(label)
   local g = groups[label]
   if not g then
-    g = { active = 0, chars = 0, queue = {}, jobs = {} }
+    g = { active = 0, chars = 0, queue = {}, jobs = {}, gen = 0 }
     groups[label] = g
   end
   return g
@@ -165,6 +170,7 @@ function M.ask(req, cb, deps)
   local g ---@type Ai.Bulk.Group|nil
   local limit = 1
   local refund = 0
+  local refund_gen, refund_session_gen = 0, 0
 
   local handle = {}
 
@@ -190,8 +196,13 @@ function M.ask(req, cb, deps)
         g.active = g.active - 1
       end
       if refund > 0 then
-        g.chars = g.chars - refund
-        session_chars = session_chars - refund
+        -- A reset since admission already forgot these characters.
+        if g.gen == refund_gen then
+          g.chars = math.max(0, g.chars - refund)
+          if session_gen == refund_session_gen then
+            session_chars = math.max(0, session_chars - refund)
+          end
+        end
         refund = 0
       end
       pump(g, limit)
@@ -322,6 +333,7 @@ function M.ask(req, cb, deps)
   g.chars = g.chars + chars
   session_chars = session_chars + chars
   refund = chars
+  refund_gen, refund_session_gen = g.gen, session_gen
 
   -- Determinism, where the provider can take it.
   local can_temp = type(provider.capabilities) == "table" and provider.capabilities.temperature
@@ -371,6 +383,18 @@ function M.ask(req, cb, deps)
           chars = chars,
         }
       end
+      if
+        not ok
+        and temperature ~= nil
+        and type(res) == "table"
+        and type(res.message) == "string"
+        and res.message:lower():find("temperature", 1, true)
+      then
+        res.message = res.message
+          .. " (bulk sent temperature = "
+          .. tostring(temperature)
+          .. "; set bulk.temperature = false to send none)"
+      end
       finish(ok, res)
     end)
     if not ok_call then
@@ -411,6 +435,20 @@ function M.cancel(label)
   return n
 end
 
+---@internal
+---Queued jobs that will still run (a cancelled one may linger in the queue).
+---@param g Ai.Bulk.Group
+---@return integer
+local function live_queued(g)
+  local n = 0
+  for _, job in ipairs(g.queue) do
+    if not job.done then
+      n = n + 1
+    end
+  end
+  return n
+end
+
 ---Counters, for a caller that wants to show progress or a cost estimate.
 ---@param label? string
 ---@return { session_chars: integer, label_chars: integer|nil, active: integer|nil, queued: integer|nil }
@@ -420,12 +458,13 @@ function M.usage(label)
     session_chars = session_chars,
     label_chars = g and g.chars or nil,
     active = g and g.active or nil,
-    queued = g and #g.queue or nil,
+    queued = g and live_queued(g) or nil,
   }
 end
 
 ---Forget the counters of one label, or of everything (session total too).
----Does not touch requests that are still running.
+---Does not touch requests that are still running: they stay reachable through
+---`cancel(label)`, and their later refund is dropped (generation check).
 ---@param label? string
 ---@return nil
 function M.reset(label)
@@ -434,10 +473,18 @@ function M.reset(label)
     if g then
       session_chars = math.max(0, session_chars - g.chars)
       g.chars = 0
+      g.gen = g.gen + 1
     end
     return
   end
-  groups = {}
+  for name, g in pairs(groups) do
+    g.chars = 0
+    g.gen = g.gen + 1
+    if next(g.jobs) == nil then
+      groups[name] = nil
+    end
+  end
+  session_gen = session_gen + 1
   session_chars = 0
 end
 

@@ -473,6 +473,9 @@ answer stay with the caller. >lua
     abort an HTTP request already sent, it drops the answer (the cost is spent).
   - `temperature = 0` is sent where the provider takes one (`bulk.temperature`
     changes it, `false` sends none); `res.bulk.deterministic` says so.
+    Models that take only their default temperature (e.g. OpenAI o-series)
+    reject `0`: use `bulk.temperature = false` for them. A provider error that
+    mentions the temperature gets this hint appended.
   - Not combinable with `allow_unlisted`, `attachments` or `context`; not
     available for |ai.stream()|.
 
