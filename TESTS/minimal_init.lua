@@ -108,6 +108,11 @@ add_optional_dep("DATA_NVIM_DIR", "data.nvim", "data.detect")
 --- CI-guaranteed coverage regardless of whether a real checkout is found.
 add_optional_dep("GITSUITE_NVIM_DIR", "gitsuite.nvim", "gitsuite.features.conflict")
 
+-- No spec may read the claude CLI's real settings (they can hold credential
+-- commands): the user settings location points at a directory that does not
+-- exist. A spec that needs settings files passes fixtures of its own.
+vim.env.CLAUDE_CONFIG_DIR = vim.fn.tempname()
+
 -- Swap and shada stay off for the whole suite, including plenary's child
 -- processes that reuse this file: stale swap files fail suites with E326.
 vim.o.swapfile = false

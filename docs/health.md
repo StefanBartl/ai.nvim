@@ -22,8 +22,23 @@ What each section reports:
   `claude-cli` is the `provider`, in `provider_order` or the `completion.provider`
   -- and an info line otherwise (someone who set the variable for other tools
   and never uses `claude-cli` is not nagged on every check). Only the host is
-  printed, and nothing when the variable is unset. See
-  [requirements.md](requirements.md).
+  printed, and nothing when the variable is unset. A second entry under
+  `claude-cli`, at the same levels, says when the claude CLI's own settings
+  define an `apiKeyHelper`: a command that supplies the credential and ranks
+  above the CLI's login, so `claude-cli` may use another account than the one
+  `claude auth login` set up, and ai.nvim cannot take it out of the child's
+  environment because it is a setting. The check looks in the user's settings
+  file (`settings.json` in `CLAUDE_CONFIG_DIR` when that variable is set, else
+  in `~/.claude`) and in the managed settings (`managed-settings.json` and the
+  `managed-settings.d/*.json` drop-ins in the CLI's system directory), and
+  names the layer, `user` and/or `managed`, never the file. It only looks whether
+  the key exists: the value (a command that can carry a secret) and the rest of
+  the file are neither read out nor shown. A file that is missing, over 1 MiB,
+  unreadable or not JSON counts as "no". Not detected: an active federation
+  profile (it lives in another tool's configuration directory, and nothing there
+  is read), server-managed settings and MDM policy (they are not files), and
+  project settings (the child runs in a neutral directory). See
+  [scope.md](scope.md).
 - <a id="configuration"></a>**configuration** -- the active `provider` and `provider_order`, plus a
   warning for every config value that failed its type/shape check and was
   dropped back to its default instead of surviving the merge (e.g.

@@ -850,7 +850,7 @@ describe("ai.policy", function()
   end)
 
   describe(":checkhealth", function()
-    local report, saved
+    local report, saved, real_settings_files
 
     before_each(function()
       report = {}
@@ -861,12 +861,20 @@ describe("ai.policy", function()
           report[#report + 1] = fn .. ": " .. tostring(msg)
         end
       end
+      -- The check looks for an `apiKeyHelper` in the claude CLI's settings files;
+      -- these specs are about the policy and must not read the real ones.
+      local cli = require("ai.providers.claude_cli")
+      real_settings_files = cli.settings_files
+      cli.settings_files = function()
+        return {}
+      end
     end)
 
     after_each(function()
       for fn, original in pairs(saved) do
         vim.health[fn] = original
       end
+      require("ai.providers.claude_cli").settings_files = real_settings_files
     end)
 
     ---@param needle string
