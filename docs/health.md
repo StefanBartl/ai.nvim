@@ -44,7 +44,13 @@ What each section reports:
   profile (it lives in another tool's configuration directory, and nothing there
   is read), server-managed settings and MDM policy (they are not files), and
   project settings (the child runs in a neutral directory). See
-  [scope.md](scope.md).
+  [scope.md](scope.md). Under `copilot` (when the CLI is on `PATH`): a line that the
+  provider was written against CLI 1.0.92 and that the login is not checked (that
+  takes a model call, which uses credit), the names of the token variables set in the
+  environment (they are not passed on; a `ghp_` one is named as classic, which the
+  CLI refuses), and that every call runs in a throw-away home directory. A warning
+  when `isolate_home` is switched off: the CLI then keeps the prompt and the answer
+  of every call under `~/.copilot/session-state`.
 - <a id="configuration"></a>**configuration** -- the active `provider` and `provider_order`, plus a
   warning for every config value that failed its type/shape check and was
   dropped back to its default instead of surviving the merge (e.g.

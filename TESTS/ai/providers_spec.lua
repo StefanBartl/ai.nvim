@@ -146,11 +146,11 @@ describe("ai.providers", function()
     end
   )
 
-  it("load_builtin() registers all six built-ins, including claude-cli", function()
+  it("load_builtin() registers all seven built-ins, including claude-cli and copilot", function()
     local providers = require("ai.providers")
     providers.load_builtin()
     assert.are.same(
-      { "claude", "claude-cli", "gemini", "loomai", "ollama", "openai" },
+      { "claude", "claude-cli", "copilot", "gemini", "loomai", "ollama", "openai" },
       providers.ids()
     )
   end)

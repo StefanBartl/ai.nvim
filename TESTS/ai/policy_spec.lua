@@ -956,14 +956,16 @@ describe("ai.policy", function()
           provider = "gemini",
           provider_order = { "gemini" },
           completion = { provider = "ollama" },
-          policy = { allowed = { "claude", "copilot" } },
+          policy = { allowed = { "claude", "not-yet-built" } },
         })
         package.loaded["ai.health"] = nil
         require("ai.health").check()
         assert.is_true(reported('provider = "gemini" is not on the allow-list'))
         assert.is_true(reported('completion.provider = "ollama" is not on the allow-list'))
         assert.is_true(reported("provider_order shares no entry with the allow-list"))
-        assert.is_true(reported("copilot: listed, but no provider with that id is registered"))
+        assert.is_true(
+          reported("not-yet-built: listed, but no provider with that id is registered")
+        )
       end
     )
   end)

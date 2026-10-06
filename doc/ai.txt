@@ -75,6 +75,21 @@ migration is what |ai-attachments| were built for.
              `apiKeyHelper` or sets such a key or token in its `env` block;
              it only looks whether the keys exist. A federation profile is
              not detected.
+  - copilot: the GitHub Copilot CLI (`copilot`) on `PATH`, logged in
+             (`copilot login`; the login lives in the system credential
+             store). Opt-in: not in the default `provider_order`, select it
+             with `:Ai provider copilot`. Uses whatever account the CLI is
+             logged in as; needs no token of its own, and `COPILOT_GITHUB_TOKEN`,
+             `GH_TOKEN` and `GITHUB_TOKEN` (which outrank that login, and of
+             which a classic `ghp_` one is refused by the CLI) are not passed
+             on to it, nor is anything that would send the request to
+             another endpoint or export its text (a bring-your-own-model
+             setting, the offline switch, extra instruction directories,
+             OpenTelemetry); the list is in docs/requirements.md.
+             |:checkhealth| ai names the token variables that are set. The
+             login cannot be checked without a model call (which uses
+             credit), so a missing login or used-up credit is reported by
+             the first request.
 
 No provider is required at install time -- |:checkhealth| ai reports which
 ones are usable on this machine, and `provider = "auto"` (the default) picks
@@ -113,7 +128,7 @@ run or one of the default `<leader>a*` keymaps is pressed.
 Pass a table to |ai.setup()|. All keys are optional; `lua/ai/config/
 DEFAULTS.lua` is the source of truth. >lua
   require("ai").setup({
-    provider = "auto",                        -- "auto"|"claude"|"ollama"|"openai"|"gemini"|"loomai"|"claude-cli"|custom id
+    provider = "auto",                        -- "auto"|"claude"|"ollama"|"openai"|"gemini"|"loomai"|"claude-cli"|"copilot"|custom id
     provider_order = { "claude", "ollama", "openai", "gemini", "loomai" },  -- "auto" resolution order
     policy = {
       allowed = {},                           -- provider ids this machine may use; empty = no restriction
@@ -555,6 +570,26 @@ require("ai.context").assemble({opts})
            `network_error`, never a shortened answer, and one that exits
            cleanly with neither a result nor any text is an
            `invalid_response`, never an empty answer.
+  copilot  GitHub Copilot CLI (`copilot`), text only, streaming via its
+           `--output-format json` events. Uses the account the CLI is logged
+           in as; the token variables and the routing variables of the CLI
+           are removed from the child process. Runs with every tool off
+           (`--available-tools` naming no tool, every built-in excluded,
+           `shell`/`write`/`url` denied, no built-in MCP server, no questions,
+           no custom instructions, no permission ever granted) in a throw-away
+           working directory and a throw-away home directory, both deleted when
+           the process ends: the CLI would otherwise keep the prompt and the
+           answer under `~/.copilot/session-state`. The prompt goes to its
+           stdin, never to argv, and is not interpreted there (`@file`,
+           `!cmd` and `/cmd` stay text). The answer is the final message; the
+           commentary the model streams before it is not. If the CLI ever
+           reports a tool request or tool event, the answer is discarded
+           (`api_error`). A start-up failure (login, token, model) comes back
+           as an `api_error` that names `auth`, `token`, `credit` or `model`
+           and carries the CLI's message; a process that dies before its
+           answer is complete is a `network_error`. Unverified: the shape of
+           an error event during a run (used-up credit). Opt-in (not in
+           `provider_order`).
 
 `provider = "auto"` (the default) walks `provider_order` and uses the first
 provider whose `available()` is true -- a cheap, synchronous check (an
@@ -610,6 +645,7 @@ What each provider can carry:
   ollama   image              bare `images` array on the message
   loomai   --                 text only
   claude-cli --               text only (the CLI is run without tools)
+  copilot  --                 text only (the CLI is run without tools)
 
 A provider that cannot carry an attachment FAILS the request
 (`err.kind == "invalid_request"`) before sending anything -- it is never

@@ -67,6 +67,7 @@ message rather than as an editor that stops responding.
 | `ollama` | yes | no | bare `images` array of base64 strings on the message |
 | `loomai` | no | no | — |
 | `claude-cli` | no | no | — |
+| `copilot` | no | no | — |
 
 `:checkhealth ai` prints the same table for the providers available on this
 machine.

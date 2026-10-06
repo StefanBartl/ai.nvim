@@ -34,9 +34,9 @@ return {
     process_net = "error",
   },
   guard_allow = {
-    -- providers_claude_cli_spec starts a headless nvim as a fake `claude` CLI.
+    -- providers_claude_cli_spec and providers_copilot_cli_spec start a headless nvim as a fake CLI.
     -- "definitely-not-a-claude-binary-xyz" is a deliberate negative probe ("reports a command that cannot be started").
-    spawn = { "nvim", "definitely-not-a-claude-binary-xyz" },
+    spawn = { "nvim", "definitely-not-a-claude-binary-xyz", "definitely-not-a-copilot-binary-xyz" },
     fs = {},
     network = {},
   },

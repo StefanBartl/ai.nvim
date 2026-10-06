@@ -52,6 +52,19 @@
     settings file defines an `apiKeyHelper` or sets such a key or token in its
     `env` block (see [health.md](health.md)); an active federation profile is not
     detected.
+  - **copilot**: the GitHub Copilot CLI (`copilot`) on `PATH`, logged in
+    (`copilot login`; the login lives in the system credential store). Opt-in
+    -- not in the default `provider_order`; select it with `:Ai provider
+    copilot`. It uses the account the CLI is logged in as, so no token is
+    configured here -- the tokens that outrank that login are not passed on to
+    it: `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN` (the CLI refuses a
+    classic `ghp_` one anyway), and neither is anything that would send the
+    request elsewhere or export its text (`COPILOT_PROVIDER_*`,
+    `COPILOT_OFFLINE`, `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`, `COPILOT_OTEL_*`,
+    `OTEL_*`). `:checkhealth ai` names the token variables that are set (never a
+    value). The login cannot be checked without a model call, which uses credit:
+    a missing login or used-up credit is reported by the first request. See
+    [scope.md](scope.md) for what a run does and leaves.
 
 The two external tools -- `curl`, and `ollama` for that provider -- are
 declared in [install.json](install.json) and read by lib.nvim's
