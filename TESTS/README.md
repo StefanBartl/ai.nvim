@@ -1,38 +1,36 @@
 # ai.nvim tests
 
-A [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) busted-style
-suite (`describe`/`it`/`before_each`, busted assertions) -- this repo's own
-established convention (see `.github/workflows/ci.yml`'s `test` job and
-`TESTS/minimal_init.lua`), not the framework-free `H.eq`/`H.ok` harness some
-sibling repos in this collection use instead.
+A busted-style suite (`describe`/`it`/`before_each`, busted assertions) run by
+[testing.nvim](https://github.com/StefanBartl/testing.nvim) -- this repo's own
+established convention (see `.github/workflows/ci.yml`'s `test` job,
+`.testing.lua` and `TESTS/minimal_init.lua`), not the framework-free
+`H.eq`/`H.ok` harness some sibling repos in this collection use instead.
 
 ## Running locally
 
-Point `LIB_NVIM_DIR` and `PLENARY_DIR` at wherever those two plugins live in
-your own setup (a plugin-manager install dir, a sibling checkout next to this
-repo, or a `.deps/` clone -- see `TESTS/minimal_init.lua`'s own `add_dep()`
-for the exact search order), then:
+`testing.nvim` and `lib.nvim` are required. Each is looked up in four places,
+in this order (a missing one is a fatal error naming all four):
+`$TESTING_NVIM_DIR` / `$LIB_NVIM_DIR`, `.deps/<name>`, a sibling checkout next
+to this repo, `stdpath('data')/lazy/<name>`. Then:
 
 ```bash
-scripts/test.sh                       # every spec under TESTS/ai
-scripts/test.sh TESTS/ai/sse_spec.lua # a single file
+scripts/test.sh                        # every spec under TESTS/ai
+scripts/test.sh --file sse             # spec files whose name contains "sse"
+scripts/test.sh --json ir.json         # also write the machine-readable result
 ```
-
-A single file runs the busted runner in the already-initialised nvim
-(`require('plenary.busted').run(...)`), not `:PlenaryBustedFile`: that one spawns
-a child nvim without `-u`, i.e. without `TESTS/minimal_init.lua` and with the
-developer's own config loaded.
 
 which is exactly:
 
 ```bash
-LIB_NVIM_DIR=/path/to/lib.nvim PLENARY_DIR=/path/to/plenary.nvim \
-nvim --clean --headless -u TESTS/minimal_init.lua \
-  -c "PlenaryBustedDirectory TESTS/ai { minimal_init = 'TESTS/minimal_init.lua', sequential = true }"
+nvim -n -i NONE --headless -u NONE -l /path/to/testing.nvim/scripts/testing.lua run .
 ```
 
-Each spec file runs in its own `nvim --headless` subprocess (plenary spawns
-one per file), so `package.loaded` never leaks between files -- only between
+`data.nvim` and `gitsuite.nvim` are optional soft dependencies: when a
+sibling or `.deps/` checkout exists, `TESTS/minimal_init.lua` puts it on the
+runtimepath and the specs that need it run; without it they skip themselves.
+
+Each spec file runs in its own `nvim --headless` subprocess (`isolated =
+"file"` in `.testing.lua`), so `package.loaded` never leaks between files -- only between
 `it()` blocks *within* the same file, which is why almost every spec here
 resets the module(s) under test in `before_each`/`after_each` (see the module
 doc at the top of `providers_claude_spec.lua`, the template every other
@@ -49,8 +47,8 @@ The two documentation specs are the odd ones out: they test the *documentation*
 code, and both share their helpers (`docs/*.md` blocks and tables, running a
 documented snippet, listing the real keymaps) in `TESTS/docs_support.lua`. Each
 spec puts `TESTS/?.lua` on `package.path` itself (so it also runs when started
-without `TESTS/minimal_init.lua`); the module is not a spec, so plenary never
-runs it.
+without `TESTS/minimal_init.lua`); the module is not a spec (only `*_spec.lua`
+files are), so the runner never runs it.
 
 `docs_examples_spec.lua` -- `docs/*.md`. It extracts code blocks and tables and
 executes them or diffs them against the code. Covered: the `configuration.md`
@@ -211,10 +209,9 @@ keeps finding elsewhere:
   real files via `vim.uv` in `attachments_spec.lua`) was run twice on this
   Windows machine, both runs 225/225 green.
 
-Sibling-checkout assumptions: `lib.nvim` and `plenary.nvim` are genuinely
-available as sibling checkouts on this machine (`E:\repos\lib.nvim`, and
-`plenary.nvim` under the user's `nvim-data/lazy`), and `TESTS/minimal_init.lua`
-already finds both correctly via its sibling-checkout search path -- nothing
+Sibling-checkout assumptions: `lib.nvim` is genuinely available as a sibling
+checkout on this machine (`E:\repos\lib.nvim`), and `TESTS/minimal_init.lua`
+already finds it correctly via its sibling-checkout search path -- nothing
 here needed adjusting.
 
 ## Writing a new spec
