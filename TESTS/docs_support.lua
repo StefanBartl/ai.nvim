@@ -3,8 +3,8 @@
 -- tables out of them, running a documented snippet, and listing what is really
 -- mapped. Everything works on the repo root (the specs run from there).
 --
--- Not a spec: plenary only runs `*_spec.lua`. It is found through the
--- `TESTS/?.lua` entry TESTS/minimal_init.lua puts on package.path.
+-- Not a spec: only `*_spec.lua` files are run. Each documentation spec puts
+-- `TESTS/?.lua` on package.path itself, which is how this module is found.
 local M = {}
 
 M.ROOT = vim.fn.getcwd()
