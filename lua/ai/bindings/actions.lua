@@ -303,6 +303,8 @@ function M.info()
     for _, line in ipairs(gateway or {}) do
       lines[#lines + 1] = "    " .. line
     end
+    local names = providers.capability_names(p)
+    lines[#lines + 1] = "    can: " .. (#names > 0 and table.concat(names, ", ") or "text only")
   end
 
   require("ui.kit").popup({ type = "viewer", title = "Ai info", lines = lines })

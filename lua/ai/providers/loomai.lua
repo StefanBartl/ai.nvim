@@ -31,7 +31,7 @@ local util = require("ai.providers.util")
 local M = {
   id = "loomai",
   name = "loomAI (local)",
-  capabilities = { streaming = true, vision = false, documents = false },
+  capabilities = { streaming = true, vision = false, documents = false, web = false },
 }
 
 local DEFAULT_HOST = "http://127.0.0.1:8080"

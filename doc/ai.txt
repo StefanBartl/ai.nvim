@@ -545,6 +545,11 @@ rasterizes pages first and sends images. A capability describes the API, not
 the model: Ollama's chat endpoint has an `images` field for every model,
 `llava` reads it and `llama3.2` ignores it.
 
+`capabilities.web` says whether a provider's request can use web search in
+one single-turn round-trip. It is `false` on every built-in, because none
+wires a web-search parameter into its request yet; a caller must treat web
+access as unavailable. `:Ai info` lists each provider's capabilities.
+
 Large requests need no configuration. A body over 8 KB is written to a
 `0600` temp file and read back by curl with `--data-binary @file` instead of
 being passed in argv, where Windows caps a command line at 32 767

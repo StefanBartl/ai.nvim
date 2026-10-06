@@ -159,4 +159,5 @@
 ---@field streaming? boolean `stream()` is a real event stream, not a single buffered answer
 ---@field vision? boolean The API accepts `Ai.Attachment` entries with `kind = "image"`
 ---@field documents? boolean The API accepts `Ai.Attachment` entries with `kind = "document"` (a PDF sent whole, not rasterized by the caller first)
+---@field web? boolean The request can use web search in one single-turn round-trip, without a tool-use loop in this plugin. Honest `false` everywhere for now: no provider wires a web-search parameter into its request (see `docs/scope.md`), so a caller must not promise web access on the strength of a provider's name
 ---@field max_tokens? integer

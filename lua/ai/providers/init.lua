@@ -137,6 +137,26 @@ local function profile_key_error(id)
   return nil
 end
 
+---Capability names a provider has, in a fixed order, for `:Ai info`. `vision`
+---and `documents` are shown by the attachment kind they accept.
+---@param p Ai.Provider|nil
+---@return string[]
+function M.capability_names(p)
+  local caps = p and p.capabilities or {}
+  local out = {}
+  for _, pair in ipairs({
+    { "streaming", "streaming" },
+    { "vision", "image" },
+    { "documents", "document" },
+    { "web", "web" },
+  }) do
+    if caps[pair[1]] then
+      out[#out + 1] = pair[2]
+    end
+  end
+  return out
+end
+
 ---Resolve `id` to a concrete, available provider. `id == "auto"` walks
 ---`order` in sequence and returns the first entry whose `available()` is
 ---true; an explicit `id` is looked up directly and must itself be
