@@ -165,6 +165,41 @@ function M.check()
         )
       end
     end
+    -- The Copilot CLI: what cannot be checked without spending credit, what is
+    -- not passed on, and what a run leaves on disk. Facts, so `info`, except a real
+    -- departure from the safe setup (the real home dir in use).
+    if id == "copilot" and available then
+      local cli = require("ai.providers.copilot")
+      vim.health.info("  copilot: written against the CLI 1.0.92 (`copilot --version`)")
+      vim.health.info(
+        "  copilot: the login is not checked here (that takes a model call, which uses "
+          .. "credit); a missing login or used-up credit is reported by the first request "
+          .. "(`auth`/`credit`), and the shape of an error during a run is unverified"
+      )
+      local names, classic = cli.env_tokens()
+      if #names > 0 then
+        vim.health.info(
+          ("  copilot: %s set in the environment: not passed to the CLI, its own login is used%s"):format(
+            table.concat(names, ", "),
+            classic and " (a classic ghp_ token would be refused by the CLI anyway)" or ""
+          )
+        )
+      end
+      if cli.isolate_home then
+        vim.health.info(
+          "  copilot: every call runs in a throw-away COPILOT_HOME and working directory "
+            .. "(deleted afterwards), so no session or prompt is kept on disk"
+        )
+      else
+        vim.health.warn(
+          "copilot: isolate_home is off -- the CLI keeps the prompt and the answer of every "
+            .. "call under its own ~/.copilot/session-state",
+          {
+            "Set require('ai.providers.copilot').isolate_home = true unless the login needs the real home",
+          }
+        )
+      end
+    end
   end
 
   -- ── Configuration ──────────────────────────────────────────────────────

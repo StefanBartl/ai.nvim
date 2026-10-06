@@ -5,7 +5,7 @@ truth; this table mirrors it):
 
 ```lua
 require("ai").setup({
-  provider = "auto",                         -- "auto" | "claude" | "ollama" | "openai" | "gemini" | "loomai" | "claude-cli" | a custom id
+  provider = "auto",                         -- "auto" | "claude" | "ollama" | "openai" | "gemini" | "loomai" | "claude-cli" | "copilot" | a custom id
   provider_order = { "claude", "ollama", "openai", "gemini", "loomai" }, -- "auto" resolution order; "loomai" last, see docs/scope.md
   policy = {
     allowed = {},                             -- provider ids this machine may use; empty = no restriction, see "Provider policy"
@@ -183,7 +183,7 @@ or near none, is a warning and changes nothing, so a typo in `ui` does not refus
 every provider.
 
 The list is not checked against the registry: an id may be listed before its
-provider exists (`"copilot"` today). A plugin on top of ai.nvim reads the policy
+provider exists (an id no provider has yet). A plugin on top of ai.nvim reads the policy
 with `require("ai").policy()` and may restrict further, never widen it.
 
 ## Bulk requests
@@ -246,7 +246,7 @@ from; `:Ai key <profile>` picks one for the session:
   name and is shown; the same shape written without underscores
   (`CompanyAnthropicKeyProductionAccount2`) is taken for a key, which is the price
   of the bare-token rule.
-- `claude-cli` and the local providers have no key and are not affected.
+- `claude-cli`, `copilot` and the local providers have no key and are not affected.
 
 Keys switch the *account*; whether customer data may go to that account at all
 is a policy question (see "Provider policy" and your employer's rules).

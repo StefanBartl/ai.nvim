@@ -303,6 +303,10 @@ function M.info()
     for _, line in ipairs(gateway or {}) do
       lines[#lines + 1] = "    " .. line
     end
+    if id == "copilot" and avail then
+      lines[#lines + 1] =
+        "    login: not checked (a check would use credit); the first request reports it"
+    end
     local names = providers.capability_names(p)
     lines[#lines + 1] = "    can: " .. (#names > 0 and table.concat(names, ", ") or "text only")
   end
