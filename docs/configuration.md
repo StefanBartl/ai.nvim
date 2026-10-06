@@ -277,8 +277,17 @@ store, instead of a variable or a file:
 - **No shell.** `command` is an argument vector that is started directly, so
   nothing in it is interpreted by `sh` or `cmd`. A string, an empty list or a
   list with a non-string is refused (`:checkhealth ai` says so, a request fails).
+- **No batch files on Windows.** libuv cannot run a `.cmd`/`.bat` directly, and
+  the way around it (`cmd.exe /c`) would re-parse the arguments, which may be a
+  secret. Such a command (also a bare name that resolves to one on `PATH`, like
+  `npm`) is refused with a clear reason, and `:checkhealth ai` warns about it.
+  Use an `.exe`, or run a script through PowerShell:
+  `{ "pwsh", "-NoProfile", "-File", "C:/tools/get-key.ps1" }` (Windows
+  PowerShell: `"powershell"`).
 - **Never blocks.** The command runs asynchronously with a timeout; a command
-  that waits for input is killed after `timeout_ms`. `ai.ask` and `ai.stream` run
+  that waits for input is killed after `timeout_ms` (a whole number of
+  milliseconds from 1 to 3600000; a fraction is floored, a larger value is
+  clamped, 0, a negative or a non-number means the default). `ai.ask` and `ai.stream` run
   it before the first request and go on when it has finished (`:Ai` shows nothing
   different; a stream returns a handle at once and `kill()` also cancels the wait).
 - **Available without running.** A configured command counts as available, so

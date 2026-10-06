@@ -40,8 +40,10 @@
 ---   argument vector (`vim.system`), never as a string through `sh -c`/`cmd`,
 ---   so nothing in the config or in a profile name is ever interpreted by a
 ---   shell. A string, an empty list or a list with a non-string is refused.
---- - **Asynchronous with a timeout.** `timeout_ms` (default 10000) kills a
----   command that hangs on a prompt; the UI thread is never blocked.
+--- - **No batch files on Windows.** A `.cmd`/`.bat` is refused (see `_batch_file`):
+---   libuv cannot run one and `cmd.exe /c` would re-parse the arguments.
+--- - **Asynchronous with a timeout.** `timeout_ms` (default 10000, at most one
+---   hour) kills a command that hangs on a prompt; the UI thread is never blocked.
 --- - **Cached in memory for the session.** Only the key, only in this module,
 ---   for `cache_ms` (default: the whole session; at least one second). A failed
 ---   run is not cached. Concurrent requests share one run.
@@ -64,6 +66,9 @@ local selected = {}
 local file_cache = {}
 
 local DEFAULT_COMMAND_TIMEOUT_MS = 10000
+---Upper bound of `timeout_ms`: one hour. A larger (or infinite) value is
+---clamped, it can neither be formatted with `%d` nor armed as a timer.
+local MAX_COMMAND_TIMEOUT_MS = 3600000
 local MIN_CACHE_MS = 1000
 
 ---Cached command keys by `<provider>\0<profile>`; `at` is `vim.uv.now()`.
@@ -142,6 +147,45 @@ local function valid_argv(command)
     end
   end
   return command
+end
+
+---A whole, finite number of milliseconds in 1..MAX_COMMAND_TIMEOUT_MS. `%d` in
+---the timeout message throws on a fraction, an infinity or a huge value, which
+---inside the callback would leave the run in `inflight` for good. Anything that
+---is not a number of at least 1 (0, negative, NaN, a string) is the default.
+---@param value any
+---@return integer
+local function command_timeout(value)
+  if type(value) ~= "number" or value ~= value or value < 1 then
+    return DEFAULT_COMMAND_TIMEOUT_MS
+  end
+  return math.floor(math.min(value, MAX_COMMAND_TIMEOUT_MS))
+end
+
+local BATCH_REASON = "a .cmd/.bat batch file cannot be started without cmd.exe; use an .exe, "
+  .. 'or { "pwsh", "-NoProfile", "-File", "<script>.ps1" } '
+  .. '(Windows PowerShell: { "powershell", "-NoProfile", "-File", ... })'
+
+---True when `command` is a Windows batch file (`.cmd`/`.bat`), by its own name or
+---by what a bare name resolves to on PATH. libuv cannot execute those directly;
+---the way around is `cmd.exe /c`, which re-parses the arguments (a key helper's
+---arguments may come from a profile) -- so they are refused, never wrapped.
+---@param command string argv[1]
+---@param windows boolean
+---@return boolean
+function M._batch_file(command, windows)
+  if not windows then
+    return false
+  end
+  local function batch(path)
+    local ext = tostring(path):lower():match("%.(%w+)%s*$")
+    return ext == "cmd" or ext == "bat"
+  end
+  if batch(command) then
+    return true
+  end
+  local resolved = vim.fn.exepath(command)
+  return resolved ~= "" and batch(resolved)
 end
 
 ---@param entry { value: string, at: integer }|nil
@@ -433,12 +477,10 @@ function M.fetch(id, cb)
   if vim.fn.executable(cmd[1]) == 0 then
     return fail_later("executable not found")
   end
-  -- A whole number of milliseconds: `%d` below throws on a fraction, which
-  -- inside the callback would leave this run in `inflight` for good.
-  local timeout = type(spec.timeout_ms) == "number"
-      and spec.timeout_ms >= 1
-      and math.floor(spec.timeout_ms)
-    or DEFAULT_COMMAND_TIMEOUT_MS
+  if M._batch_file(cmd[1], vim.fn.has("win32") == 1) then
+    return fail_later(BATCH_REASON)
+  end
+  local timeout = command_timeout(spec.timeout_ms)
   local started = pcall(vim.system, cmd, { text = true, timeout = timeout }, function(res)
     vim.schedule(function()
       if res.code == 124 or res.signal == 15 then
@@ -654,14 +696,27 @@ function M.issues()
           if not argv then
             issues[#issues + 1] = path
               .. '.command: must be a list of strings, e.g. { "pass", "show", "name" } (no shell string)'
-          elseif
-            vim.fn.executable(argv[1]:sub(1, 1) == "~" and vim.fn.expand(argv[1]) or argv[1]) == 0
-          then
-            issues[#issues + 1] = path
-              .. (".command: executable '%s' not found"):format(vim.fs.basename(argv[1]))
+          else
+            local exe = argv[1]:sub(1, 1) == "~" and vim.fn.expand(argv[1]) or argv[1]
+            if vim.fn.executable(exe) == 0 then
+              issues[#issues + 1] = path
+                .. (".command: executable '%s' not found"):format(vim.fs.basename(argv[1]))
+            elseif M._batch_file(exe, vim.fn.has("win32") == 1) then
+              issues[#issues + 1] = path
+                .. (".command: '%s' is %s"):format(vim.fs.basename(argv[1]), BATCH_REASON)
+            end
           end
           for _, field in ipairs({ "timeout_ms", "cache_ms" }) do
-            if spec[field] ~= nil and (type(spec[field]) ~= "number" or spec[field] <= 0) then
+            local v = spec[field]
+            if
+              v ~= nil
+              and (
+                type(v) ~= "number"
+                or v ~= v
+                or v <= 0
+                or (field == "timeout_ms" and v == math.huge)
+              )
+            then
               issues[#issues + 1] = ("%s.%s: must be a positive number of milliseconds"):format(
                 path,
                 field
