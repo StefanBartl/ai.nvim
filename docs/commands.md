@@ -8,7 +8,7 @@
 :[range]Ai prepend [prompt?]      -- insert AI-generated code before the range (default: current line)
 :Ai provider <name>               -- switch the active provider, or back to auto (Tab-completes registered ids and auto); outside policy.allowed it asks first, auto never does
 :Ai key [<profile>|reset] [<provider>] -- choose the API-key profile for this session (config.keys); no argument shows the setup
-:Ai info                          -- active provider, resolution order, provider policy, per-provider availability (and the gateway host under claude-cli while ANTHROPIC_BASE_URL is set)
+:Ai info                          -- active provider, resolution order, provider policy, the bulk session cap and grants, per-provider availability and capabilities (and the gateway host under claude-cli while ANTHROPIC_BASE_URL is set)
 ```
 
 Bare `:Ai [prompt?]` is the same as `:Ai ask [prompt?]`.

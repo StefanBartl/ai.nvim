@@ -27,17 +27,28 @@ local _active = nil
 local OPEN_SHAPE_KEYS =
   { model = true, provider_order = true, ["policy.allowed"] = true, keys = true }
 
----Tables in which an unknown key must not be ignored, mapped to what replaces
----the table when one is found: the same reasoning as `FAIL_CLOSED` below, for a
----key instead of a value. `policy = { alowed = { "claude" } }` is a rule that
----was meant and is not in force, and ignoring it leaves the default -- no
----restriction -- in place with nothing but a warning. `close_unknown_keys`
----reports and replaces; `warn_unknown_keys` leaves these keys to it.
----@type table<string, fun(): table>
+---Tables in which an unknown key must not be ignored, each with what it
+---refuses (`effect`) and the table that replaces it (`replace`) when one is
+---found: the same reasoning as `FAIL_CLOSED` below, for a key instead of a
+---value. `policy = { alowed = { "claude" } }` is a rule that was meant and is
+---not in force, and ignoring it leaves the default -- no restriction -- in
+---place with nothing but a warning; `bulk = { max_sesion_chars = 100 }` is a
+---cost cap that was meant and is not in force. `close_unknown_keys` reports
+---and replaces; `warn_unknown_keys` leaves these keys to it.
+---@type table<string, { effect: string, replace: fun(): table }>
 local CLOSED_TABLES = {
-  policy = function()
-    return { allowed = { M.INVALID_POLICY } }
-  end,
+  policy = {
+    effect = "every provider is refused",
+    replace = function()
+      return { allowed = { M.INVALID_POLICY } }
+    end,
+  },
+  bulk = {
+    effect = "every bulk request is refused",
+    replace = function()
+      return { max_session_chars = 0 }
+    end,
+  },
 }
 
 ---The two spellings of the top-level option that holds the allow-list: its name
@@ -146,7 +157,7 @@ local VALUE_SCHEMA = {
   ["policy.allowed"] = "string[]",
   timeout_ms = "number",
   bulk = "table",
-  ["bulk.max_session_chars"] = "number|false",
+  ["bulk.max_session_chars"] = "number>=0|false",
   log_level = "number",
   ["ui.progress_style"] = { "auto", "notify", "statusline", "fidget", "float" },
   ["ui.badge_timeout_ms"] = "number",
@@ -175,17 +186,37 @@ M.MISSPELT_POLICY = "<misspelt policy key>"
 ---Values that must not degrade to their default, because the default is the
 ---permissive state: an empty `policy.allowed` means "no restriction", so a
 ---malformed one dropped to `{}` would switch the allow-list off without a
----word. These are replaced by a value that refuses instead (ERR-22's
----"degrade to the default" is for values where the default is harmless), and
----`setup()` says so right away rather than leaving it to `:checkhealth`.
----@type table<string, fun(): any>
+---word; `bulk.max_session_chars = false` means "no cost cap", so one that is
+---`"500000"` or `-1` must not become that. These are replaced by a value that
+---refuses instead (ERR-22's "degrade to the default" is for values where the
+---default is harmless), and `setup()` says so right away rather than leaving
+---it to `:checkhealth`. `effect` is what the refusal is.
+---@type table<string, { effect: string, replace: fun(): any }>
 local FAIL_CLOSED = {
-  ["policy.allowed"] = function()
-    return { M.INVALID_ALLOWED }
-  end,
-  policy = function()
-    return { allowed = { M.INVALID_ALLOWED } }
-  end,
+  ["policy.allowed"] = {
+    effect = "every provider is refused",
+    replace = function()
+      return { M.INVALID_ALLOWED }
+    end,
+  },
+  policy = {
+    effect = "every provider is refused",
+    replace = function()
+      return { allowed = { M.INVALID_ALLOWED } }
+    end,
+  },
+  bulk = {
+    effect = "every bulk request is refused",
+    replace = function()
+      return { max_session_chars = 0 }
+    end,
+  },
+  ["bulk.max_session_chars"] = {
+    effect = "every bulk request is refused",
+    replace = function()
+      return 0
+    end,
+  },
 }
 
 ---@internal
@@ -214,8 +245,9 @@ local function value_ok(kind, value)
     end
     return true
   end
-  if kind == "number|false" then
-    return value == false or type(value) == "number"
+  if kind == "number>=0|false" then
+    -- NaN fails `>= 0`; a negative number is no cap either.
+    return value == false or (type(value) == "number" and value >= 0)
   end
   return type(value) == kind
 end
@@ -240,13 +272,14 @@ local function sanitize_values(opts, path, issues)
     if kind and not value_ok(kind, value) then
       local closed = FAIL_CLOSED[full_key]
       if closed then
-        local issue = ("%s: invalid value (%s) -- every provider is refused until it is fixed"):format(
+        local issue = ("%s: invalid value (%s) -- %s until it is fixed"):format(
           full_key,
-          vim.inspect(value)
+          vim.inspect(value),
+          closed.effect
         )
         issues[#issues + 1] = issue
         require("lib.nvim.notify").create("[ai]").warn(issue)
-        opts[key] = closed()
+        opts[key] = closed.replace()
       else
         issues[#issues + 1] = ("%s: invalid value (%s) -- using the default instead"):format(
           full_key,
@@ -282,14 +315,15 @@ local function close_unknown_keys(opts, issues)
       table.sort(unknown)
       local known = vim.tbl_keys(DEFAULTS[name])
       table.sort(known)
-      local issue = ("%s: unknown key (%s has: %s) -- every provider is refused until it is fixed"):format(
+      local issue = ("%s: unknown key (%s has: %s) -- %s until it is fixed"):format(
         table.concat(unknown, ", "),
         name,
-        table.concat(known, ", ")
+        table.concat(known, ", "),
+        closed.effect
       )
       issues[#issues + 1] = issue
       require("lib.nvim.notify").create("[ai]").warn(issue)
-      opts[name] = closed()
+      opts[name] = closed.replace()
     end
   end
 end
@@ -342,7 +376,7 @@ local _issues = {}
 ---the merge, not after -- by the time `vim.tbl_deep_extend` has run, either
 ---kind of mistake is indistinguishable from "the user meant to leave this at
 ---its default". Where the default is the permissive state, the mistake refuses
----instead (`FAIL_CLOSED`, an unknown key under `policy`, see
+---instead (`FAIL_CLOSED`, an unknown key under `policy` or `bulk`, see
 ---`close_unknown_keys`, and a top-level key that is `policy` misspelt, see
 ---`close_misspelt_policy`).
 ---@param user_opts? Ai.Config|table

@@ -52,6 +52,11 @@ describe("ai.bulk", function()
         calls[#calls + 1] = { req = req, cb = cb }
         if fake_mode == "now" then
           cb(true, { text = "ok:" .. req.prompt, provider = "fake" })
+        elseif fake_mode == "fail" then
+          -- fails at once, inside ask(): a missing key or a refused argument
+          cb(false, { kind = "api_error", message = "nope" })
+        elseif fake_mode == "nokey" then
+          cb(false, { kind = "missing_api_key", message = "no key", data = { profile = "work" } })
         elseif fake_mode == "raise" then
           error("boom")
         end
@@ -258,6 +263,282 @@ describe("ai.bulk", function()
     end)
   end)
 
+  describe("input that is not what the contract says", function()
+    -- Every refusal is a callback, never an exception out of ask().
+    local function asks_without_raising(req, results)
+      local ok, err = pcall(ask, req, results)
+      assert.is_true(ok, tostring(err))
+    end
+
+    it("counts a NUL byte as one character instead of raising E976", function()
+      fake_mode = "now"
+      local results = {}
+      asks_without_raising(req_of(nil, { prompt = "a\0b", system = "\0" }), results)
+      wait_for(function()
+        return #results == 1
+      end)
+      assert.is_true(results[1].ok)
+      assert.are.equal(4, results[1].res.bulk.chars)
+    end)
+
+    it("a NUL byte over max_chars is a bulk_limit with the real count", function()
+      local results = {}
+      asks_without_raising(req_of({ max_chars = 5 }, { prompt = "abc\0def" }), results)
+      wait_for(function()
+        return #results == 1
+      end)
+      assert.are.equal("bulk_limit", results[1].res.kind)
+      assert.are.equal(7, results[1].res.data.chars)
+      assert.are.equal(0, #calls)
+    end)
+
+    it("counts invalid UTF-8 byte by byte, so it cannot slip under max_chars", function()
+      local results = {}
+      asks_without_raising(req_of({ max_chars = 5 }, { prompt = ("\128"):rep(10) }), results)
+      wait_for(function()
+        return #results == 1
+      end)
+      assert.are.equal("bulk_limit", results[1].res.kind)
+      assert.are.equal(10, results[1].res.data.chars)
+    end)
+
+    it(
+      "a malformed prompt, system, attachments, provider or timeout_ms is invalid_request",
+      function()
+        local bad = {
+          { system = {} },
+          { system = 5 },
+          { attachments = 5 },
+          { provider = 5 },
+          { timeout_ms = "abc" },
+          { timeout_ms = 0 },
+          { timeout_ms = 0 / 0 },
+          { temperature = "hot" },
+        }
+        local results = {}
+        for _, extra in ipairs(bad) do
+          asks_without_raising(req_of(nil, extra), results)
+        end
+        asks_without_raising(req_of({ temperature = 0 / 0 }), results)
+        asks_without_raising(req_of({ temperature = math.huge }), results)
+        -- bulk.ask() is also reachable without ai.ask()'s own check of the prompt
+        require("ai.bulk").ask(
+          { prompt = 5, bulk = { label = "x", max_chars = 1 } },
+          function(ok, err)
+            results[#results + 1] = { ok = ok, res = err }
+          end,
+          { resolve = function() end, dispatch = function() end }
+        )
+        wait_for(function()
+          return #results == #bad + 3
+        end)
+        assert.are.equal(#bad + 3, #results)
+        for i, r in ipairs(results) do
+          assert.is_false(r.ok, "case " .. i)
+          assert.are.equal("invalid_request", r.res.kind, "case " .. i)
+        end
+        assert.are.equal(0, #calls)
+        assert.are.equal(0, bulk.usage().session_chars)
+      end
+    )
+
+    it("an error while preparing the request reaches the callback and costs nothing", function()
+      package.loaded["ai.context"] = {
+        assemble = function()
+          error("context boom")
+        end,
+      }
+      local results = {}
+      asks_without_raising(req_of(), results)
+      package.loaded["ai.context"] = nil
+      wait_for(function()
+        return #results == 1
+      end)
+      assert.is_false(results[1].ok)
+      assert.are.equal("invalid_request", results[1].res.kind)
+      assert.is_truthy(results[1].res.message:find("context boom", 1, true))
+      assert.are.equal(0, bulk.usage().session_chars)
+      assert.are.equal(0, #calls)
+    end)
+  end)
+
+  describe("temperature", function()
+    it("bulk.temperature = false also drops a temperature the request carries", function()
+      fake_mode = "now"
+      local results = {}
+      ask(req_of({ temperature = false }, { temperature = 0.9 }), results)
+      wait_for(function()
+        return #results == 1
+      end)
+      assert.is_nil(calls[1].req.temperature)
+      assert.is_nil(results[1].res.bulk.temperature)
+      assert.is_false(results[1].res.bulk.deterministic)
+    end)
+
+    it(
+      "bulk.temperature, when set, wins over the request's, and res.bulk says what went",
+      function()
+        fake_mode = "now"
+        local results = {}
+        ask(req_of({ temperature = 0.2 }, { temperature = 0.9 }), results)
+        wait_for(function()
+          return #results == 1
+        end)
+        assert.are.equal(0.2, calls[1].req.temperature)
+        assert.are.equal(0.2, results[1].res.bulk.temperature)
+        assert.is_false(results[1].res.bulk.deterministic)
+      end
+    )
+
+    it("the request's own temperature stands when bulk.temperature is not set", function()
+      fake_mode = "now"
+      local results = {}
+      ask(req_of(nil, { temperature = 0.9 }), results)
+      ask(req_of({ label = "zero" }, { temperature = 0 }), results)
+      wait_for(function()
+        return #results == 2
+      end)
+      assert.are.equal(0.9, calls[1].req.temperature)
+      assert.are.equal(0.9, results[1].res.bulk.temperature)
+      assert.is_false(results[1].res.bulk.deterministic)
+      assert.are.equal(0, calls[2].req.temperature)
+      assert.is_true(results[2].res.bulk.deterministic)
+    end)
+
+    it("a provider without a temperature parameter is not handed the request's", function()
+      local results = {}
+      ask(req_of(nil, { provider = "plain", temperature = 0.5 }), results)
+      wait_for(function()
+        return #results == 1
+      end)
+      assert.is_nil(calls[1].req.temperature)
+      assert.is_nil(results[1].res.bulk.temperature)
+    end)
+
+    local function hinted(bulk_opts, message)
+      local results = {}
+      ask(req_of(bulk_opts), results)
+      calls[1].cb(false, { kind = "api_error", message = message })
+      wait_for(function()
+        return #results == 1
+      end)
+      return results[1].res.message
+    end
+
+    it("an error that names the temperature says how to send none", function()
+      local message = hinted(nil, "Unsupported value: 'temperature' does not support 0.")
+      assert.are.equal(
+        "Unsupported value: 'temperature' does not support 0."
+          .. " (bulk sent temperature = 0; set bulk.temperature = false to send none)",
+        message
+      )
+    end)
+
+    it("an error that does not name it is passed on unchanged", function()
+      assert.are.equal("rate limited", hinted(nil, "rate limited"))
+    end)
+
+    it("no hint when no temperature was sent", function()
+      assert.are.equal(
+        "temperature is fixed",
+        hinted({ temperature = false }, "temperature is fixed")
+      )
+    end)
+  end)
+
+  describe("config.bulk.max_session_chars fails closed", function()
+    local original_notify, notices
+
+    before_each(function()
+      original_notify = vim.notify
+      notices = {}
+      vim.notify = function(msg)
+        notices[#notices + 1] = msg
+      end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+    end)
+
+    ---One request under `opts`; returns its result.
+    local function one_request(opts)
+      require("ai.config").setup(opts)
+      fake_mode = "now"
+      local results = {}
+      ask(req_of(), results)
+      wait_for(function()
+        return #results == 1
+      end)
+      return results[1]
+    end
+
+    local function assert_refused(r)
+      assert.is_false(r.ok)
+      assert.are.equal("bulk_limit", r.res.kind)
+      assert.are.equal("max_session_chars", r.res.data.reason)
+      assert.are.equal(0, #calls)
+    end
+
+    it("0 is a cap: every bulk request is refused, without a warning", function()
+      assert_refused(one_request({ bulk = { max_session_chars = 0 } }))
+      assert.are.equal(0, #notices)
+      assert.are.same({}, require("ai.config").issues())
+    end)
+
+    for label, value in pairs({
+      ["a negative number"] = -5,
+      ["a string"] = "100",
+      ["true"] = true,
+      ["NaN"] = 0 / 0,
+    }) do
+      it(("%s refuses every bulk request and says so at once"):format(label), function()
+        assert_refused(one_request({ bulk = { max_session_chars = value } }))
+        local config = require("ai.config")
+        assert.are.equal(1, #config.issues())
+        assert.is_truthy(config.issues()[1]:find("bulk.max_session_chars", 1, true))
+        assert.are.equal(1, #notices)
+        assert.is_truthy(notices[1]:find("every bulk request is refused", 1, true))
+      end)
+    end
+
+    it("a misspelt key under bulk refuses every bulk request instead of lifting the cap", function()
+      assert_refused(one_request({ bulk = { max_sesion_chars = 100 } }))
+      local config = require("ai.config")
+      assert.are.equal(1, #config.issues())
+      assert.is_truthy(config.issues()[1]:find("bulk.max_sesion_chars", 1, true))
+      assert.are.equal(1, #notices)
+    end)
+
+    it("a bulk option that is not a table refuses every bulk request", function()
+      assert_refused(one_request({ bulk = "500000" }))
+      assert.are.equal(1, #require("ai.config").issues())
+      assert.are.equal(1, #notices)
+    end)
+
+    it("a value that got into the live config unchecked refuses too", function()
+      require("ai.config").setup({})
+      require("ai.config").get().bulk.max_session_chars = "10"
+      fake_mode = "now"
+      local results = {}
+      ask(req_of(), results)
+      wait_for(function()
+        return #results == 1
+      end)
+      assert_refused(results[1])
+    end)
+
+    it("false and a number that fits are as before, and quiet", function()
+      local r = one_request({ bulk = { max_session_chars = false } })
+      assert.is_true(r.ok)
+      require("ai.bulk").reset()
+      local r2 = one_request({ bulk = { max_session_chars = 5 } })
+      assert.is_true(r2.ok)
+      assert.are.equal(0, #notices)
+      assert.are.same({}, require("ai.config").issues())
+    end)
+  end)
+
   describe("concurrency", function()
     it("keeps at most `concurrency` requests in flight and starts queued ones in order", function()
       local results = {}
@@ -408,7 +689,8 @@ describe("ai.bulk", function()
         assert.are.equal(0, bulk.usage().session_chars)
         assert.are.equal(2, bulk.cancel("run"))
         assert.are.equal(0, bulk.usage().session_chars)
-        assert.are.equal(0, bulk.usage("run").label_chars or 0)
+        -- the group stays (its jobs were running), with the budget reset to 0
+        assert.are.equal(0, bulk.usage("run").label_chars)
         wait_for(function()
           return #results == 2
         end)
@@ -425,6 +707,27 @@ describe("ai.bulk", function()
       assert.are.equal(2, bulk.usage("run").queued)
       q1:kill()
       assert.are.equal(1, bulk.usage("run").queued)
+    end)
+
+    it("usage().queued follows starts, kills of waiting jobs and cancel(label)", function()
+      local results = {}
+      ask(req_of(), results)
+      local q1 = ask(req_of(), results)
+      ask(req_of(), results)
+      ask(req_of(), results)
+      assert.are.equal(3, bulk.usage("run").queued)
+      q1:kill()
+      assert.are.equal(2, bulk.usage("run").queued)
+      calls[1].cb(true, { text = "a", provider = "fake" })
+      assert.are.equal(2, #calls) -- the killed one was skipped
+      assert.are.equal(1, bulk.usage("run").queued)
+      assert.are.equal(1, bulk.usage("run").active)
+      bulk.cancel("run")
+      assert.are.equal(0, bulk.usage("run").queued)
+      assert.are.equal(0, bulk.usage("run").active)
+      ask(req_of(), results)
+      assert.are.equal(3, #calls)
+      assert.are.equal(0, bulk.usage("run").queued)
     end)
 
     it("a request that already started keeps its cost", function()
@@ -460,6 +763,272 @@ describe("ai.bulk", function()
         assert.are.equal("cancelled", r.res.kind)
       end
       assert.are.equal(0, bulk.cancel("nothing"))
+    end)
+  end)
+
+  describe("a command key source that is still running", function()
+    ---@type function[]
+    local fetches
+
+    before_each(function()
+      fetches = {}
+      package.loaded["ai.keys"] = {
+        needs_fetch = function()
+          return true
+        end,
+        fetch = function(_, on_key)
+          fetches[#fetches + 1] = on_key
+          return function() end
+        end,
+      }
+    end)
+
+    after_each(function()
+      package.loaded["ai.keys"] = nil
+    end)
+
+    it("sends the request once the key arrives", function()
+      local results = {}
+      ask(req_of(), results)
+      assert.are.equal(1, #fetches)
+      assert.are.equal(0, #calls)
+      fetches[1](true)
+      assert.are.equal(1, #calls)
+    end)
+
+    it("kill() before the key arrives: the request is never sent", function()
+      local results = {}
+      local handle = ask(req_of(), results)
+      handle:kill()
+      fetches[1](true)
+      assert.are.equal(0, #calls)
+      wait_for(function()
+        return #results == 1
+      end)
+      assert.are.equal("cancelled", results[1].res.kind)
+    end)
+
+    it("cancel(label) before the key arrives: nothing is sent", function()
+      local results = {}
+      ask(req_of({ concurrency = 2 }), results)
+      ask(req_of({ concurrency = 2 }), results)
+      assert.are.equal(2, bulk.cancel("run"))
+      for _, on_key in ipairs(fetches) do
+        on_key(true)
+      end
+      assert.are.equal(0, #calls)
+    end)
+
+    it("the watchdog giving up before the key arrives: nothing is sent", function()
+      bulk.watchdog_grace_ms = 10
+      local results = {}
+      ask(req_of(nil, { timeout_ms = 20 }), results)
+      wait_for(function()
+        return #results == 1
+      end)
+      assert.are.equal("timeout", results[1].res.kind)
+      fetches[1](true)
+      assert.are.equal(0, #calls)
+    end)
+
+    it("a failed key after the request was cancelled calls nothing back twice", function()
+      local results = {}
+      local handle = ask(req_of(), results)
+      handle:kill()
+      fetches[1](false, { kind = "missing_api_key", message = "no key" })
+      vim.wait(30)
+      assert.are.equal(1, #results)
+      assert.are.equal("cancelled", results[1].res.kind)
+    end)
+  end)
+
+  describe("a key that cannot be had", function()
+    local function missing_key()
+      return { kind = "missing_api_key", message = "locked vault", data = { profile = "work" } }
+    end
+
+    it("fails the waiting requests of that provider at once, the first callback first", function()
+      local results = {}
+      ask(req_of(), results) -- held
+      for i = 1, 5 do
+        ask(req_of(nil, { prompt = "p" .. i }), results)
+      end
+      calls[1].cb(false, missing_key())
+      wait_for(function()
+        return #results == 6
+      end)
+      assert.are.equal(6, #results)
+      assert.are.equal(1, #calls) -- nothing was started again, so no key command either
+      for _, r in ipairs(results) do
+        assert.is_false(r.ok)
+        assert.are.equal("missing_api_key", r.res.kind)
+        assert.are.equal("locked vault", r.res.message)
+        assert.are.equal("work", r.res.data.profile)
+      end
+      assert.are_not.equal(results[1].res, results[2].res) -- each callback gets its own error
+      assert.same({ active = 0, queued = 0 }, {
+        active = bulk.usage("run").active,
+        queued = bulk.usage("run").queued,
+      })
+      -- the one that was sent keeps its cost, the ones that never started give theirs back
+      assert.are.equal(5, bulk.usage("run").label_chars)
+      assert.are.equal(5, bulk.usage().session_chars)
+    end)
+
+    it("does so when the provider fails inside ask() too", function()
+      local results = {}
+      ask(req_of(), results) -- held
+      for _ = 1, 5 do
+        ask(req_of(), results)
+      end
+      fake_mode = "nokey"
+      calls[1].cb(true, { text = "first", provider = "fake" })
+      wait_for(function()
+        return #results == 6
+      end)
+      assert.are.equal(6, #results)
+      assert.is_true(results[1].ok)
+      assert.are.equal(2, #calls) -- the second one found no key, the rest never tried
+      for i = 2, 6 do
+        assert.are.equal("missing_api_key", results[i].res.kind)
+      end
+      assert.are.equal(0, bulk.usage("run").queued)
+      assert.are.equal(0, bulk.usage("run").active)
+    end)
+
+    it("leaves what waits for another provider alone", function()
+      local results = {}
+      ask(req_of(), results) -- held
+      ask(req_of(nil, { provider = "plain", prompt = "other" }), results)
+      ask(req_of(), results)
+      calls[1].cb(false, missing_key())
+      wait_for(function()
+        return #results == 3
+      end)
+      assert.are.equal("missing_api_key", results[1].res.kind)
+      local by_provider = {}
+      for _, r in ipairs(results) do
+        by_provider[#by_provider + 1] = r.ok and r.res.provider or r.res.kind
+      end
+      table.sort(by_provider)
+      assert.same({ "missing_api_key", "missing_api_key", "plain" }, by_provider)
+      assert.are.equal(2, #calls) -- the held one, and "plain" which answered
+    end)
+
+    it("is for a missing key only: any other error leaves the queue running", function()
+      local results = {}
+      ask(req_of(), results)
+      ask(req_of(nil, { prompt = "second" }), results)
+      calls[1].cb(false, { kind = "api_error", message = "overloaded" })
+      assert.are.equal(2, #calls)
+      assert.are.equal("second", calls[2].req.prompt)
+    end)
+  end)
+
+  describe("the queue drain", function()
+    it("survives a long queue behind a provider that fails at once", function()
+      local queued = 4000
+      local results = {}
+      ask(req_of(), results) -- held: it occupies the only slot
+      for _ = 1, queued do
+        ask(req_of(), results)
+      end
+      assert.are.equal(queued, bulk.usage("run").queued)
+      fake_mode = "fail"
+      -- Answering the first one starts the rest: each fails inside ask(), so
+      -- finishing one starts the next on the same stack.
+      calls[1].cb(true, { text = "first", provider = "fake" })
+      vim.wait(10000, function()
+        return #results == queued + 1
+      end, 5)
+      assert.are.equal(queued + 1, #results)
+      assert.are.equal(queued + 1, #calls)
+      assert.same({ active = 0, queued = 0 }, {
+        active = bulk.usage("run").active,
+        queued = bulk.usage("run").queued,
+      })
+      -- and the label still works
+      fake_mode = "now"
+      ask(req_of(), results)
+      vim.wait(1000, function()
+        return #results == queued + 2
+      end, 5)
+      assert.is_true(results[queued + 2].ok)
+    end)
+
+    it("keeps the callback order of a drain that fails at once", function()
+      local results = {}
+      ask(req_of(nil, { prompt = "p0" }), results)
+      for i = 1, 5 do
+        ask(req_of(nil, { prompt = "p" .. i }), results)
+      end
+      fake_mode = "fail"
+      calls[1].cb(true, { text = "p0", provider = "fake" })
+      wait_for(function()
+        return #results == 6
+      end)
+      assert.are.equal("p0", results[1].res.text)
+      for i = 2, 6 do
+        assert.is_false(results[i].ok)
+      end
+      assert.are.equal(6, #calls)
+      assert.are.equal("p5", calls[6].req.prompt)
+    end)
+
+    it("a job whose start raises ends with network_error and frees its slot", function()
+      local new_timer = vim.uv.new_timer
+      vim.uv.new_timer = function()
+        error("no timer for you")
+      end
+      local results = {}
+      local ok, err = pcall(function()
+        ask(req_of(), results)
+        ask(req_of(), results)
+      end)
+      vim.uv.new_timer = new_timer
+      assert.is_true(ok, tostring(err))
+      wait_for(function()
+        return #results == 2
+      end)
+      assert.are.equal(2, #results)
+      for _, r in ipairs(results) do
+        assert.is_false(r.ok)
+        assert.are.equal("network_error", r.res.kind)
+      end
+      assert.are.equal(0, bulk.usage("run").active)
+      assert.are.equal(0, bulk.usage("run").queued)
+      -- the label is not stuck
+      ask(req_of(), results)
+      assert.are.equal(1, #calls)
+    end)
+
+    it("a huge timeout_ms from the config is clamped before it arms the watchdog", function()
+      local new_timer = vim.uv.new_timer
+      local armed
+      vim.uv.new_timer = function()
+        local real = new_timer()
+        return {
+          start = function(_, ms, rep, on_fire)
+            armed = ms
+            return real:start(ms, rep, on_fire)
+          end,
+          stop = function()
+            return real:stop()
+          end,
+          close = function()
+            return real:close()
+          end,
+          is_closing = function()
+            return real:is_closing()
+          end,
+        }
+      end
+      require("ai.config").setup({ timeout_ms = 1e300 })
+      local results = {}
+      pcall(ask, req_of(), results)
+      vim.uv.new_timer = new_timer
+      assert.are.equal(3600000 + bulk.watchdog_grace_ms, armed)
+      bulk.cancel("run")
     end)
   end)
 
@@ -560,6 +1129,44 @@ describe("ai.bulk", function()
     end)
   end)
 
+  describe(":Ai info", function()
+    it("shows the session cap, what was used, and a grant for bulk requests", function()
+      local lines
+      package.loaded["ui.kit"] = {
+        popup = function(o)
+          lines = o.lines
+        end,
+      }
+      require("ai.config").setup({
+        bulk = { max_session_chars = 1000 },
+        policy = { allowed = { "plain" } },
+      })
+      policy.grant_bulk("fake")
+      fake_mode = "now"
+      ask(req_of(nil, { provider = "plain" }), {})
+      require("ai.bindings.actions").info()
+      package.loaded["ui.kit"] = nil
+      local text = table.concat(lines, "\n")
+      assert.is_truthy(text:find("bulk: session cap 1000 characters, 5 characters used", 1, true))
+      assert.is_truthy(text:find("session grant for bulk requests outside the list: fake", 1, true))
+    end)
+
+    it("says no cap when there is none", function()
+      local lines
+      package.loaded["ui.kit"] = {
+        popup = function(o)
+          lines = o.lines
+        end,
+      }
+      require("ai.config").setup({})
+      require("ai.bindings.actions").info()
+      package.loaded["ui.kit"] = nil
+      assert.is_truthy(
+        table.concat(lines, "\n"):find("bulk: session cap none, 0 characters used", 1, true)
+      )
+    end)
+  end)
+
   describe("providers carry the temperature", function()
     local seen
     local function body_of(id, req)
@@ -613,6 +1220,33 @@ describe("ai.bulk", function()
         assert.is_true(p.capabilities.temperature)
         assert.is_string(p.default_model)
       end
+    end)
+
+    it("every other built-in says an explicit false, like capabilities.web", function()
+      providers.load_builtin()
+      local takes = { claude = true, openai = true, gemini = true, ollama = true }
+      local counted = 0
+      for _, id in ipairs(providers.ids()) do
+        if id ~= "fake" and id ~= "plain" then
+          counted = counted + 1
+          assert.are.equal(
+            takes[id] == true,
+            providers.get(id).capabilities.temperature,
+            id .. ": temperature must be an explicit boolean"
+          )
+        end
+      end
+      assert.is_true(counted >= 7)
+    end)
+
+    it("capability_names shows the temperature, last", function()
+      assert.same(
+        { "streaming", "web", "temperature" },
+        providers.capability_names({
+          capabilities = { temperature = true, web = true, streaming = true },
+        })
+      )
+      assert.same({}, providers.capability_names({ capabilities = { temperature = false } }))
     end)
   end)
 end)
