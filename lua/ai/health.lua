@@ -135,19 +135,32 @@ function M.check()
           "Check that this is the endpoint you mean; unset ANTHROPIC_BASE_URL to reach Anthropic directly",
         })
       end
-      -- A credential of the CLI's own settings ranks above its login and is not
-      -- environment, so it is not removed from the child: say that the login may not
-      -- be the account that is used. Only that the key exists, never its value.
-      local scopes = cli.api_key_helper_scopes()
-      if #scopes > 0 then
+      -- A credential of the CLI's own settings (an apiKeyHelper, or an API key or
+      -- token in the `env` block) ranks above its login and is not environment of
+      -- the child, so it is not removed from it: say that the login may not be the
+      -- account that is used. Only that the key exists, never its value.
+      local found = cli.settings_credentials()
+      if #found.api_key_helper > 0 then
         report(
           (
             "the claude CLI's %s settings define apiKeyHelper: that credential ranks above "
             .. "its login, so claude-cli may use another account than the one logged in"
-          ):format(table.concat(scopes, " and ")),
+          ):format(table.concat(found.api_key_helper, " and ")),
           {
             "In the claude CLI, /status shows the credential in use; remove apiKeyHelper "
               .. "from that settings file to use the login (a managed one is set by your organization)",
+          }
+        )
+      end
+      if #found.env > 0 then
+        report(
+          (
+            "the claude CLI's %s settings set %s in their env block: such a credential may "
+            .. "override its login, so claude-cli may use another account than the one logged in"
+          ):format(table.concat(found.env, " and "), table.concat(found.env_names, ", ")),
+          {
+            "In the claude CLI, /status shows the credential in use; remove the variable from the "
+              .. "env block of that settings file to use the login (a managed one is set by your organization)",
           }
         )
       end

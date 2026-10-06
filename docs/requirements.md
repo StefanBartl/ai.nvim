@@ -43,13 +43,15 @@
     neither installed nor in use) name the host while the variable is set: only
     the host, never the scheme, path, userinfo or query of the URL, and nothing
     at all when it is unset. A known limit: credentials that the CLI reads from
-    its own settings -- an `apiKeyHelper` script, an active federation profile
-    file -- rank above its login too and are not environment variables, so
-    ai.nvim cannot remove them; see [scope.md](scope.md). `:checkhealth ai`
-    at least says when the user's settings file (`settings.json` in
+    its own settings -- an `apiKeyHelper` script, an API key or token in the
+    `env` block, an active federation profile file -- rank above its login too
+    and are not environment variables of the child, so ai.nvim cannot remove
+    them; see [scope.md](scope.md). `:checkhealth ai` at least says when the
+    user's settings file (`settings.json` in
     `CLAUDE_CONFIG_DIR` when that is set, else in `~/.claude`) or the managed
-    settings file defines an `apiKeyHelper` (see [health.md](health.md)); an
-    active federation profile is not detected.
+    settings file defines an `apiKeyHelper` or sets such a key or token in its
+    `env` block (see [health.md](health.md)); an active federation profile is not
+    detected.
 
 The two external tools -- `curl`, and `ollama` for that provider -- are
 declared in [install.json](install.json) and read by lib.nvim's

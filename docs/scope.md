@@ -54,7 +54,10 @@ company gateway instead, is passed on on purpose and named (host only) by
 **A known limit of "the logged-in account is used".** ai.nvim removes the
 *environment variables* the CLI ranks above its login. Credentials that the CLI
 reads from its own *settings* rank above the login as well, and are not touched:
-an `apiKeyHelper` script in a settings file, and an active federation profile
+an `apiKeyHelper` script in a settings file, an API key or token in the `env`
+block of a settings file (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or
+`CLAUDE_CODE_OAUTH_TOKEN`: the CLI sets it itself once it runs, so removing it
+from the child's environment does not reach it), and an active federation profile
 (a profile file selected in the CLI's own configuration). With one of those set
 up, `claude -p` can bill and act as that identity instead of the one
 `claude auth login` set up. This is documented and not changed: pointing the
@@ -63,10 +66,11 @@ legitimately lives in such a profile, and ai.nvim does not rewrite another tool'
 settings. What it does: `:checkhealth ai` warns when the user's settings file
 (`settings.json` in `CLAUDE_CONFIG_DIR` when that is set, else in `~/.claude`) or
 the managed settings (`managed-settings.json` and `managed-settings.d/*.json` in
-the CLI's system directory) define an `apiKeyHelper`, so the login may not be the
-account in use (an info line instead of a warning while the CLI is neither
-installed nor in use, see [health.md](health.md)). It only looks whether the key
-exists; the value and the rest of the file are never read out or shown. Not
+the CLI's system directory) define an `apiKeyHelper` or set one of those variables
+in their `env` block, so the login may not be the account in use (an info line
+instead of a warning while the CLI is neither installed nor in use, see
+[health.md](health.md)). It only looks whether the keys exist; the values and the
+rest of the file are never read out or shown. Not
 detected: an active federation profile (another tool's configuration directory,
 nothing there is read), server-managed settings and MDM policy (not files) and
 project settings (the child runs in a neutral directory). If the account matters
