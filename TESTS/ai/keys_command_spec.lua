@@ -242,6 +242,14 @@ describe("ai.keys command source", function()
       assert.is_true(vim.uv.now() - started < 10000)
     end)
 
+    it("a fractional timeout_ms still ends in a result instead of hanging", function()
+      local keys =
+        setup({ command = fake("vim.uv.sleep(15000); io.write('k')"), timeout_ms = 400.5 })
+      local ok, err = fetch(keys)
+      assert.is_false(ok)
+      assert.is_truthy(err.message:find("timed out after 400 ms", 1, true))
+    end)
+
     it("empty output is an error, not a nil key", function()
       local keys = setup({ command = fake("io.write('  \\n\\n')") })
       local ok, err = fetch(keys)
