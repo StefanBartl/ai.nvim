@@ -133,6 +133,15 @@ describe("ai.config", function()
       assert.are.equal(1, #config.issues())
     end)
 
+    it("leaves the caller's options as written, so a second setup() reports the same", function()
+      local config = require("ai.config")
+      local opts = { provider_order = "claude", completion = { trigger = "atuo" } }
+      config.setup(opts)
+      assert.are.same({ provider_order = "claude", completion = { trigger = "atuo" } }, opts)
+      config.setup(opts)
+      assert.are.equal(2, #config.issues())
+    end)
+
     it("issues() is empty when every value is well-typed", function()
       local config = require("ai.config")
       config.setup({ provider_order = { "ollama" }, completion = { trigger = "auto" } })

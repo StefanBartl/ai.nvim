@@ -27,6 +27,19 @@ local _active = nil
 local OPEN_SHAPE_KEYS =
   { model = true, provider_order = true, ["policy.allowed"] = true, keys = true }
 
+---Tables in which an unknown key must not be ignored, mapped to what replaces
+---the table when one is found: the same reasoning as `FAIL_CLOSED` below, for a
+---key instead of a value. `policy = { alowed = { "claude" } }` is a rule that
+---was meant and is not in force, and ignoring it leaves the default -- no
+---restriction -- in place with nothing but a warning. `close_unknown_keys`
+---reports and replaces; `warn_unknown_keys` leaves these keys to it.
+---@type table<string, fun(): table>
+local CLOSED_TABLES = {
+  policy = function()
+    return { allowed = { M.INVALID_POLICY } }
+  end,
+}
+
 ---@internal
 ---Warn about every key in `opts` that `defaults` doesn't know about, at any
 ---nesting level -- a typo in a nested option (`{ ui = { panel_them = "x" } }`)
@@ -39,13 +52,16 @@ local OPEN_SHAPE_KEYS =
 ---@param path string dotted prefix for the warning, e.g. `"ui."`
 ---@return nil
 local function warn_unknown_keys(opts, defaults, path)
+  local closed = CLOSED_TABLES[path:sub(1, -2)] ~= nil
   for key, value in pairs(opts) do
     local full_key = path .. tostring(key)
     if not OPEN_SHAPE_KEYS[full_key] then
       if defaults[key] == nil then
-        require("lib.nvim.notify")
-          .create("[ai]")
-          .warn(("unknown config key %q -- check for a typo"):format(full_key))
+        if not closed then
+          require("lib.nvim.notify")
+            .create("[ai]")
+            .warn(("unknown config key %q -- check for a typo"):format(full_key))
+        end
       elseif type(value) == "table" and type(defaults[key]) == "table" then
         warn_unknown_keys(value, defaults[key], path .. key .. ".")
       end
@@ -85,6 +101,11 @@ local VALUE_SCHEMA = {
 ---(`ai.policy` reads it like any other list, `describe()` shows it).
 ---@type string
 M.INVALID_ALLOWED = "<invalid policy.allowed>"
+
+---What `policy.allowed` holds when `policy` has a key ai.nvim does not know --
+---the same kind of marker, a different cause (see `CLOSED_TABLES`).
+---@type string
+M.INVALID_POLICY = "<unknown policy key>"
 
 ---@internal
 ---Values that must not degrade to their default, because the default is the
@@ -172,6 +193,40 @@ local function sanitize_values(opts, path, issues)
   end
 end
 
+---@internal
+---Replace every `CLOSED_TABLES` table of `opts` that holds a key `DEFAULTS` does
+---not have by the table that refuses, and record that for `:checkhealth` and
+---tell the user right away, like a `FAIL_CLOSED` value. Runs after
+---`sanitize_values`, so a malformed `policy.allowed` next to the unknown key is
+---still reported on its own.
+---@param opts table
+---@param issues string[]
+---@return nil
+local function close_unknown_keys(opts, issues)
+  for name, closed in pairs(CLOSED_TABLES) do
+    local value = opts[name]
+    local unknown = {}
+    for key in pairs(type(value) == "table" and value or {}) do
+      if DEFAULTS[name][key] == nil then
+        unknown[#unknown + 1] = name .. "." .. tostring(key)
+      end
+    end
+    if #unknown > 0 then
+      table.sort(unknown)
+      local known = vim.tbl_keys(DEFAULTS[name])
+      table.sort(known)
+      local issue = ("%s: unknown key (%s has: %s) -- every provider is refused until it is fixed"):format(
+        table.concat(unknown, ", "),
+        name,
+        table.concat(known, ", ")
+      )
+      issues[#issues + 1] = issue
+      require("lib.nvim.notify").create("[ai]").warn(issue)
+      opts[name] = closed()
+    end
+  end
+end
+
 ---@type string[]
 local _issues = {}
 
@@ -183,16 +238,20 @@ local _issues = {}
 ---and invalid-typed known values are dropped (see `sanitize_values`) before
 ---the merge, not after -- by the time `vim.tbl_deep_extend` has run, either
 ---kind of mistake is indistinguishable from "the user meant to leave this at
----its default".
+---its default". Where the default is the permissive state, the mistake refuses
+---instead (`FAIL_CLOSED`, and an unknown key under `policy`, see
+---`close_unknown_keys`).
 ---@param user_opts? Ai.Config|table
 ---@return Ai.Config
 function M.setup(user_opts)
-  if type(user_opts) ~= "table" then
-    user_opts = {}
-  end
+  -- A copy: the checks below replace values in place, and the caller's table
+  -- (a lazy.nvim `opts`, say) must still say what was written when `setup()`
+  -- runs again.
+  user_opts = type(user_opts) == "table" and vim.deepcopy(user_opts) or {}
   warn_unknown_keys(user_opts, DEFAULTS, "")
   _issues = {}
   sanitize_values(user_opts, "", _issues)
+  close_unknown_keys(user_opts, _issues)
   _active = vim.tbl_deep_extend("force", vim.deepcopy(DEFAULTS), user_opts)
   return _active
 end

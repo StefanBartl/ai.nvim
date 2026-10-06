@@ -159,6 +159,16 @@ as `{ claude = true }`, or a `policy` that is not a table -- is **not** treated 
 empty: a typo must not switch the rule off. Every provider is refused until it is
 fixed, `setup()` warns right away, and `:checkhealth ai` reports it.
 
+The same goes for a key under `policy` that does not exist -- `policy = { alowed =
+{ "claude" } }`, or a list written straight into `policy`. `allowed` is the only
+key; any other one is a rule that was meant and is not in force, and ignoring it
+would leave the default, no restriction, in place. So nothing is allowed until
+the key is fixed, even when a valid `allowed` stands next to it. `setup()` warns
+once, naming the key, and `:checkhealth ai` reports it as an error under
+*provider policy* and as a warning under *configuration*. (A misspelt `policy`
+itself, such as `polcy`, is only an unknown top-level key: it is warned about
+and the machine stays unrestricted.)
+
 The list is not checked against the registry: an id may be listed before its
 provider exists (`"copilot"` today). A plugin on top of ai.nvim reads the policy
 with `require("ai").policy()` and may restrict further, never widen it.

@@ -35,7 +35,9 @@
 ---   the CLI prints a `result` event with `is_error = true` and exits 1. That
 ---   event's text is the error message (`kind = "api_error"`). A process that
 ---   exits non-zero or is killed before its `result` event is a `network_error`:
----   what it streamed up to then is a cut-off answer, not a finished one.
+---   what it streamed up to then is a cut-off answer, not a finished one. One
+---   that exits 0 without a `result` event and without any text is an
+---   `invalid_response`, never an empty answer.
 ---
 --- Attachments: none (`vision`/`documents` false), as for `loomai` -- a request
 --- carrying one fails with `invalid_request` rather than losing it. Opt-in:
@@ -71,7 +73,8 @@ M.command = { "claude" }
 ---
 ---Not removed on purpose: `CLAUDE_CONFIG_DIR` (where the login lives),
 ---`CLAUDE_CODE_GIT_BASH_PATH` (needed on Windows), `ANTHROPIC_BASE_URL` (a
----company gateway may be the only way to reach the API) and
+---company gateway may be the only way to reach the API; `gateway_note` keeps
+---it visible in `:Ai info` and `:checkhealth ai`) and
 ---`CLAUDE_CODE_OAUTH_REFRESH_TOKEN` (documented as the input of
 ---`claude auth login`, not as a credential of a request, and absent from the
 ---precedence list). Not reachable from here, because they are settings and not
@@ -103,6 +106,62 @@ local DEFAULT_TIMEOUT_MS = 120000
 ---@return boolean
 function M.available()
   return util.executable(M.command[1])
+end
+
+---@internal
+---`host[:port]` of a URL's authority and nothing else: scheme, userinfo, path,
+---query and fragment are dropped. Strict on purpose, because the result goes on
+---screen: a value that is not `scheme://host...` (a key pasted into the variable,
+---a `host:port` without scheme) gives `nil` and is not echoed in part. Like a
+---browser's URL parser, the authority ends at the first `/`, `\`, `?` or `#`,
+---and the userinfo at its last `@`.
+---@param url string
+---@return string|nil host
+local function url_host(url)
+  local rest = url:match("^%a[%w+.-]*://(.*)$")
+  if not rest then
+    return nil
+  end
+  local authority = rest:match("^[^/\\?#]*")
+  -- Anchored on purpose: `([^@]*)$` retries from every start position and takes
+  -- quadratic time on a long userinfo (72 s for 120 kB).
+  local host = authority:match("^.*@(.*)$") or authority
+  local name, port = host:match("^(%[[%x:.]+%])(:?%d*)$") -- an IPv6 literal
+  if not name then
+    name, port = host:match("^([%w%.%-_\128-\255]+)(:?%d*)$")
+  end
+  -- Bounded: what is returned is printed (a name is 253 bytes at most, `:65535`).
+  if not name or #name > 253 or #port > 6 then
+    return nil
+  end
+  return name .. (port == ":" and "" or port)
+end
+
+---What `:Ai info` and `:checkhealth ai` say about `ANTHROPIC_BASE_URL`, as the
+---two short lines of one sentence (the `:Ai info` viewer does not wrap; the
+---health report joins them). The variable is passed on to the CLI on purpose (a
+---company gateway may be the only way to reach the API), and that means the
+---prompts and the CLI's login go to that host, where `policy.allowed` cannot see
+---them -- so the setting must at least be visible. Only the host is named: the
+---userinfo and the query of such a URL can carry a credential. `nil`, nothing
+---at all, when the variable is unset.
+---@return string[]|nil lines
+function M.gateway_note()
+  local url = util.env_value("ANTHROPIC_BASE_URL")
+  if not url then
+    return nil
+  end
+  local host = url_host(url)
+  if not host then
+    return {
+      "ANTHROPIC_BASE_URL is set, but no host can be read from it (its value is not shown):",
+      "the claude CLI will talk to wherever it points, which can be a company gateway",
+    }
+  end
+  return {
+    ("ANTHROPIC_BASE_URL is set: the claude CLI will talk to %s"):format(host),
+    "and send its login and your prompts there -- this can be a company gateway",
+  }
 end
 
 ---@internal
@@ -318,6 +377,21 @@ local function run(req, h)
               obj.signal or 0,
               vim.trim(table.concat(stderr_parts, ""))
             ),
+            obj
+          )
+        )
+        return
+      end
+      -- A clean exit that said nothing: not an empty answer, a child that did
+      -- not do what it is run for (a wrapper script, a CLI that changed its
+      -- output). stderr is the only clue left.
+      if not got_result and text == "" then
+        local stderr = vim.trim(table.concat(stderr_parts, ""))
+        fail(
+          lib_error.new(
+            "invalid_response",
+            "claude-cli: exited without a result event and without any text"
+              .. (stderr ~= "" and (": " .. stderr) or ""),
             obj
           )
         )

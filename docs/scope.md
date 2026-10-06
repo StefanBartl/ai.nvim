@@ -46,9 +46,10 @@ that would replace the login removed from the child's environment, and the
 CLI's own prompt handling switched off where it matters: `@path` mentions in
 the text are denied and the CLI's expansion of them is switched off (it would
 otherwise read local files into the request), and a leading `/` cannot turn the
-prompt into a CLI command. It is
-opt-in (not in `provider_order`) and, like every provider, subject to
-`policy.allowed`.
+prompt into a CLI command. `ANTHROPIC_BASE_URL`, which can point the CLI at a
+company gateway instead, is passed on on purpose and named (host only) by
+`:Ai info` and `:checkhealth ai` while it is set. It is opt-in (not in
+`provider_order`) and, like every provider, subject to `policy.allowed`.
 
 ## The allow-list narrows, it never widens
 

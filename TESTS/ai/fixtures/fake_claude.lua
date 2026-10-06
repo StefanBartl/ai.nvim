@@ -16,6 +16,7 @@ for _, name in ipairs({
   "CRASH",
   "SLEEP",
   "NOPARTIAL",
+  "NOEVENTS",
 }) do
   if stdin:find(name, 1, true) then
     scenario = name
@@ -79,6 +80,11 @@ elseif scenario == "RESULTEXIT" then
   os.exit(1)
 elseif scenario == "SLEEP" then
   vim.uv.sleep(20000)
+elseif scenario == "NOEVENTS" then
+  -- exits cleanly having said nothing on stdout: no delta, no assistant text, no
+  -- result event -- only a note on stderr
+  io.stderr:write("nothing to report\n")
+  os.exit(0)
 elseif scenario == "NOPARTIAL" then
   emit({ type = "assistant", message = { content = { { type = "text", text = "whole answer" } } } })
   result("whole answer")

@@ -371,6 +371,24 @@ describe("ai.providers.claude_cli", function()
       assert.are.equal("Hello", done.text)
     end)
 
+    it("treats a clean exit with no result event and no text as an invalid response", function()
+      -- Not an empty successful answer: the caller would show a blank result and
+      -- the audit trail would call it a finished request.
+      local ok, err = ask({ prompt = "NOEVENTS" })
+      assert.is_false(ok)
+      assert.are.equal("invalid_response", err.kind)
+      assert.is_truthy(err.message:find("claude-cli", 1, true))
+      assert.is_truthy(err.message:find("nothing to report", 1, true), "stderr is the only clue")
+    end)
+
+    it("reports the same on the stream path, without a chunk or a done", function()
+      local chunks, done, err = stream_with_fake_exit({}, { code = 0, signal = 0 })
+      assert.are.same({}, chunks)
+      assert.is_nil(done)
+      assert.are.equal("invalid_response", err.kind)
+      assert.is_nil(err.message:find("[:%s]$"), "nothing dangles when stderr is empty")
+    end)
+
     it("reports a timeout as such", function()
       local ok, err = ask({ prompt = "SLEEP", timeout_ms = 800 })
       assert.is_false(ok)

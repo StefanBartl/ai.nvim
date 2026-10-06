@@ -61,6 +61,10 @@ migration is what |ai-attachments| were built for.
              Uses whatever account the CLI is logged in as; needs no API key
              of its own, and the variables that would override that login
              are not passed on to it (see |ai-providers|).
+             `ANTHROPIC_BASE_URL` is passed on (a company gateway may be the
+             only way to reach the API): the CLI then sends its login and
+             your prompts to that host, which `policy.allowed` does not see.
+             `:Ai info` and |:checkhealth| ai name the host while it is set.
 
 No provider is required at install time -- |:checkhealth| ai reports which
 ones are usable on this machine, and `provider = "auto"` (the default) picks
@@ -179,6 +183,10 @@ restriction and nothing changes. With a list:
 
 A malformed `policy.allowed` (not a list of strings) is not read as empty: every
 provider is refused until it is fixed, `setup()` warns, |:checkhealth| reports it.
+The same holds for a key under `policy` that does not exist (`alowed`, or a
+list written straight into `policy`): it is a rule that was meant and is not
+in force, so nothing is allowed until the key is fixed -- even next to a
+valid `allowed`.
 
 The list is not checked against the registry, so an id may be listed before
 its provider exists. Plugins on top of ai.nvim read it with |ai.policy()| and
@@ -253,6 +261,8 @@ UTF-8 (BOM allowed) or UTF-16 with a BOM. Keys are never printed -- `:Ai info`,
 :Ai info                                                          *:Ai-info*
   Show the active provider, resolution order, the provider policy, and
   per-provider availability (providers outside the allow-list are marked).
+  While `ANTHROPIC_BASE_URL` is set, a line under `claude-cli` names the host
+  the CLI will talk to (the host only; it can be a company gateway).
 
 None of these build any context automatically -- they only send the literal
 prompt text. The quick-action keymaps (|ai-bindings|) are what wire in the
@@ -436,8 +446,10 @@ require("ai.context").assemble({opts})
            token, the Bedrock/Vertex/Foundry/AWS/Mantle switches, a named
            Anthropic profile, the federation pair) is removed from the child
            process so a stray variable cannot override it; the gateway URL
-           is passed on. Runs without tools, hooks or session state in a
-           neutral directory; the prompt goes to its stdin, never to argv.
+           (`ANTHROPIC_BASE_URL`) is passed on, and shown by `:Ai info` and
+           |:checkhealth| ai, host only, while it is set. Runs without
+           tools, hooks or session state in a neutral directory; the prompt
+           goes to its stdin, never to argv.
            `@path` mentions in the text are denied and the CLI's own
            expansion of them is switched off (it would otherwise read the
            file and send it along), and a prompt starting with `/` is
@@ -445,7 +457,9 @@ require("ai.context").assemble({opts})
            commands. Opt-in (not in `provider_order`). A billing or login
            problem comes back as an `api_error` carrying the CLI's message;
            a process that dies before its answer is complete is a
-           `network_error`, never a shortened answer.
+           `network_error`, never a shortened answer, and one that exits
+           cleanly with neither a result nor any text is an
+           `invalid_response`, never an empty answer.
 
 `provider = "auto"` (the default) walks `provider_order` and uses the first
 provider whose `available()` is true -- a cheap, synchronous check (an
@@ -583,10 +597,16 @@ Reports:
     has every other module present but not this one.
   - providers -- every registered provider id and whether `available()` is
     currently true (missing binary and/or API key otherwise). Never shows a
-    key's value, only whether one is set.
-  - configuration -- the active `provider` and `provider_order`.
-  - provider policy -- whether there is an allow-list, and a warning for a
-    `provider`, `completion.provider` or `provider_order` that falls outside it
+    key's value, only whether one is set. While `ANTHROPIC_BASE_URL` is set, a
+    warning under `claude-cli` says the CLI will talk to that host (host
+    only, it can be a company gateway).
+  - configuration -- the active `provider` and `provider_order`, and a
+    warning for every value that was dropped to its default, for a malformed
+    `policy.allowed` and for an unknown key under `policy`.
+  - provider policy -- whether there is an allow-list, an error for a
+    malformed `policy.allowed` or an unknown key under `policy` (every
+    provider is refused until it is fixed), and a warning for a `provider`,
+    `completion.provider` or `provider_order` that falls outside the list
     and for a provider allowed only for this session.
   - completion -- enabled?, `trigger` mode, the resolved
     `completion.provider`. Warns if `trigger = "auto"` resolves to a paid

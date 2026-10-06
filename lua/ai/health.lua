@@ -106,6 +106,14 @@ function M.check()
       -- info() for a plain fact like a version or a path).
       vim.health.info("ℹ️ INFO " .. id .. ": not available (missing binary and/or API key)")
     end
+    -- Under the entry it belongs to, whether or not the CLI is installed right
+    -- now: the variable is passed on to it on purpose, so say where it points.
+    local gateway = id == "claude-cli" and require("ai.providers.claude_cli").gateway_note()
+    if gateway then
+      vim.health.warn(table.concat(gateway, " "), {
+        "Check that this is the endpoint you mean; unset ANTHROPIC_BASE_URL to reach Anthropic directly",
+      })
+    end
   end
 
   -- ── Configuration ──────────────────────────────────────────────────────
@@ -131,12 +139,21 @@ function M.check()
   -- ── Policy ──────────────────────────────────────────────────────────────
   vim.health.start("ai.nvim: provider policy")
   local policy = require("ai.policy")
+  local marker = (policy.allowed() or {})[1]
   if not policy.restricted() then
     vim.health.info("no allow-list (config.policy.allowed is empty) -- every provider may be used")
-  elseif (policy.allowed() or {})[1] == require("ai.config").INVALID_ALLOWED then
+  elseif marker == require("ai.config").INVALID_ALLOWED then
     vim.health.error(
       "config.policy.allowed is malformed -- every provider is refused until it is fixed",
       { 'Make it a list of provider ids, e.g. policy = { allowed = { "claude", "copilot" } }' }
+    )
+  elseif marker == require("ai.config").INVALID_POLICY then
+    vim.health.error(
+      "config.policy has a key ai.nvim does not know -- every provider is refused until it is fixed",
+      {
+        "The warning under configuration names the key; policy has only `allowed`, "
+          .. 'a list of provider ids, e.g. policy = { allowed = { "claude", "copilot" } }',
+      }
     )
   else
     local allowed = policy.allowed() or {}

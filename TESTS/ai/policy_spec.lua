@@ -398,14 +398,126 @@ describe("ai.policy", function()
       assert.are.equal(1, #config.issues())
     end)
 
-    it("still warns about a typo'd key inside policy", function()
-      local warnings = {}
-      vim.notify = function(msg)
-        warnings[#warnings + 1] = msg
-      end
-      require("ai.config").setup({ policy = { alowed = { "claude" } } })
-      assert.is_true(#warnings >= 1)
-      assert.is_truthy(warnings[1]:find("policy.alowed", 1, true))
+    -- A key under `policy` that ai.nvim does not know is a rule that was meant and
+    -- is not in force. Ignoring it leaves the default, which is "no restriction", so
+    -- it fails closed like a malformed `allowed` does.
+    describe("an unknown key under policy", function()
+      local notices
+
+      before_each(function()
+        notices = {}
+        vim.notify = function(msg)
+          notices[#notices + 1] = msg
+        end
+      end)
+
+      it("fails closed: a typo'd allowed refuses every provider", function()
+        local config = require("ai.config")
+        config.setup({ policy = { alowed = { "claude" } } })
+        local policy = require("ai.policy")
+        assert.is_true(policy.restricted())
+        assert.is_false(policy.is_allowed("claude"))
+        assert.is_false(policy.is_allowed("gemini"))
+        assert.is_true(policy.is_allowed("gemini", { prompt = "x", allow_unlisted = true }))
+      end)
+
+      it("is reported as an issue, naming the key and what happens", function()
+        local config = require("ai.config")
+        config.setup({ policy = { alowed = { "claude" } } })
+        assert.are.equal(1, #config.issues())
+        local issue = config.issues()[1]
+        assert.is_truthy(issue:find("policy.alowed", 1, true))
+        assert.is_truthy(issue:find("unknown", 1, true))
+        assert.is_truthy(issue:find("refused", 1, true))
+        assert.is_truthy(issue:find("allowed", 1, true), "says what policy does take")
+      end)
+
+      it("says so once when setup() runs, not twice", function()
+        require("ai.config").setup({ policy = { alowed = { "claude" } } })
+        assert.are.equal(1, #notices)
+        assert.is_truthy(notices[1]:find("policy.alowed", 1, true))
+        assert.is_truthy(notices[1]:find("refused", 1, true))
+      end)
+
+      it("fails closed when a list sits directly under policy", function()
+        local config = require("ai.config")
+        config.setup({ policy = { "claude" } })
+        assert.is_false(require("ai.policy").is_allowed("claude"))
+        assert.is_truthy(config.issues()[1]:find("policy.1", 1, true))
+      end)
+
+      it("beats a valid allowed next to it: nothing is allowed", function()
+        local config = require("ai.config")
+        config.setup({ policy = { allowed = { "claude" }, denied = { "gemini" } } })
+        local policy = require("ai.policy")
+        assert.is_true(policy.restricted())
+        assert.is_false(policy.is_allowed("claude"))
+        assert.are.equal(1, #config.issues())
+        assert.is_truthy(config.issues()[1]:find("policy.denied", 1, true))
+      end)
+
+      it("names every unknown key, in a stable order", function()
+        local config = require("ai.config")
+        config.setup({ policy = { zeta = true, alowed = {} } })
+        local issue = table.concat(config.issues(), "\n")
+        local first = issue:find("policy.alowed", 1, true)
+        local second = issue:find("policy.zeta", 1, true)
+        assert.is_truthy(first)
+        assert.is_truthy(second)
+        assert.is_true(first < second)
+      end)
+
+      it("keeps the malformed-allowed report as well when both are wrong", function()
+        local config = require("ai.config")
+        config.setup({ policy = { allowed = "claude", alowed = {} } })
+        local text = table.concat(config.issues(), "\n")
+        assert.are.equal(2, #config.issues())
+        assert.is_truthy(text:find("policy.allowed: invalid value", 1, true))
+        assert.is_truthy(text:find("policy.alowed", 1, true))
+        assert.is_false(require("ai.policy").is_allowed("claude"))
+      end)
+
+      it("makes a refused request say why", function()
+        require("ai.config").setup({ policy = { alowed = { "claude" } } })
+        local providers = require("ai.providers")
+        register_all(providers, { "claude" })
+        local p, err = providers.resolve("claude", { "claude" })
+        assert.is_nil(p)
+        assert.are.equal("policy", err.data.reason)
+        assert.is_truthy(err.message:find("<unknown policy key>", 1, true), err.message)
+        local _, auto_err = providers.resolve("auto", { "claude" })
+        assert.are.equal("policy", auto_err.data.reason)
+      end)
+
+      it("stays in force on a second setup() with the same, untouched options", function()
+        local config = require("ai.config")
+        local opts = { policy = { alowed = { "claude" } } }
+        config.setup(opts)
+        assert.are.same({ policy = { alowed = { "claude" } } }, opts, "the caller's table is kept")
+        config.setup(opts)
+        assert.are.equal(1, #config.issues(), "reported again, not lost")
+        assert.is_false(require("ai.policy").is_allowed("claude"))
+      end)
+
+      it("does not affect a policy that only has the known key, nor an empty one", function()
+        local config = require("ai.config")
+        config.setup({ policy = { allowed = { "claude" } } })
+        assert.is_true(require("ai.policy").is_allowed("claude"))
+        assert.are.same({}, config.issues())
+        config.setup({ policy = {} })
+        assert.is_false(require("ai.policy").restricted())
+        assert.are.same({}, config.issues())
+        assert.are.same({}, notices)
+      end)
+
+      it("is still a plain warning for an unknown key anywhere else", function()
+        local config = require("ai.config")
+        config.setup({ ui = { panel_them = "double" } })
+        assert.are.equal(1, #notices)
+        assert.is_truthy(notices[1]:find("ui.panel_them", 1, true))
+        assert.is_false(require("ai.policy").restricted())
+        assert.are.same({}, config.issues())
+      end)
     end)
   end)
 
@@ -623,6 +735,19 @@ describe("ai.policy", function()
       assert.is_true(reported("error: config.policy.allowed is malformed"))
       assert.is_true(reported("warn: policy.allowed: invalid value"))
       assert.is_false(reported("<invalid policy.allowed>: listed"))
+    end)
+
+    it("reports an unknown key under policy as an error that names the cause", function()
+      local original_notify = vim.notify
+      vim.notify = function() end
+      require("ai.config").setup({ policy = { alowed = { "claude" } } })
+      vim.notify = original_notify
+      package.loaded["ai.health"] = nil
+      require("ai.health").check()
+      assert.is_true(reported("error: config.policy has a key ai.nvim does not know"))
+      assert.is_true(reported("warn: policy.alowed: unknown key"))
+      assert.is_false(reported("config.policy.allowed is malformed"))
+      assert.is_false(reported("<unknown policy key>: listed"))
     end)
 
     it(

@@ -59,7 +59,9 @@ function M.env_value(name, fallback)
   if type(value) ~= "string" then
     return fallback
   end
-  local trimmed = value:match("^%s*(.-)%s*$")
+  -- Not `^%s*(.-)%s*$`: that one takes quadratic time on a long run of
+  -- whitespace inside the value (8 s for 120 kB); `vim.trim` is linear.
+  local trimmed = vim.trim(value)
   return (trimmed ~= "") and trimmed or fallback
 end
 

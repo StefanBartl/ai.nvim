@@ -10,7 +10,8 @@
 --- leave `<leader>as` on a file full of customer data wide open. The rule is
 --- per machine (an employer's allow-list), so it is plain config: empty, the
 --- default, means "no restriction" and the plugin behaves exactly as before.
---- A malformed list is not an empty one: `ai.config` replaces it with a marker
+--- A malformed list is not an empty one, and neither is a `policy` with a key
+--- this plugin does not know (`alowed`): `ai.config` replaces it with a marker
 --- no provider matches, so a typo refuses everything instead of lifting the rule.
 ---
 --- Deliberately small: a list, a membership test, and an explicit way to step
