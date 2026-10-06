@@ -41,7 +41,7 @@ local util = require("ai.providers.util")
 local M = {
   id = "gemini",
   name = "Google Gemini API",
-  capabilities = { streaming = true, vision = true, documents = true },
+  capabilities = { streaming = true, vision = true, documents = true, web = false },
 }
 
 local API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/"

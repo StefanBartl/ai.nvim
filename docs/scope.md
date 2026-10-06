@@ -18,6 +18,16 @@ That is a separate, deliberate boundary with a native, independent project
 project's own docs for details) which is not a Neovim plugin and is not a
 dependency of `ai.nvim`.
 
+## Web search
+
+`capabilities.web` says whether a provider's request can use web search in one
+single-turn round-trip. It is `false` on every built-in: no provider wires a
+web-search parameter into its request, and it would be a server-side tool
+parameter per API (not a loop in this plugin) that has to be checked against
+each API and enabled by the account first. Until a provider does that and a spec
+proves it, a caller such as casedesk must treat web access as unavailable.
+`:Ai info` lists the capabilities of each provider (`can: ...`).
+
 ## Why a registry entry, not a merge
 
 The `Ai.Provider` interface (`id`, `available()`, `ask()`, `stream()`,

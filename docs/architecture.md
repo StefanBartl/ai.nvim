@@ -81,6 +81,16 @@ decides which concrete provider answers a request -- see
 [scope.md](scope.md) for why `"auto"` never silently reaches a provider
 outside `order`.
 
+### Capability `web`
+
+`capabilities.web` says whether a provider's request can use web search in one
+single-turn round-trip. It is `false` on every built-in: no provider wires a
+web-search parameter into its request, and it would be a server-side tool
+parameter per API (not a loop in this plugin) that has to be checked against
+each API and enabled by the account first. Until a provider does that and a spec
+proves it, a caller such as casedesk must treat web access as unavailable.
+`:Ai info` lists the capabilities of each provider (`can: ...`).
+
 ## Context assembly
 
 `lua/ai/context/init.lua` is a thin wrapper over

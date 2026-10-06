@@ -33,7 +33,7 @@ local util = require("ai.providers.util")
 local M = {
   id = "claude",
   name = "Anthropic Claude API",
-  capabilities = { streaming = true, vision = true, documents = true },
+  capabilities = { streaming = true, vision = true, documents = true, web = false },
 }
 
 local API_URL = "https://api.anthropic.com/v1/messages"

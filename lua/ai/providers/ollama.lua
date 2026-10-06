@@ -31,7 +31,7 @@ local util = require("ai.providers.util")
 local M = {
   id = "ollama",
   name = "Ollama (local)",
-  capabilities = { streaming = true, vision = true, documents = false },
+  capabilities = { streaming = true, vision = true, documents = false, web = false },
 }
 
 local DEFAULT_HOST = "http://127.0.0.1:11434"

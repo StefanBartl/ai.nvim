@@ -27,7 +27,7 @@ local util = require("ai.providers.util")
 local M = {
   id = "openai",
   name = "OpenAI Chat Completions",
-  capabilities = { streaming = true, vision = true, documents = false },
+  capabilities = { streaming = true, vision = true, documents = false, web = false },
 }
 
 local API_URL = "https://api.openai.com/v1/chat/completions"
