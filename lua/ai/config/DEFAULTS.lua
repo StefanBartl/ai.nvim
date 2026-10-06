@@ -17,7 +17,9 @@ local DEFAULTS = {
   -- empty `allowed` list means no restriction -- the default, and the
   -- behaviour before this option existed. Non-empty: `provider = "auto"`
   -- walks only these, and a request or `:Ai provider` naming anything else
-  -- is refused (or has to be confirmed, see docs/configuration.md).
+  -- is refused (or has to be confirmed, see docs/configuration.md). `allowed`
+  -- is the only key: another one (a typo such as `alowed`) refuses every
+  -- provider, like a malformed `allowed` does.
   policy = {
     allowed = {},
   },

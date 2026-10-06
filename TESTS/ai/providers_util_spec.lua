@@ -60,6 +60,29 @@ describe("ai.providers.util", function()
       vim.env.AI_TEST_ENV_VALUE = "   "
       assert.are.equal("fallback", util.env_value("AI_TEST_ENV_VALUE", "fallback"))
     end)
+
+    it("keeps whitespace inside the value", function()
+      vim.env.AI_TEST_ENV_VALUE = "\t a  b\tc \n"
+      assert.are.equal("a  b\tc", util.env_value("AI_TEST_ENV_VALUE"))
+    end)
+
+    -- `^%s*(.-)%s*$` retries the trailing-space match at every position of a long
+    -- run of whitespace inside the value: 8 s for 120 kB.
+    it("trims in linear time, whatever the whitespace looks like (120 kB)", function()
+      local n = 120000
+      for _, value in ipairs({
+        "a" .. (" "):rep(n) .. "b",
+        (" "):rep(n / 2) .. "a" .. (" "):rep(n / 2),
+        (" "):rep(n),
+        ("\t \n"):rep(n / 3) .. "x" .. ("\t \n"):rep(n / 3),
+      }) do
+        vim.env.AI_TEST_ENV_VALUE = value
+        local t0 = vim.uv.hrtime()
+        util.env_value("AI_TEST_ENV_VALUE")
+        local ms = (vim.uv.hrtime() - t0) / 1e6
+        assert.is_true(ms < 1000, ("%d ms for %d bytes"):format(ms, #value))
+      end
+    end)
   end)
 
   describe("executable", function()

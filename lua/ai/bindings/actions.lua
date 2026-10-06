@@ -297,6 +297,12 @@ function M.info()
     end
     lines[#lines + 1] =
       string.format("  %s: %s%s", id, avail and "available" or "not available", flag)
+    -- Where the CLI will really send its requests, if that was changed by the
+    -- environment (host only, see `gateway_note`).
+    local gateway = id == "claude-cli" and require("ai.providers.claude_cli").gateway_note()
+    for _, line in ipairs(gateway or {}) do
+      lines[#lines + 1] = "    " .. line
+    end
   end
 
   require("ui.kit").popup({ type = "viewer", title = "Ai info", lines = lines })

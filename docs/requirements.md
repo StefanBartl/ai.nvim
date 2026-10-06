@@ -37,7 +37,11 @@
     `ANTHROPIC_PROFILE` and the Workload Identity Federation pair
     `ANTHROPIC_FEDERATION_RULE_ID` / `ANTHROPIC_ORGANIZATION_ID`.
     `ANTHROPIC_BASE_URL` (a company gateway) is passed on, so the CLI sends its
-    login to that host -- something `policy.allowed` does not see.
+    login and your prompts to that host -- something `policy.allowed` does not
+    see. That is why `:Ai info` (a line under `claude-cli`) and
+    `:checkhealth ai` (a warning under `claude-cli`) name the host while the
+    variable is set: only the host, never the scheme, path, userinfo or query
+    of the URL, and nothing at all when it is unset.
 
 The two external tools -- `curl`, and `ollama` for that provider -- are
 declared in [install.json](install.json) and read by lib.nvim's
