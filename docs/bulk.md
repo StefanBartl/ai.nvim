@@ -61,13 +61,17 @@ refuses every bulk request. A value that cannot be a cap -- a string such as
 reported when `setup()` runs and refuses every bulk request until it is fixed;
 it does not turn into "no cap". Only `false` means none.
 
-Every refusal arrives as `cb(false, err)`, never as an exception, and never
+Every refusal arrives as `cb(false, err)`, not as an exception, and never
 inside `ask` itself: the callback is always asynchronous and runs exactly once
 (also when `kill()` and an answer race). That holds for input that is not what
 it should be, too: a field of the wrong type (`system`, `timeout_ms`,
 `temperature`, ...) is an `invalid_request`, and a NUL byte in the text counts
-as one character like any other. `err.data.reason` of a `bulk_limit` is
-`max_chars`, `max_total_chars` or `max_session_chars`.
+as one character like any other. The one thing that still raises is the check
+`ai.ask` makes of every request, with `bulk` or without: `req` must be a table
+with a string `prompt`. A call without them is a programming error and fails
+with `ai.ask: req.prompt is required` instead of reaching the callback.
+`err.data.reason` of a `bulk_limit` is `max_chars`, `max_total_chars` or
+`max_session_chars`.
 
 A bulk request gathers no editor context and carries no attachments: put the
 text in `prompt`. It does not combine with the plain `allow_unlisted`, and
@@ -118,8 +122,10 @@ passphrase prompt, an unset variable -- the requests of the same label that
 still wait for the same provider fail at once with that error, without being
 sent and without running the key command again. Otherwise a document of 300
 chunks would run the key command 300 times, unattended. The first callback is
-the one of the request that hit the problem; the characters of the others are
-given back. Other errors do not do this: the queue goes on.
+the one of the request that hit the problem; the others follow in queue order,
+each with its own copy of the error (a provider error without a `message` text
+gets a generic one there), and their characters are given back. Other errors
+do not do this: the queue goes on.
 
 ## Repeatable answers and the cache key
 

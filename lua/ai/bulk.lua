@@ -25,9 +25,11 @@
 ---
 --- The callback runs exactly once, always asynchronously (never inside `ask`),
 --- and every refusal arrives as `cb(false, err)` -- nothing hangs: a request
---- that its provider never answers is failed by a watchdog, and nothing a
---- caller passes in (a NUL byte in the text, a field of the wrong type) can
---- make `ask` raise.
+--- that its provider never answers is failed by a watchdog. A field of the
+--- wrong type or a NUL byte in the text is such a refusal, not an exception.
+--- What still raises is the check `ai.ask` makes before it gets here, with or
+--- without `bulk`: `req` must be a table with a string `prompt`, or the call is
+--- a programming error and asserts instead of reaching the callback.
 
 local lib_error = require("lib.lua.error")
 
@@ -271,6 +273,24 @@ local function pump(g, limit)
 end
 
 ---@internal
+---A copy of a provider's error for a request that never ran. `err` is whatever
+---the provider handed to its callback, a custom one registered through
+---`providers.register` included, so its `message` may be missing or not a
+---string; `lib_error.new` asserts on that, and a throw here would abort the
+---copies of everything still waiting. A message that cannot be used becomes a
+---generic one.
+---@param err table `err.kind` is a string
+---@param provider_id string
+---@return LibErrorValue
+local function copy_error(err, provider_id)
+  local message = err.message
+  if type(message) ~= "string" then
+    message = ("ai.bulk: no API key for provider '%s'"):format(provider_id)
+  end
+  return lib_error.new(err.kind, message, err.data)
+end
+
+---@internal
 ---A request ended with `missing_api_key`. A key that is not there (a locked
 ---vault, a cancelled passphrase prompt, an unset variable) is not there for the
 ---requests that wait behind it either, and asking for it once more for each
@@ -284,7 +304,7 @@ local function fail_waiting(g, provider_id, err)
   for i = g.head, g.tail do
     local job = g.queue[i]
     if job and not job.done and job.provider_id == provider_id then
-      job.fail(lib_error.new(err.kind, err.message, err.data))
+      job.fail(copy_error(err, provider_id))
     end
   end
 end
@@ -542,13 +562,21 @@ function M.ask(req, cb, deps)
       if not ok and type(res) == "table" and res.kind == "missing_api_key" then
         -- Fail fast (see `fail_waiting`). This job's own callback goes first,
         -- and the queue is held until the waiting ones are ended, or `finish`
-        -- would start the next one -- and run the key command again.
+        -- would start the next one -- and run the key command again. Whatever
+        -- raises while it is held must not leave it held, or the label would
+        -- never start another job: the flag is put back and the queue drained
+        -- in every case, then the error goes on to the caller, as `pump` does.
         local nested = grp.pumping
         grp.pumping = true
-        finish(ok, res)
-        fail_waiting(grp, provider.id, res --[[@as LibErrorValue]])
+        local held_ok, held_err = pcall(function()
+          finish(ok, res)
+          fail_waiting(grp, provider.id, res --[[@as LibErrorValue]])
+        end)
         grp.pumping = nested
         pump(grp, limit)
+        if not held_ok then
+          error(held_err, 0)
+        end
         return
       end
       finish(ok, res)
