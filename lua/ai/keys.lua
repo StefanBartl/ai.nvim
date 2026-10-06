@@ -433,7 +433,11 @@ function M.fetch(id, cb)
   if vim.fn.executable(cmd[1]) == 0 then
     return fail_later("executable not found")
   end
-  local timeout = type(spec.timeout_ms) == "number" and spec.timeout_ms > 0 and spec.timeout_ms
+  -- A whole number of milliseconds: `%d` below throws on a fraction, which
+  -- inside the callback would leave this run in `inflight` for good.
+  local timeout = type(spec.timeout_ms) == "number"
+      and spec.timeout_ms >= 1
+      and math.floor(spec.timeout_ms)
     or DEFAULT_COMMAND_TIMEOUT_MS
   local started = pcall(vim.system, cmd, { text = true, timeout = timeout }, function(res)
     vim.schedule(function()
