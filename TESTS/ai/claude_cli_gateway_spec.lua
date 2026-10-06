@@ -6,6 +6,70 @@
 ---@diagnostic disable: need-check-nil, missing-fields
 local VAR = "ANTHROPIC_BASE_URL"
 local RELOAD = { "ai.providers.claude_cli", "ai.providers", "ai.config", "ai.policy", "ai" }
+local ROOT = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h")
+
+---The shapes that made a pattern for the host take quadratic time (a digit run is
+---part of the name class AND of the port, a long userinfo is retried from every
+---start), plus the long scheme, the IPv6 forms and high bytes, each about `n`
+---bytes. `host` is what the URL's authority reads as when nothing bounds the
+---value, `nil` for "no host that is printed".
+---@param n integer even
+---@return { url: string, host: string|nil }[]
+local function hostile_shapes(n)
+  local digits = ("1"):rep(n)
+  local half = ("1"):rep(n / 2)
+  return {
+    { url = "https://" .. ("a"):rep(n) .. "@host.example/", host = "host.example" },
+    { url = "https://" .. ("a@"):rep(n / 2) .. "host.example", host = "host.example" },
+    { url = "https://" .. ("a"):rep(n) .. ":b" },
+    { url = "https://" .. ("a"):rep(n) },
+    { url = "https://" .. ("@"):rep(n) },
+    { url = "https://" .. ("a:"):rep(n / 2) },
+    { url = "https://h.example/" .. ("p"):rep(n), host = "h.example" },
+    { url = "https://h.example/?" .. ("q="):rep(n / 2), host = "h.example" },
+    -- A long scheme, with and without the `://` behind it.
+    { url = ("a"):rep(n) .. "://host.example/", host = "host.example" },
+    { url = ("a+"):rep(n / 2) .. "://host.example/", host = "host.example" },
+    { url = ("a"):rep(n) },
+    { url = ("a:"):rep(n / 2) },
+    -- Digit runs followed by a byte outside the name class and outside the port.
+    { url = "https://host.example:" .. digits },
+    { url = "https://" .. digits .. "!" },
+    { url = "https://" .. digits .. ":!" },
+    { url = "https://" .. digits .. "%" },
+    { url = "https://" .. digits .. " x" },
+    { url = "https://" .. half .. ":" .. half .. "!" },
+    { url = "https://" .. ("1."):rep(n / 2) .. ":!" },
+    -- IPv6 literals: a long run inside the brackets, behind them, or unclosed.
+    { url = "https://[" .. (":"):rep(n) .. "]" .. digits },
+    { url = "https://[" .. digits .. "]" .. digits .. "!" },
+    { url = "https://[" .. ("1:"):rep(n / 2) .. "]:" .. half .. "!" },
+    { url = "https://[" .. digits },
+    -- High bytes in the name, and blanks inside it.
+    { url = "https://" .. ("\200"):rep(n) },
+    { url = "https://" .. ("\200"):rep(n) .. "!" },
+    { url = "https://h" .. (" "):rep(n / 2) .. "x" },
+  }
+end
+
+---`ai.providers.claude_cli` with the two length bounds in front of the parse lifted
+---(MAX_URL_BYTES, MAX_HOST_BYTES), from a copy of its own source: with them in
+---place a value of 120 kB or 1 MB is refused before a single pattern runs, so only
+---this copy shows whether the patterns themselves stay linear -- the next edit that
+---brings a backtracking one back would otherwise hide behind the bound. The module
+---itself is untouched; nothing is cached.
+---@return Ai.Providers.ClaudeCli
+local function load_without_bounds()
+  local path = ROOT .. "/lua/ai/providers/claude_cli.lua"
+  local file = assert(io.open(path, "rb"))
+  local source = file:read("*a")
+  file:close()
+  local urls, hosts
+  source, urls = source:gsub("local MAX_URL_BYTES = [%d_]+", "local MAX_URL_BYTES = math.huge")
+  source, hosts = source:gsub("local MAX_HOST_BYTES = [%d_]+", "local MAX_HOST_BYTES = math.huge")
+  assert(urls == 1 and hosts == 1, "the length bounds are not where this spec lifts them")
+  return assert(load(source, "=claude_cli (bounds lifted)"))()
+end
 
 describe("ANTHROPIC_BASE_URL visibility (claude-cli)", function()
   local saved_env, cli
@@ -144,39 +208,62 @@ describe("ANTHROPIC_BASE_URL visibility (claude-cli)", function()
     -- A value is read on every `:Ai info` and `:checkhealth`; a pattern that retries
     -- from every start position (`([^@]*)$` on a long userinfo took 72 s for 120 kB)
     -- would hang the editor. The sentence stays short whatever the value is.
-    it("answers in linear time and stays short on a hostile value (120 kB)", function()
-      local n = 120000
-      for _, value in ipairs({
-        "https://" .. ("a"):rep(n) .. "@host.example/",
-        "https://" .. ("a"):rep(n),
-        "https://" .. ("a@"):rep(n / 2) .. "host.example",
-        "https://" .. ("@"):rep(n),
-        "https://" .. ("a"):rep(n) .. ":b",
-        "https://host.example:" .. ("1"):rep(n),
-        "https://" .. ("a:"):rep(n / 2),
-        "https://[" .. (":"):rep(n) .. "]" .. ("1"):rep(n),
-        ("a"):rep(n),
-        ("a:"):rep(n / 2),
-        "https://h" .. (" "):rep(n / 2) .. "x",
-        "https://" .. ("\200"):rep(n),
-        "https://h.example/" .. ("p"):rep(n),
-        -- A digit run is part of the name class AND of the port: followed by a byte
-        -- outside it, the match used to be retried at every split (55 s).
-        "https://" .. ("1"):rep(n) .. "!",
-        "https://" .. ("1"):rep(n) .. ":!",
-        "https://" .. ("1"):rep(n) .. "%",
-        "https://" .. ("1"):rep(n) .. " x",
-        "https://" .. ("1"):rep(n) .. ":" .. ("1"):rep(n) .. "!",
-        "https://" .. ("1."):rep(n / 2) .. ":!",
-        "https://[" .. ("1"):rep(n) .. "]" .. ("1"):rep(n) .. "!",
-      }) do
-        set(value)
-        local t0 = vim.uv.hrtime()
-        local note = note_text()
-        local ms = (vim.uv.hrtime() - t0) / 1e6
-        assert.is_true(ms < 1000, ("%d ms for %d bytes"):format(ms, #value))
-        assert.is_true(#note < 400, "the note carries no more than a host")
+    it("answers in linear time and stays short on a hostile value (120 kB, 1 MB)", function()
+      -- Over the bound: refused before it is parsed, and no host is named.
+      set("!")
+      local generic = note_text()
+      for _, n in ipairs({ 120000, 1000000 }) do
+        for _, shape in ipairs(hostile_shapes(n)) do
+          set(shape.url)
+          local t0 = vim.uv.hrtime()
+          local note = note_text()
+          local ms = (vim.uv.hrtime() - t0) / 1e6
+          assert.is_true(ms < 1000, ("%d ms for %d bytes"):format(ms, #shape.url))
+          assert.is_true(#note < 400, "the note carries no more than a host")
+          assert.are.equal(generic, note, "nothing of an oversized value is read or echoed")
+        end
       end
+    end)
+
+    -- The same shapes through the parse itself (the bounds lifted, see
+    -- `load_without_bounds`). A parse that retries at every split of a digit run, or
+    -- from every start of a long userinfo, takes tens of seconds at 120 kB (55 s and
+    -- 72 s measured) and far longer at 1 MB; a linear one takes milliseconds, so the
+    -- limits are generous. The small size runs first: a regression fails there after
+    -- seconds and never gets to the size that would not finish.
+    it("parses a hostile value of 120 kB and 1 MB in linear time, bounds lifted", function()
+      local unbounded = load_without_bounds()
+      local limits = { [120000] = 1000, [1000000] = 3000 }
+      for _, n in ipairs({ 120000, 1000000 }) do
+        for _, shape in ipairs(hostile_shapes(n)) do
+          set(shape.url)
+          local t0 = vim.uv.hrtime()
+          local note = table.concat(unbounded.gateway_note() or {}, " ")
+          local ms = (vim.uv.hrtime() - t0) / 1e6
+          assert.is_true(
+            ms < limits[n],
+            ("%d ms for %d bytes: %s..."):format(ms, #shape.url, shape.url:sub(1, 24))
+          )
+          assert.is_true(#note < 400, "the note carries no more than a host")
+          if shape.host then
+            assert.is_truthy(note:find(shape.host, 1, true), note)
+            assert.is_nil(note:find("not shown", 1, true), note)
+          else
+            assert.is_truthy(note:find("not shown", 1, true), note)
+          end
+        end
+      end
+    end)
+
+    it("the copy without bounds really lifts them, and the module itself keeps them", function()
+      set("https://gw.example.com/" .. ("p"):rep(5000))
+      assert.is_truthy(note_text():find("not shown", 1, true))
+      local note = table.concat(load_without_bounds().gateway_note(), " ")
+      assert.is_truthy(note:find("gw.example.com", 1, true), note)
+      assert.is_nil(note:find("not shown", 1, true), note)
+      -- (MAX_HOST_BYTES cannot be told apart this way: a host over it is refused by
+      -- the bound and, lifted, by the name length -- the same sentence. The loader
+      -- asserts that it found and replaced both constants.)
     end)
 
     -- The same shapes at the size the bound lets through: the parse must not be
@@ -312,6 +399,12 @@ describe("ANTHROPIC_BASE_URL visibility (claude-cli)", function()
       package.loaded["ai.health"] = nil
       -- The CLI is "installed": the test Neovim stands in for `claude`.
       cli.command = { vim.v.progpath }
+      -- The check also looks for an `apiKeyHelper` in the CLI's settings files:
+      -- none of these specs is about that (claude_cli_settings_spec.lua is), and
+      -- none may read the real ones.
+      cli.settings_files = function()
+        return {}
+      end
     end)
 
     after_each(function()

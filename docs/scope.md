@@ -60,8 +60,18 @@ up, `claude -p` can bill and act as that identity instead of the one
 `claude auth login` set up. This is documented and not changed: pointing the
 child at an empty configuration directory would probably break users whose login
 legitimately lives in such a profile, and ai.nvim does not rewrite another tool's
-settings. If the account matters (a policy question for customer data), check
-the CLI's own settings once.
+settings. What it does: `:checkhealth ai` warns when the user's settings file
+(`settings.json` in `CLAUDE_CONFIG_DIR` when that is set, else in `~/.claude`) or
+the managed settings (`managed-settings.json` and `managed-settings.d/*.json` in
+the CLI's system directory) define an `apiKeyHelper`, so the login may not be the
+account in use (an info line instead of a warning while the CLI is neither
+installed nor in use, see [health.md](health.md)). It only looks whether the key
+exists; the value and the rest of the file are never read out or shown. Not
+detected: an active federation profile (another tool's configuration directory,
+nothing there is read), server-managed settings and MDM policy (not files) and
+project settings (the child runs in a neutral directory). If the account matters
+(a policy question for customer data), check the CLI's own settings once -- `/status`
+inside the CLI names the credential it uses.
 
 ## The allow-list narrows, it never widens
 

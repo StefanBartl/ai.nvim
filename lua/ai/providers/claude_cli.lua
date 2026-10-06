@@ -35,8 +35,12 @@
 ---   `apiKeyHelper` script, an active federation profile file). Those are not
 ---   environment, ai.nvim does not rewrite another tool's settings, and the
 ---   child is not pointed at an empty configuration directory (that would likely
----   break a login that legitimately lives in a profile). Documented in
----   `docs/scope.md`, not changed.
+---   break a login that legitimately lives in a profile). Not changed, but
+---   `:checkhealth ai` says when the user's or the managed settings file defines
+---   an `apiKeyHelper` (`api_key_helper_scopes`; the key is looked up, its value
+---   never read out). A federation profile is not detected: it lives in another
+---   tool's configuration directory, and nothing there is read. Documented in
+---   `docs/scope.md`.
 --- - **Errors are in-band.** A billing or auth failure is not a non-zero exit:
 ---   the CLI prints a `result` event with `is_error = true` and exits 1. That
 ---   event's text is the error message (`kind = "api_error"`). A process that
@@ -53,6 +57,7 @@ require("ai.@types")
 
 local attachments = require("ai.attachments")
 local lib_error = require("lib.lua.error")
+local read = require("lib.nvim.fs.read")
 local util = require("ai.providers.util")
 
 ---@class Ai.Providers.ClaudeCli : Ai.Provider
@@ -84,7 +89,8 @@ M.command = { "claude" }
 ---`CLAUDE_CODE_OAUTH_REFRESH_TOKEN` (documented as the input of
 ---`claude auth login`, not as a credential of a request, and absent from the
 ---precedence list). Not reachable from here, because they are settings and not
----environment: an `apiKeyHelper` script and an active federation profile file.
+---environment: an `apiKeyHelper` script and an active federation profile file
+---(`api_key_helper_scopes` at least reports the first).
 ---@type string[]
 local CREDENTIAL_ENV = {
   "ANTHROPIC_API_KEY",
@@ -192,6 +198,117 @@ function M.gateway_note()
     ("ANTHROPIC_BASE_URL is set: the claude CLI will talk to %s"):format(host),
     "and send its login and your prompts there -- this can be a company gateway",
   }
+end
+
+---A settings file of the claude CLI and the layer it belongs to.
+---@class Ai.Providers.ClaudeCli.SettingsFile
+---@field scope "user"|"managed"
+---@field path string
+
+---Largest settings file that is read. One is a few hundred bytes to a few kB; what
+---is bigger is no settings file, and the decode stays bounded.
+local MAX_SETTINGS_BYTES = 1024 * 1024
+
+---The CLI's file-based settings that apply to the child (code.claude.com/docs/en/
+---settings, /managed-settings), where an `apiKeyHelper` ranks above the login:
+---the user file -- `settings.json` in `CLAUDE_CONFIG_DIR` when that is set, else in
+---`~/.claude` (`%USERPROFILE%\.claude` on Windows, as the CLI resolves it) -- and
+---the managed `managed-settings.json` plus its `managed-settings.d/*.json` drop-ins
+---in the system directory. The project files are left out: the child runs in a
+---neutral directory. Server-managed settings and MDM are not files and cannot be
+---seen from here.
+---
+---Mutable on purpose, like `command`: the specs replace it with fixture files, so
+---none of them reads the real home directory. `opts.managed_dir` stands in for the
+---system directory (the drop-in listing is tested against a fixture directory).
+---@param opts? { managed_dir?: string }
+---@return Ai.Providers.ClaudeCli.SettingsFile[]
+function M.settings_files(opts)
+  local files = {}
+  local config_dir = util.env_value("CLAUDE_CONFIG_DIR")
+  if not config_dir then
+    local home = vim.uv.os_homedir()
+    config_dir = home and vim.fs.joinpath(home, ".claude")
+  end
+  if config_dir then
+    files[#files + 1] = { scope = "user", path = vim.fs.joinpath(config_dir, "settings.json") }
+  end
+  local env = require("lib.nvim.system.env").get()
+  local dir = (opts and opts.managed_dir)
+    or (env.is_windows and "C:/Program Files/ClaudeCode")
+    or (env.is_macos and "/Library/Application Support/ClaudeCode")
+    or "/etc/claude-code"
+  files[#files + 1] = { scope = "managed", path = dir .. "/managed-settings.json" }
+  local dropins, scan = {}, vim.uv.fs_scandir(dir .. "/managed-settings.d")
+  while scan do
+    local name = vim.uv.fs_scandir_next(scan)
+    if not name then
+      break
+    end
+    if name:sub(-5) == ".json" and name:sub(1, 1) ~= "." then
+      dropins[#dropins + 1] = name
+    end
+  end
+  table.sort(dropins)
+  for _, name in ipairs(dropins) do
+    files[#files + 1] = { scope = "managed", path = dir .. "/managed-settings.d/" .. name }
+  end
+  return files
+end
+
+---@internal
+---Whether decoded settings JSON defines `apiKeyHelper`: the key is there with a value
+---that is not `null`, `false` or the empty string. Only the fact: the value (a
+---command that can carry a secret) is not looked at.
+---@param settings any
+---@return boolean
+function M.defines_api_key_helper(settings)
+  if type(settings) ~= "table" then
+    return false
+  end
+  local helper = settings.apiKeyHelper
+  return helper ~= nil and helper ~= vim.NIL and helper ~= false and helper ~= ""
+end
+
+---@internal
+---`M.defines_api_key_helper` for the settings file at `path`. The content is dropped
+---at once and reaches no message, log or error. A file that is missing, too large,
+---unreadable or not JSON counts as "no": there is nothing to report from it, and a
+---decode error is never echoed (it can quote the content).
+---@param path string
+---@return boolean
+local function file_defines_api_key_helper(path)
+  local stat = vim.uv.fs_stat(path)
+  if not stat or stat.type ~= "file" or stat.size > MAX_SETTINGS_BYTES then
+    return false
+  end
+  local content = read(path)
+  if not content then
+    return false
+  end
+  if content:sub(1, 3) == "\239\187\191" then -- a UTF-8 BOM, as PowerShell writes one
+    content = content:sub(4)
+  end
+  local ok, decoded = pcall(vim.json.decode, content, { luanil = { object = true, array = true } })
+  return ok and M.defines_api_key_helper(decoded)
+end
+
+---The layers (`"user"`, `"managed"`) whose settings file defines an `apiKeyHelper`: a
+---credential that ranks above the CLI's login and cannot be taken out of its child's
+---environment, so `claude -p` may bill and act as another account than the one
+---`claude auth login` set up. Empty when there is none. Reads nothing but whether the
+---key exists, and never reports the value or any other content.
+---@param files? Ai.Providers.ClaudeCli.SettingsFile[] defaults to `M.settings_files()`
+---@return string[] scopes
+function M.api_key_helper_scopes(files)
+  local scopes, seen = {}, {}
+  for _, file in ipairs(files or M.settings_files()) do
+    if not seen[file.scope] and file_defines_api_key_helper(file.path) then
+      seen[file.scope] = true
+      scopes[#scopes + 1] = file.scope
+    end
+  end
+  return scopes
 end
 
 ---@internal

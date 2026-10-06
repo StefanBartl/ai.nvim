@@ -107,23 +107,49 @@ function M.check()
       -- info() for a plain fact like a version or a path).
       vim.health.info("ℹ️ INFO " .. id .. ": not available (missing binary and/or API key)")
     end
-    -- Under the entry it belongs to: the variable is passed on to the CLI on
-    -- purpose, so say where it points. A warning only where the CLI can be run (it
-    -- is installed, or it is the provider, in the order or the completion's): for
-    -- someone who set the variable for other tools and never uses claude-cli it is
-    -- a fact to know, not a defect, and must not nag on every :checkhealth.
-    local gateway = id == "claude-cli" and require("ai.providers.claude_cli").gateway_note()
-    if gateway then
+    -- Under the entry it belongs to: what the CLI is told or finds that sends its
+    -- requests elsewhere or under another account than its login. A warning only
+    -- where the CLI can be run (it is installed, or it is the provider, in the order
+    -- or the completion's): for someone who set the variable for other tools and
+    -- never uses claude-cli it is a fact to know, not a defect, and must not nag on
+    -- every :checkhealth.
+    if id == "claude-cli" then
+      local cli = require("ai.providers.claude_cli")
       local in_use = available
         or cfg.provider == id
         or vim.tbl_contains(cfg.provider_order, id)
         or (cfg.completion and cfg.completion.provider) == id
-      if in_use then
-        vim.health.warn(table.concat(gateway, " "), {
+      ---@param text string
+      ---@param hints string[]
+      local function report(text, hints)
+        if in_use then
+          vim.health.warn(text, hints)
+        else
+          vim.health.info(text)
+        end
+      end
+      -- The variable is passed on to the CLI on purpose, so say where it points.
+      local gateway = cli.gateway_note()
+      if gateway then
+        report(table.concat(gateway, " "), {
           "Check that this is the endpoint you mean; unset ANTHROPIC_BASE_URL to reach Anthropic directly",
         })
-      else
-        vim.health.info(table.concat(gateway, " "))
+      end
+      -- A credential of the CLI's own settings ranks above its login and is not
+      -- environment, so it is not removed from the child: say that the login may not
+      -- be the account that is used. Only that the key exists, never its value.
+      local scopes = cli.api_key_helper_scopes()
+      if #scopes > 0 then
+        report(
+          (
+            "the claude CLI's %s settings define apiKeyHelper: that credential ranks above "
+            .. "its login, so claude-cli may use another account than the one logged in"
+          ):format(table.concat(scopes, " and ")),
+          {
+            "In the claude CLI, /status shows the credential in use; remove apiKeyHelper "
+              .. "from that settings file to use the login (a managed one is set by your organization)",
+          }
+        )
       end
     end
   end
