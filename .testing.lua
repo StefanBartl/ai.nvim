@@ -19,4 +19,25 @@ return {
   host = "c",
   -- Environment variables the specs read; a child editor inherits an allowlist only (never secrets).
   env_allow = { "CLAUDE_CODE_DISABLE_ATTACHMENTS" },
+  -- Guards (testing.nvim docs/GUARDS.md). The suite passes cleanly for these, so a new finding fails.
+  guards = {
+    fs = "error",
+    scheduled_error = "error",
+    prompt = "error",
+    deprecation = "error",
+    -- Real finding, kept at warn: specs leave plugin state behind between cases of one file (the AiCompletion
+    -- TextChangedI/InsertLeave autocmds after the auto-trigger and trigger specs, an unwiped [No Name] buffer
+    -- in the diagnostics context case, json syntax highlight groups from the structured_data cases, user
+    -- command :Ai from the docs-example install spec). state=error fails 18 cases.
+    state = "warn",
+    -- The spawn/network net: every external process must be listed in guard_allow.
+    process_net = "error",
+  },
+  guard_allow = {
+    -- providers_claude_cli_spec starts a headless nvim as a fake `claude` CLI.
+    -- "definitely-not-a-claude-binary-xyz" is a deliberate negative probe ("reports a command that cannot be started").
+    spawn = { "nvim", "definitely-not-a-claude-binary-xyz" },
+    fs = {},
+    network = {},
+  },
 }
