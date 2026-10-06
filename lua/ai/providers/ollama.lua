@@ -31,11 +31,18 @@ local util = require("ai.providers.util")
 local M = {
   id = "ollama",
   name = "Ollama (local)",
-  capabilities = { streaming = true, vision = true, documents = false, web = false },
+  capabilities = {
+    streaming = true,
+    vision = true,
+    documents = false,
+    web = false,
+    temperature = true,
+  },
 }
 
 local DEFAULT_HOST = "http://127.0.0.1:11434"
 local DEFAULT_MODEL = "llama3.2"
+M.default_model = DEFAULT_MODEL
 
 --- Deliberately AI_OLLAMA_HOST, not OLLAMA_HOST: the latter is already
 --- Ollama's own env var for the *server*'s bind address (commonly something
@@ -85,6 +92,7 @@ local function build_body(req, stream)
   return vim.json.encode({
     model = req.model or DEFAULT_MODEL,
     messages = messages,
+    options = req.temperature ~= nil and { temperature = req.temperature } or nil,
     stream = stream,
   })
 end

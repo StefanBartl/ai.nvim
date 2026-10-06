@@ -33,12 +33,19 @@ local util = require("ai.providers.util")
 local M = {
   id = "claude",
   name = "Anthropic Claude API",
-  capabilities = { streaming = true, vision = true, documents = true, web = false },
+  capabilities = {
+    streaming = true,
+    vision = true,
+    documents = true,
+    web = false,
+    temperature = true,
+  },
 }
 
 local API_URL = "https://api.anthropic.com/v1/messages"
 local ANTHROPIC_VERSION = "2023-06-01"
 local DEFAULT_MODEL = "claude-opus-4-5"
+M.default_model = DEFAULT_MODEL
 -- Anthropic's Messages API requires max_tokens on every request (unlike
 -- OpenAI/Ollama/Gemini, which default it server-side) -- this is that
 -- required value's default, overridable per-request via `req.max_tokens`
@@ -93,6 +100,7 @@ local function build_body(req, stream)
   return vim.json.encode({
     model = req.model or DEFAULT_MODEL,
     max_tokens = req.max_tokens or DEFAULT_MAX_TOKENS,
+    temperature = req.temperature,
     system = req.system,
     stream = stream or nil,
     messages = { { role = "user", content = user_content(req) } },

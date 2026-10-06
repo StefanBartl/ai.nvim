@@ -60,6 +60,7 @@ each page answers.
 - [All options](docs/configuration.md) -- every `setup()` option and its default.
 - [Commands](docs/commands.md) / [Bindings cheatsheet](docs/BINDINGS.md)
 - [Attachments](docs/attachments.md) -- sending an image or a PDF with a prompt.
+- [Bulk requests](docs/bulk.md) -- the guard rails for plugins that send a whole document in many requests.
 
 ### The Rest
 

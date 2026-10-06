@@ -40,6 +40,14 @@ local DEFAULTS = {
 
   timeout_ms = 60000,
 
+  -- Guard rails for unattended bulk requests (`req.bulk`, see lua/ai/bulk.lua).
+  -- `max_session_chars` caps the characters of ALL bulk requests of one
+  -- Neovim session; `false` = no cap. `false`, not `nil`, so the key exists
+  -- and is not reported as an unknown one.
+  bulk = {
+    max_session_chars = false,
+  },
+
   ui = {
     enable = true,
     progress_style = "auto",

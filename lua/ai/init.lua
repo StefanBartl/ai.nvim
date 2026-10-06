@@ -97,13 +97,14 @@ end
 ---The machine's provider policy, for a plugin that sits on top of ai.nvim and
 ---wants to narrow it further (it may restrict, never widen). A copy: changing
 ---the result changes nothing.
----@return { allowed: string[]|nil, restricted: boolean, granted: string[] } allowed `nil` when unrestricted; `granted` ids confirmed for this session outside the list
+---@return { allowed: string[]|nil, restricted: boolean, granted: string[], bulk_granted: string[] } allowed `nil` when unrestricted; `granted` ids confirmed for this session outside the list; `bulk_granted` ids confirmed for bulk requests (`ai.bulk`) outside the list
 function M.policy()
   local policy = require("ai.policy")
   return {
     allowed = policy.allowed(),
     restricted = policy.restricted(),
     granted = policy.granted(),
+    bulk_granted = policy.bulk_granted(),
   }
 end
 
@@ -182,18 +183,13 @@ local function needs_key_fetch(provider, req)
   return not req.api_key and require("ai.keys").needs_fetch(provider.id)
 end
 
----Ask once, non-streaming.
----@param req Ai.Request
+---@internal
+---Send a resolved request: fetch a command-sourced key first when needed,
+---then hand it to the provider.
+---@param provider Ai.Provider
+---@param resolved Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
----@return nil
-function M.ask(req, cb)
-  assert(type(req) == "table" and type(req.prompt) == "string", "ai.ask: req.prompt is required")
-  local provider, err, resolved, context_errors = resolve(req)
-  if not provider then
-    cb(false, err or lib_error.new("provider_resolution", "ai: unknown error resolving a provider"))
-    return
-  end
-  warn_context_errors(context_errors)
+local function dispatch(provider, resolved, cb)
   if needs_key_fetch(provider, resolved) then
     -- A command key source (ai.keys): run it off the UI thread, then go on.
     require("ai.keys").fetch(provider.id, function(ok, kerr)
@@ -208,12 +204,44 @@ function M.ask(req, cb)
   provider.ask(resolved, cb)
 end
 
+---Ask once, non-streaming. With `req.bulk` set the request runs under the
+---guard rails of `ai.bulk` (size and budget caps, concurrency, strict policy,
+---temperature 0) and a handle is returned: `handle:kill()` cancels it.
+---@param req Ai.Request
+---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
+---@return Ai.BulkHandle|nil handle only for a bulk request
+function M.ask(req, cb)
+  assert(type(req) == "table" and type(req.prompt) == "string", "ai.ask: req.prompt is required")
+  if req.bulk ~= nil then
+    return require("ai.bulk").ask(req, cb, { resolve = resolve, dispatch = dispatch })
+  end
+  local provider, err, resolved, context_errors = resolve(req)
+  if not provider then
+    cb(false, err or lib_error.new("provider_resolution", "ai: unknown error resolving a provider"))
+    return
+  end
+  warn_context_errors(context_errors)
+  dispatch(provider, resolved, cb)
+end
+
 ---Ask, streaming the response.
 ---@param req Ai.Request
 ---@param handlers Ai.StreamHandlers
 ---@return vim.SystemObj|nil process returns the running process handle so a caller can `:kill()` it to cancel
 function M.stream(req, handlers)
   assert(type(req) == "table" and type(req.prompt) == "string", "ai.stream: req.prompt is required")
+  if req.bulk ~= nil then
+    if handlers.on_error then
+      handlers.on_error(
+        lib_error.new(
+          "invalid_request",
+          "ai.stream: `bulk` applies to ai.ask() only",
+          { field = "bulk" }
+        )
+      )
+    end
+    return nil
+  end
   local provider, err, resolved, context_errors = resolve(req)
   if not provider then
     if handlers.on_error then
