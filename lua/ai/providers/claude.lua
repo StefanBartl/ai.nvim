@@ -54,7 +54,8 @@ end
 ---@param req? Ai.Request
 ---@return boolean
 function M.available(req)
-  return util.executable("curl") and api_key(req) ~= nil
+  -- A command key profile counts as available before it has run (ai.keys).
+  return util.executable("curl") and (api_key(req) ~= nil or require("ai.keys").pending("claude"))
 end
 
 ---@internal
