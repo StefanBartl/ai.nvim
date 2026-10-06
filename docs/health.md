@@ -31,10 +31,16 @@ What each section reports:
   file (`settings.json` in `CLAUDE_CONFIG_DIR` when that variable is set, else
   in `~/.claude`) and in the managed settings (`managed-settings.json` and the
   `managed-settings.d/*.json` drop-ins in the CLI's system directory), and
-  names the layer, `user` and/or `managed`, never the file. It only looks whether
-  the key exists: the value (a command that can carry a secret) and the rest of
-  the file are neither read out nor shown. A file that is missing, over 1 MiB,
-  unreadable or not JSON counts as "no". Not detected: an active federation
+  names the layer, `user` and/or `managed`, never the file. A third entry, at the
+  same levels, says when the `env` block of those same settings sets
+  `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` (the
+  match ignores case, as the process environment of Windows does): the CLI
+  applies that block itself once it runs, so ai.nvim cannot remove the variable
+  from the child's environment, and it may override the login in the same way.
+  It names the layer and the variable. Both checks only look whether the
+  keys exist: the value (a command or a key that can carry a secret) and the
+  rest of the file are neither read out nor shown. A file that is missing, over
+  1 MiB, unreadable or not JSON counts as "no". Not detected: an active federation
   profile (it lives in another tool's configuration directory, and nothing there
   is read), server-managed settings and MDM policy (they are not files), and
   project settings (the child runs in a neutral directory). See

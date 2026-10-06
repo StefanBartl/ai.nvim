@@ -66,13 +66,15 @@ migration is what |ai-attachments| were built for.
              your prompts to that host, which `policy.allowed` does not see.
              `:Ai info` and |:checkhealth| ai name the host while it is set.
              A known limit: a credential in the CLI's own settings (an
-             `apiKeyHelper`, an active federation profile) ranks above its
-             login and is not environment, so it is not removed -- see
+             `apiKeyHelper`, an API key or token in its `env` block, an
+             active federation profile) ranks above its login and is not
+             environment of the child, so it is not removed -- see
              |ai-scope|. |:checkhealth| ai warns when the user's settings
              file (`settings.json` in `CLAUDE_CONFIG_DIR` when that is set,
              else in `~/.claude`) or the managed settings file defines an
-             `apiKeyHelper`; it only looks whether the key exists. A
-             federation profile is not detected.
+             `apiKeyHelper` or sets such a key or token in its `env` block;
+             it only looks whether the keys exist. A federation profile is
+             not detected.
 
 No provider is required at install time -- |:checkhealth| ai reports which
 ones are usable on this machine, and `provider = "auto"` (the default) picks
@@ -462,10 +464,11 @@ require("ai.context").assemble({opts})
            process so a stray variable cannot override it; the gateway URL
            (`ANTHROPIC_BASE_URL`) is passed on, and shown by `:Ai info` and
            |:checkhealth| ai, host only, while it is set. A credential the
-           CLI reads from its own settings (an `apiKeyHelper`) is not
-           environment and is not removed; |:checkhealth| ai says when one
-           is defined. Runs without tools, hooks or session state in a
-           neutral directory; the prompt goes to its stdin, never to argv.
+           CLI reads from its own settings (an `apiKeyHelper`, or a key or
+           token in its `env` block) is not environment of the child and
+           is not removed; |:checkhealth| ai says when one is defined.
+           Runs without tools, hooks or session state in a neutral
+           directory; the prompt goes to its stdin, never to argv.
            `@path` mentions in the text are denied and the CLI's own
            expansion of them is switched off (it would otherwise read the
            file and send it along), and a prompt starting with `/` is
@@ -618,11 +621,15 @@ Reports:
     only, it can be a company gateway): a warning when the CLI can be run
     (`claude` is on PATH, or `claude-cli` is the `provider`, in
     `provider_order` or the `completion.provider`), an info line otherwise.
-    The same entry, at the same levels, says when the claude CLI's user or
-    managed settings file defines an `apiKeyHelper`: that credential ranks
-    above the CLI's login, so `claude-cli` may use another account than the
-    one logged in. Only whether the key exists is looked up; its value and
-    the rest of the file are never read out or shown.
+    A second entry under `claude-cli`, at the same levels, says when the
+    claude CLI's user or managed settings file defines an `apiKeyHelper`:
+    that credential ranks above the CLI's login, so `claude-cli` may use
+    another account than the one logged in. A third entry, at the same
+    levels, says when the `env` block of those settings sets an API key or
+    token and names the variable: the CLI applies the block after it has
+    started, so it is not removed from the child, and it may override the
+    login in the same way. Only whether the keys exist is looked up; no
+    value and nothing else of the files is ever read out or shown.
   - configuration -- the active `provider` and `provider_order`, and a
     warning for every value that was dropped to its default, for a malformed
     `policy.allowed`, for an unknown key under `policy` and for a misspelt
