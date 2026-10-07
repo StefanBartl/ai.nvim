@@ -234,7 +234,10 @@ describe("ai.keys command source", function()
     )
 
     it("a command that hangs is killed after timeout_ms", function()
-      local keys = setup({ command = fake("vim.uv.sleep(15000); io.write('k')"), timeout_ms = 400 })
+      local keys = setup({
+        command = fake("vim.wait(15000, function() return false end, 20); io.write('k')"),
+        timeout_ms = 400,
+      })
       local started = vim.uv.now()
       local ok, err = fetch(keys)
       assert.is_false(ok)
@@ -243,8 +246,10 @@ describe("ai.keys command source", function()
     end)
 
     it("a fractional timeout_ms still ends in a result instead of hanging", function()
-      local keys =
-        setup({ command = fake("vim.uv.sleep(15000); io.write('k')"), timeout_ms = 400.5 })
+      local keys = setup({
+        command = fake("vim.wait(15000, function() return false end, 20); io.write('k')"),
+        timeout_ms = 400.5,
+      })
       local ok, err = fetch(keys)
       assert.is_false(ok)
       assert.is_truthy(err.message:find("timed out after 400 ms", 1, true))
@@ -318,22 +323,25 @@ describe("ai.keys command source", function()
       assert.is_false(keys._batch_file("pass", false))
     end)
 
-    it("are refused with a way out instead of being spawned or wrapped in cmd.exe", function()
-      if vim.fn.has("win32") == 0 then
-        return
+    -- Registered on Windows only: a case that returns early elsewhere would be
+    -- reported as "made no assertions".
+    local it_windows = vim.fn.has("win32") == 1 and it or function() end
+    it_windows(
+      "are refused with a way out instead of being spawned or wrapped in cmd.exe",
+      function()
+        local path = write_file("get-key.cmd", "@echo the-key\r\n")
+        local keys = setup({ command = { path, "secret-arg" } })
+        local ok, err = fetch(keys)
+        assert.is_false(ok)
+        assert.is_truthy(err.message:find(".cmd/.bat batch file", 1, true))
+        assert.is_truthy(err.message:find("-File", 1, true))
+        assert.is_nil(err.message:find("secret-arg", 1, true))
+        local joined = table.concat(keys.issues(), "\n")
+        assert.is_truthy(joined:find("get-key.cmd", 1, true))
+        assert.is_truthy(joined:find("batch file", 1, true))
+        assert.is_nil(joined:find("secret-arg", 1, true))
       end
-      local path = write_file("get-key.cmd", "@echo the-key\r\n")
-      local keys = setup({ command = { path, "secret-arg" } })
-      local ok, err = fetch(keys)
-      assert.is_false(ok)
-      assert.is_truthy(err.message:find(".cmd/.bat batch file", 1, true))
-      assert.is_truthy(err.message:find("-File", 1, true))
-      assert.is_nil(err.message:find("secret-arg", 1, true))
-      local joined = table.concat(keys.issues(), "\n")
-      assert.is_truthy(joined:find("get-key.cmd", 1, true))
-      assert.is_truthy(joined:find("batch file", 1, true))
-      assert.is_nil(joined:find("secret-arg", 1, true))
-    end)
+    )
   end)
 
   describe("validation", function()
