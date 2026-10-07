@@ -1,3 +1,30 @@
+---Registers hooks that wipe every buffer a case opened (`:enew`, scratch
+---buffers), so none outlives the case that needed it.
+local function wipe_opened_buffers()
+  local before
+  before_each(function()
+    before = {}
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      before[buf] = true
+    end
+  end)
+  after_each(function()
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if not before[buf] then
+        pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      end
+    end
+  end)
+end
+
+---Gives the current buffer a filetype without firing FileType, so no syntax
+---or ftplugin file is sourced (the json syntax defines highlight groups that
+---would outlive the case); the context code only reads `vim.bo.filetype`.
+---@param ft string
+local function set_filetype(ft)
+  vim.cmd("noautocmd setlocal filetype=" .. ft)
+end
+
 describe("ai.context.diagnostics", function()
   it("formats diagnostics as file:line:[severity]:message, sorted by line", function()
     local bufnr = vim.api.nvim_create_buf(false, true)
@@ -26,6 +53,8 @@ describe("ai.context.diagnostics", function()
 end)
 
 describe("ai.context", function()
+  wipe_opened_buffers()
+
   it("assemble({}) returns an empty string when nothing is requested", function()
     local block = require("ai.context").assemble({})
     assert.are.equal("", block)
@@ -91,6 +120,8 @@ describe("ai.context", function()
 end)
 
 describe("ai.context -- structured_data (data.nvim)", function()
+  wipe_opened_buffers()
+
   -- Optional soft dependency: see TESTS/minimal_init.lua's DATA_NVIM_DIR.
   -- Registering zero `it`s below (rather than failing) is the correct
   -- "skipped" outcome when it isn't present in this test environment.
@@ -101,7 +132,7 @@ describe("ai.context -- structured_data (data.nvim)", function()
 
   it("includes the flattened form of a json buffer under the cursor", function()
     vim.cmd("enew")
-    vim.bo.filetype = "json"
+    set_filetype("json")
     vim.api.nvim_buf_set_lines(0, 0, -1, false, { '{"a":1,"b":{"c":2}}' })
 
     local block = require("ai.context").assemble({ structured_data = true })
@@ -112,7 +143,7 @@ describe("ai.context -- structured_data (data.nvim)", function()
 
   it("omits the section when the buffer isn't a recognizable json/yaml/xml block", function()
     vim.cmd("enew")
-    vim.bo.filetype = "lua"
+    set_filetype("lua")
     vim.api.nvim_buf_set_lines(0, 0, -1, false, { "local x = 1" })
 
     local block = require("ai.context").assemble({ structured_data = true })
@@ -121,7 +152,7 @@ describe("ai.context -- structured_data (data.nvim)", function()
 
   it("omits the section when the format is detected but the content fails to decode", function()
     vim.cmd("enew")
-    vim.bo.filetype = "json"
+    set_filetype("json")
     vim.api.nvim_buf_set_lines(0, 0, -1, false, { "not valid json" })
 
     local block = require("ai.context").assemble({ structured_data = true })
@@ -203,6 +234,8 @@ describe("ai.context -- structured_data error propagation (stubbed data.nvim)", 
 end)
 
 describe("ai.context -- conflict (gitsuite.nvim)", function()
+  wipe_opened_buffers()
+
   -- Optional soft dependency: see TESTS/minimal_init.lua's GITSUITE_NVIM_DIR.
   -- Registering zero `it`s below (rather than failing) is the correct
   -- "skipped" outcome when it isn't present in this test environment.
@@ -256,6 +289,8 @@ describe("ai.context -- conflict (gitsuite.nvim)", function()
 end)
 
 describe("ai.context -- conflict (stubbed gitsuite.nvim)", function()
+  wipe_opened_buffers()
+
   -- `require()` checks `package.loaded` before ever touching 'runtimepath',
   -- so this runs regardless of whether a real gitsuite.nvim checkout is on
   -- the rtp in this test environment -- the CI-guaranteed baseline for this

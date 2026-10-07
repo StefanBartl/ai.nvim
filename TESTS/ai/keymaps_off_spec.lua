@@ -2,6 +2,9 @@
 -- nothing: setup() must not raise on the boolean form, and the insert-mode
 -- completion keys (<Tab>, <C-]>, <C-\><C-a>) are keys ai.nvim binds too.
 ---@diagnostic disable: need-check-nil
+package.path = vim.fn.getcwd() .. "/TESTS/?.lua;" .. package.path
+local S = require("docs_support")
+
 describe("ai.setup keymaps switch (REL-20)", function()
   -- Nvim itself maps <Tab> (snippet jump), so "bound" means: bound by ai.nvim.
   local function insert_map(lhs)
@@ -15,7 +18,6 @@ describe("ai.setup keymaps switch (REL-20)", function()
     end
     return nil
   end
-  local INSERT_KEYS = { "<Tab>", "<C-]>", "<C-><C-a>" }
 
   local function fresh_setup(opts)
     package.loaded["ai"] = nil
@@ -30,50 +32,9 @@ describe("ai.setup keymaps switch (REL-20)", function()
     return ok
   end
 
-  local MODES = { "n", "i", "v", "x", "s", "o" }
-  local before, saved
-
-  local function snapshot()
-    local seen = {}
-    for _, mode in ipairs(MODES) do
-      for _, map in ipairs(vim.api.nvim_get_keymap(mode)) do
-        seen[mode .. "\0" .. map.lhs] = true
-      end
-    end
-    return seen
-  end
-
-  before_each(function()
-    vim.g.loaded_ai = nil
-    before = snapshot()
-    saved = {}
-    for _, lhs in ipairs(INSERT_KEYS) do
-      local map = vim.fn.maparg(lhs, "i", false, true)
-      if type(map) == "table" and map.lhs ~= nil then
-        saved[#saved + 1] = map
-      end
-    end
-  end)
+  S.isolate_install()
 
   after_each(function()
-    -- unbind every key a setup registered and drop its autocmds, so no
-    -- case leaves a key or an AiCompletion group behind
-    for _, mode in ipairs(MODES) do
-      for _, map in ipairs(vim.api.nvim_get_keymap(mode)) do
-        if not before[mode .. "\0" .. map.lhs] then
-          pcall(vim.api.nvim_del_keymap, mode, map.lhs)
-        end
-      end
-    end
-    for _, lhs in ipairs(INSERT_KEYS) do
-      pcall(vim.keymap.del, "i", lhs)
-    end
-    for _, map in ipairs(saved) do
-      vim.fn.mapset("i", false, map)
-    end
-    pcall(vim.api.nvim_del_augroup_by_name, "AiCompletion")
-    pcall(vim.api.nvim_del_augroup_by_name, "ai_nvim")
-    vim.g.loaded_ai = nil
     package.loaded["ai"] = nil
     package.loaded["ai.config"] = nil
     package.loaded["ai.completion"] = nil

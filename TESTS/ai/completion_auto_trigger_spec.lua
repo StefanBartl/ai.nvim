@@ -16,6 +16,8 @@ describe("ai.completion auto-trigger", function()
   end)
 
   after_each(function()
+    -- ai.completion.setup() has no teardown: drop its autocmd group
+    pcall(vim.api.nvim_del_augroup_by_name, "AiCompletion")
     package.loaded["ai"] = nil
     if vim.api.nvim_buf_is_valid(bufnr) then
       vim.api.nvim_buf_delete(bufnr, { force = true })

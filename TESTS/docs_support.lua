@@ -160,4 +160,74 @@ function M.global_maps()
   return maps
 end
 
+local STATE_MODES = { "n", "x", "s", "o", "i", "c", "t", "l" }
+
+---@return table<string, table> global keymaps keyed by "<mode>\0<lhs>"
+local function snapshot_maps()
+  local maps = {}
+  for _, mode in ipairs(STATE_MODES) do
+    for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
+      maps[mode .. "\0" .. m.lhs] = m
+    end
+  end
+  return maps
+end
+
+---@return table<string, true> every autocmd group that owns an autocmd right now
+local function snapshot_groups()
+  local groups = {}
+  for _, au in ipairs(vim.api.nvim_get_autocmds({})) do
+    if au.group_name then
+      groups[au.group_name] = true
+    end
+  end
+  return groups
+end
+
+---Registers hooks (call it inside a `describe`) that put the editor back as it
+---was before each case: a real `setup()` binds keys (replacing some, like
+---Nvim's own <Tab>), creates autocmd groups and the :Ai command, and ai.nvim
+---has no teardown to call, so the case's leftovers are removed here.
+function M.isolate_install()
+  local maps, groups, had_ai_cmd, loaded
+  before_each(function()
+    maps, groups = snapshot_maps(), snapshot_groups()
+    had_ai_cmd = vim.fn.exists(":Ai") == 2
+    loaded = vim.g.loaded_ai
+  end)
+  after_each(function()
+    -- new or replaced keys go...
+    for key, now in pairs(snapshot_maps()) do
+      local was = maps[key]
+      if not was or was.rhs ~= now.rhs or was.callback ~= now.callback then
+        pcall(vim.api.nvim_del_keymap, now.mode, now.lhs)
+      end
+    end
+    -- ...and what the case replaced or removed comes back
+    for _, was in pairs(maps) do
+      local now = vim.fn.maparg(was.lhs, was.mode, false, true)
+      if type(now) ~= "table" or now.lhs == nil then
+        vim.api.nvim_set_keymap(was.mode, was.lhs, was.rhs or "", {
+          callback = was.callback,
+          desc = was.desc,
+          expr = was.expr == 1,
+          noremap = was.noremap == 1,
+          nowait = was.nowait == 1,
+          silent = was.silent == 1,
+          script = was.script == 1,
+        })
+      end
+    end
+    for name in pairs(snapshot_groups()) do
+      if not groups[name] then
+        pcall(vim.api.nvim_del_augroup_by_name, name)
+      end
+    end
+    if not had_ai_cmd and vim.fn.exists(":Ai") == 2 then
+      pcall(vim.api.nvim_del_user_command, "Ai")
+    end
+    vim.g.loaded_ai = loaded
+  end)
+end
+
 return M

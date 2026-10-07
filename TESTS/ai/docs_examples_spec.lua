@@ -28,6 +28,8 @@ local read_lines, block_with, table_rows = S.read_lines, S.block_with, S.table_r
 local mode_list, run_chunk = S.mode_list, S.run_chunk
 
 describe("docs examples (REL-08) --", function()
+  S.isolate_install()
+
   local notified
   local original_notify
 
