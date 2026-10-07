@@ -52,6 +52,16 @@ local function result(text, is_error)
   })
 end
 
+-- Hangs until killed. NOT vim.uv.sleep: that blocks the main thread, and on
+-- POSIX Nvim only acts on SIGTERM from its event loop, so a blocked fake
+-- survives the kill for the whole sleep (Windows terminates it outright).
+-- vim.wait keeps the loop running, so SIGTERM ends the process at once.
+local function hang()
+  vim.wait(20000, function()
+    return false
+  end, 20)
+end
+
 emit({ type = "system", subtype = "init" })
 
 if scenario == "BILLING" then
@@ -72,14 +82,14 @@ elseif scenario == "PARTIALCRASH" then
 elseif scenario == "PARTIALSLEEP" then
   -- streams the first chunk, then hangs so the spec can kill it mid-answer
   delta("Hel")
-  vim.uv.sleep(20000)
+  hang()
 elseif scenario == "RESULTEXIT" then
   -- a complete answer, then a non-zero exit: the answer is still whole
   delta("Hello")
   result("Hello")
   os.exit(1)
 elseif scenario == "SLEEP" then
-  vim.uv.sleep(20000)
+  hang()
 elseif scenario == "NOEVENTS" then
   -- exits cleanly having said nothing on stdout: no delta, no assistant text, no
   -- result event -- only a note on stderr
