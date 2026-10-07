@@ -19,7 +19,8 @@ default `<leader>a`) and are individually overridable/disableable via
 
 A second, separate keymap surface (insert mode, no shared prefix --
 individually overridable/disableable via `config.completion.keymap[id]`,
-see [configuration.md](configuration.md)):
+see [configuration.md](configuration.md)). They follow the master switch:
+`keymaps = false` (or `keymaps.enable = false`) leaves them unbound too:
 
 | Mode | Default | Action id | Does |
 | ---- | ------- | --------- | ---- |

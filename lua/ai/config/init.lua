@@ -367,6 +367,26 @@ end
 ---@type string[]
 local _issues = {}
 
+---@internal
+---A feature group (`keymaps`, `usercmds`, ...) is a table with an `enable`
+---switch, but `keymaps = false` is the natural way to say "none of it". Turn a
+---boolean written in place of such a table into the table form, so every reader
+---can index `cfg.<group>.enable` without a type check: `false` -> `{ enable =
+---false }`, `true` -> `{}` (the defaults). The switch itself stays the one place
+---that decides.
+---@param opts table the caller's copy, changed in place
+local function normalize_switch_groups(opts)
+  for key, default in pairs(DEFAULTS) do
+    if type(default) == "table" and type(default.enable) == "boolean" then
+      if opts[key] == false then
+        opts[key] = { enable = false }
+      elseif opts[key] == true then
+        opts[key] = {}
+      end
+    end
+  end
+end
+
 ---Merge user options over the defaults and store the result. `user_opts` is
 ---typed loosely (`Ai.Config|table`, not a strict `Ai.Config`) because a
 ---caller legitimately passes a partial table (e.g. `{ ui = { panel_theme = "double" } }`)
@@ -386,6 +406,7 @@ function M.setup(user_opts)
   -- (a lazy.nvim `opts`, say) must still say what was written when `setup()`
   -- runs again.
   user_opts = type(user_opts) == "table" and vim.deepcopy(user_opts) or {}
+  normalize_switch_groups(user_opts)
   warn_unknown_keys(user_opts, DEFAULTS, "")
   _issues = {}
   sanitize_values(user_opts, "", _issues)

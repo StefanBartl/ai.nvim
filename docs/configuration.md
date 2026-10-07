@@ -31,6 +31,8 @@ require("ai").setup({
     -- Per-action overrides, keyed by action id (ask/quick/explain):
     --   keymaps = { quick = "<leader>xs" }     -- move just one
     --   keymaps = { explain = false }          -- disable just one
+    -- `keymaps = false` (or `enable = false`) binds nothing: neither the
+    -- <leader>a* keys nor the insert-mode completion keys below.
   },
 
   which_key = { enable = true },
