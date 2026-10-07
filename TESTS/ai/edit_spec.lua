@@ -79,7 +79,11 @@ describe("ai.bindings.edit", function()
   describe("code_block", function()
     it("fences the given line range with the buffer's filetype", function()
       local bufnr = vim.api.nvim_create_buf(false, true)
-      vim.bo[bufnr].filetype = "lua"
+      -- Without FileType: the lua syntax file would define highlight groups
+      -- that outlive this case, and only the filetype name is read.
+      vim.api.nvim_buf_call(bufnr, function()
+        vim.cmd("noautocmd setlocal filetype=lua")
+      end)
       vim.api.nvim_buf_set_lines(
         bufnr,
         0,

@@ -25,6 +25,7 @@ describe("ai.bindings.usrcmds", function()
   end)
 
   after_each(function()
+    pcall(vim.api.nvim_del_user_command, "Ai")
     package.loaded["ai.bindings.actions"] = saved_actions
     package.loaded["ai.bindings.usrcmds"] = nil
   end)

@@ -163,6 +163,8 @@ end
 describe("doc/ai.txt (:help ai) --", function()
   local tags -- every tag `:helptags` derives from the file
 
+  S.isolate_install()
+
   before_each(function()
     lines = S.read_lines(VIMDOC)
     tags = nil
