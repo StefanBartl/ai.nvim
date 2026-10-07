@@ -35,6 +35,14 @@ for _, name in ipairs({
   end
 end
 
+-- Hangs until killed. NOT vim.uv.sleep: that blocks the main thread, and on
+-- POSIX Nvim only acts on SIGTERM from its event loop (see fake_claude.lua).
+local function hang()
+  vim.wait(20000, function()
+    return false
+  end, 20)
+end
+
 local n = 0
 local function emit(kind, data, extra)
   n = n + 1
@@ -149,9 +157,9 @@ elseif scenario == "PARTIALCRASH" then
 elseif scenario == "PARTIALSLEEP" then
   start("m1", "final_answer")
   delta("m1", "Hel")
-  vim.uv.sleep(20000)
+  hang()
 elseif scenario == "SLEEP" then
-  vim.uv.sleep(20000)
+  hang()
 elseif scenario == "ECHO" then
   -- names only, never values: the editor may be started with real credentials.
   -- The few values echoed are switches the provider sets itself.
