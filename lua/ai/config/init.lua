@@ -367,6 +367,8 @@ end
 ---@type string[]
 local _issues = {}
 
+local switch_group = require("lib.nvim.normalize").normalize_switch_group
+
 ---@internal
 ---A feature group (`keymaps`, `usercmds`, ...) is a table with an `enable`
 ---switch, but `keymaps = false` is the natural way to say "none of it". Turn a
@@ -378,10 +380,8 @@ local _issues = {}
 local function normalize_switch_groups(opts)
   for key, default in pairs(DEFAULTS) do
     if type(default) == "table" and type(default.enable) == "boolean" then
-      if opts[key] == false then
-        opts[key] = { enable = false }
-      elseif opts[key] == true then
-        opts[key] = {}
+      if type(opts[key]) == "boolean" then
+        opts[key] = switch_group(opts[key])
       end
     end
   end
