@@ -68,7 +68,11 @@ function M.setup(opts)
   if cfg.completion and cfg.completion.enable then
     local ok, _, err = safe_api.safe_call(function()
       require("ai.completion").setup(cfg)
-      require("ai.bindings.keymaps").setup_completion(cfg)
+      -- keymaps.enable is the one switch for every key ai.nvim binds, the
+      -- insert-mode completion keys included.
+      if cfg.keymaps.enable then
+        require("ai.bindings.keymaps").setup_completion(cfg)
+      end
     end)
     if not ok then
       require("lib.nvim.notify").create("[ai]").warn("Completion setup failed: " .. tostring(err))
