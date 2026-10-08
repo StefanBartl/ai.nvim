@@ -48,7 +48,10 @@ code, and both share their helpers (`docs/*.md` blocks and tables, running a
 documented snippet, listing the real keymaps) in `TESTS/docs_support.lua`. Each
 spec puts `TESTS/?.lua` on `package.path` itself (so it also runs when started
 without `TESTS/minimal_init.lua`); the module is not a spec (only `*_spec.lua`
-files are), so the runner never runs it.
+files are), so the runner never runs it. Its state fixture (`isolate_install()`, which
+puts keymaps, autocmd groups and `:Ai` back after each case) has a spec of its own,
+`docs_support_spec.lua`: a restored key must keep its `replace_keycodes`, or Nvim's
+own insert `<Tab>` would insert the text "<Tab>".
 
 `docs_examples_spec.lua` -- `docs/*.md`. It extracts code blocks and tables and
 executes them or diffs them against the code. Covered: the `configuration.md`

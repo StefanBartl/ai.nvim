@@ -163,7 +163,7 @@ end
 local STATE_MODES = { "n", "x", "s", "o", "i", "c", "t", "l" }
 
 ---@return table<string, table> global keymaps keyed by "<mode>\0<lhs>"
-local function snapshot_maps()
+function M.snapshot_maps()
   local maps = {}
   for _, mode in ipairs(STATE_MODES) do
     for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
@@ -171,6 +171,37 @@ local function snapshot_maps()
     end
   end
   return maps
+end
+
+---Put the global keymaps back as `maps` (a `snapshot_maps()`) had them: what was
+---added or replaced since goes, what was replaced or removed comes back, with
+---the options it had. An expr map such as Nvim's own insert <Tab> needs its
+---`replace_keycodes` back too: without it the key inserts the text "<Tab>".
+---@param maps table<string, table>
+function M.restore_maps(maps)
+  -- new or replaced keys go...
+  for key, now in pairs(M.snapshot_maps()) do
+    local was = maps[key]
+    if not was or was.rhs ~= now.rhs or was.callback ~= now.callback then
+      pcall(vim.api.nvim_del_keymap, now.mode, now.lhs)
+    end
+  end
+  -- ...and what the case replaced or removed comes back
+  for _, was in pairs(maps) do
+    local now = vim.fn.maparg(was.lhs, was.mode, false, true)
+    if type(now) ~= "table" or now.lhs == nil then
+      vim.api.nvim_set_keymap(was.mode, was.lhs, was.rhs or "", {
+        callback = was.callback,
+        desc = was.desc,
+        expr = was.expr == 1,
+        replace_keycodes = was.replace_keycodes == 1,
+        noremap = was.noremap == 1,
+        nowait = was.nowait == 1,
+        silent = was.silent == 1,
+        script = was.script == 1,
+      })
+    end
+  end
 end
 
 ---@return table<string, true> every autocmd group that owns an autocmd right now
@@ -191,33 +222,12 @@ end
 function M.isolate_install()
   local maps, groups, had_ai_cmd, loaded
   before_each(function()
-    maps, groups = snapshot_maps(), snapshot_groups()
+    maps, groups = M.snapshot_maps(), snapshot_groups()
     had_ai_cmd = vim.fn.exists(":Ai") == 2
     loaded = vim.g.loaded_ai
   end)
   after_each(function()
-    -- new or replaced keys go...
-    for key, now in pairs(snapshot_maps()) do
-      local was = maps[key]
-      if not was or was.rhs ~= now.rhs or was.callback ~= now.callback then
-        pcall(vim.api.nvim_del_keymap, now.mode, now.lhs)
-      end
-    end
-    -- ...and what the case replaced or removed comes back
-    for _, was in pairs(maps) do
-      local now = vim.fn.maparg(was.lhs, was.mode, false, true)
-      if type(now) ~= "table" or now.lhs == nil then
-        vim.api.nvim_set_keymap(was.mode, was.lhs, was.rhs or "", {
-          callback = was.callback,
-          desc = was.desc,
-          expr = was.expr == 1,
-          noremap = was.noremap == 1,
-          nowait = was.nowait == 1,
-          silent = was.silent == 1,
-          script = was.script == 1,
-        })
-      end
-    end
+    M.restore_maps(maps)
     for name in pairs(snapshot_groups()) do
       if not groups[name] then
         pcall(vim.api.nvim_del_augroup_by_name, name)
