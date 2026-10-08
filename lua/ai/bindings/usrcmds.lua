@@ -110,7 +110,13 @@ function M.setup()
       {
         path = { "provider" },
         args = {
-          { name = "name", type = "STRING", enum = provider_choices },
+          {
+            name = "name",
+            type = "STRING",
+            enum = provider_choices,
+            desc = "Provider to switch to; auto picks the first one available",
+            enum_desc = { auto = "First available provider in provider_order" },
+          },
         },
         desc = "Switch the active provider, or back to auto (one outside the allow-list asks first)",
         run = function(ctx)
@@ -121,8 +127,21 @@ function M.setup()
       {
         path = { "key" },
         args = {
-          { name = "profile", type = "STRING", optional = true, enum = key_names },
-          { name = "provider", type = "STRING", optional = true, enum = provider_ids },
+          {
+            name = "profile",
+            type = "STRING",
+            optional = true,
+            enum = key_names,
+            desc = "API-key profile to use this session; omit to show the setup",
+            enum_desc = { reset = "Back to the configured profile" },
+          },
+          {
+            name = "provider",
+            type = "STRING",
+            optional = true,
+            enum = provider_ids,
+            desc = "Limit the change to this provider; default: all that define it",
+          },
         },
         desc = "Choose the API-key profile for this session (reset = back to the configured one)",
         run = function(ctx)
