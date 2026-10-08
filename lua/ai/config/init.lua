@@ -376,12 +376,28 @@ local switch_group = require("lib.nvim.normalize").normalize_switch_group
 ---can index `cfg.<group>.enable` without a type check: `false` -> `{ enable =
 ---false }`, `true` -> `{}` (the defaults). The switch itself stays the one place
 ---that decides.
+---Anything else that is not a table (`keymaps = "off"`, `keymaps = 1`) is no
+---switch either: left alone it would replace the whole group through the deep
+---merge, so a string would bind nothing without a word and a number would make
+---`setup()` raise. It is dropped to the group's defaults and recorded into
+---`issues` (ERR-22), like `sanitize_values` does for a mistyped value, and
+---warned about right away, since "off" meant the opposite of the default.
 ---@param opts table the caller's copy, changed in place
-local function normalize_switch_groups(opts)
+---@param issues string[]
+local function normalize_switch_groups(opts, issues)
   for key, default in pairs(DEFAULTS) do
     if type(default) == "table" and type(default.enable) == "boolean" then
-      if type(opts[key]) == "boolean" then
-        opts[key] = switch_group(opts[key])
+      local value = opts[key]
+      if value ~= nil and type(value) ~= "table" then
+        opts[key] = switch_group(value)
+        if opts[key] == nil then
+          local issue = ("%s: invalid value (%s) -- using the default instead"):format(
+            tostring(key),
+            vim.inspect(value)
+          )
+          issues[#issues + 1] = issue
+          require("lib.nvim.notify").create("[ai]").warn(issue)
+        end
       end
     end
   end
@@ -406,9 +422,9 @@ function M.setup(user_opts)
   -- (a lazy.nvim `opts`, say) must still say what was written when `setup()`
   -- runs again.
   user_opts = type(user_opts) == "table" and vim.deepcopy(user_opts) or {}
-  normalize_switch_groups(user_opts)
-  warn_unknown_keys(user_opts, DEFAULTS, "")
   _issues = {}
+  normalize_switch_groups(user_opts, _issues)
+  warn_unknown_keys(user_opts, DEFAULTS, "")
   sanitize_values(user_opts, "", _issues)
   close_unknown_keys(user_opts, _issues)
   close_misspelt_policy(user_opts, _issues)
