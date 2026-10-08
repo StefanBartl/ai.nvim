@@ -142,6 +142,74 @@ describe("ai.config", function()
       assert.are.equal(2, #config.issues())
     end)
 
+    describe("a feature group written as something else than a table or a boolean", function()
+      local original_notify
+      local messages
+
+      before_each(function()
+        original_notify = vim.notify
+        messages = {}
+        ---@diagnostic disable-next-line: duplicate-set-field
+        vim.notify = function(msg, _level, _opts)
+          messages[#messages + 1] = msg
+        end
+      end)
+
+      after_each(function()
+        vim.notify = original_notify
+      end)
+
+      for _, group in ipairs({ "keymaps", "usercmds", "which_key", "completion", "ui" }) do
+        for _, value in ipairs({ 0, 1, "off", "default" }) do
+          it(("drops %s = %s to the group's defaults"):format(group, vim.inspect(value)), function()
+            local config = require("ai.config")
+            local ok, cfg = pcall(config.setup, { [group] = value })
+            assert.is_true(ok, tostring(cfg))
+            assert.are.same(require("ai.config.DEFAULTS")[group], cfg[group])
+            assert.are.equal(1, #config.issues())
+            assert.is_truthy(config.issues()[1]:find(group .. ": invalid value", 1, true))
+            assert.is_truthy(config.issues()[1]:find("default", 1, true))
+          end)
+        end
+      end
+
+      it('warns right away, since "off" meant the opposite of what the default does', function()
+        local config = require("ai.config")
+        config.setup({ keymaps = "off" })
+        assert.are.equal(1, #messages)
+        assert.is_truthy(messages[1]:find("keymaps: invalid value", 1, true))
+      end)
+
+      it("keeps the boolean and the table forms without an issue", function()
+        local config = require("ai.config")
+        local cfg = config.setup({
+          keymaps = false,
+          usercmds = true,
+          which_key = { enable = false },
+        })
+        assert.is_false(cfg.keymaps.enable)
+        assert.is_true(cfg.usercmds.enable)
+        assert.is_false(cfg.which_key.enable)
+        assert.are.same({}, config.issues())
+        assert.are.equal(0, #messages)
+      end)
+
+      it("does not stop the rest of setup(): the other options are still merged", function()
+        local config = require("ai.config")
+        local cfg = config.setup({ keymaps = 1, provider = "ollama" })
+        assert.are.equal("ollama", cfg.provider)
+        assert.is_true(cfg.keymaps.enable)
+      end)
+
+      it("is reported again by a second setup() and cleared by a valid third one", function()
+        local config = require("ai.config")
+        config.setup({ keymaps = "off" })
+        assert.are.equal(1, #config.issues())
+        config.setup({ keymaps = false })
+        assert.are.same({}, config.issues())
+      end)
+    end)
+
     it("issues() is empty when every value is well-typed", function()
       local config = require("ai.config")
       config.setup({ provider_order = { "ollama" }, completion = { trigger = "auto" } })

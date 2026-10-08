@@ -73,6 +73,12 @@ require("ai").setup({
 })
 ```
 
+A feature group (`ui`, `keymaps`, `which_key`, `usercmds`, `completion`) can also
+be written as a boolean: `keymaps = false` is `{ enable = false }`, `true` means
+the defaults. Any other value that is not a table (`keymaps = "off"`,
+`keymaps = 1`) is ignored -- the group keeps its defaults, `setup()` warns right
+away, and `:checkhealth ai` reports it under *configuration*.
+
 ## Model ids
 
 `model`/`completion.model` are never validated at request time -- whatever
