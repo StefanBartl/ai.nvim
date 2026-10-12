@@ -47,6 +47,13 @@ function M.open(opts)
     theme = opts.theme,
     title = opts.title or "AI",
     filetype = "markdown",
+    -- Without an explicit size the float is sized from the one "Thinking..."
+    -- line and never grows, so everything after the first streamed line was
+    -- invisible.
+    width = 0.7,
+    height = 0.5,
+    -- q / <Esc> in Normal mode close the panel (which cancels the stream).
+    nice_quit = true,
   })
 
   panel.progress = require("lib.nvim.progress").create({
@@ -101,6 +108,16 @@ function M.append(panel, delta)
   if panel.surface then
     panel.surface:set_last_line(panel.lines[#panel.lines - #new_lines])
     panel.surface:append_lines(new_lines)
+    -- Follow the stream: keep the newest line in view once the answer is
+    -- taller than the window.
+    local win = panel.surface.winid
+    if win and vim.api.nvim_win_is_valid(win) then
+      pcall(
+        vim.api.nvim_win_set_cursor,
+        win,
+        { vim.api.nvim_buf_line_count(panel.surface.bufnr), 0 }
+      )
+    end
   end
 end
 

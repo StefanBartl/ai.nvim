@@ -99,6 +99,18 @@ describe("ai.ui.panel", function()
     assert.is_function(surface_stub.on_close_cb)
   end)
 
+  it("open() gives the float an explicit size and q/<Esc> closing", function()
+    local seen
+    package.loaded["ui.kit"].surface.open = function(o)
+      seen = o
+      return surface_stub
+    end
+    require("ai.ui.panel").open({})
+    assert.is_true(seen.nice_quit)
+    assert.is_truthy(seen.height)
+    assert.is_truthy(seen.width)
+  end)
+
   it("append() accumulates a single-line delta onto the last line", function()
     local panel_mod = require("ai.ui.panel")
     local panel = panel_mod.open({})
