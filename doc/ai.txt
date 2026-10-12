@@ -507,8 +507,12 @@ answer stay with the caller. >lua
     changes it and wins over the request's own, `false` sends none);
     `res.bulk.temperature` and `res.bulk.deterministic` say what was sent.
     Models that take only their default temperature (e.g. OpenAI o-series)
-    reject `0`: use `bulk.temperature = false` for them. A provider error that
-    mentions the temperature gets this hint appended.
+    reject `0`: use `bulk.temperature = false` for them. The same holds for
+    the claude models whose API rejects sampling parameters (Fable, Mythos,
+    Opus 4.7 and later, Sonnet and Haiku 5 and later): bulk then does not send
+    its default `0` and `res.bulk.deterministic` is false; a temperature you
+    set yourself still goes out. A provider error that mentions the
+    temperature gets this hint appended.
   - Not combinable with `allow_unlisted`, `attachments` or `context`; not
     available for |ai.stream()|.
 

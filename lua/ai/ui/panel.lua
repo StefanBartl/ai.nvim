@@ -15,6 +15,7 @@ local M = {}
 ---@field progress Lib.Progress.Handle|nil
 ---@field process vim.SystemObj|nil
 ---@field lines string[]
+---@field tail integer[]|nil {row, col} where the stream follow last put the cursor; `nil` before the first follow
 
 ---@type Ai.Ui.Panel[]
 local active_panels = {}
@@ -34,34 +35,45 @@ local function untrack(panel)
 end
 
 ---@internal
----Whether the panel should keep scrolling with the stream: only while the user
----sits on the last line (like `tail -f`). A user who scrolled up to read, or
----who is selecting text in the panel, is left alone.
----@param surface table the panel's `ui.kit` surface (`winid`, `bufnr`)
+---Whether the panel should keep scrolling with the stream: only while the cursor
+---still sits where the last follow put it (the end of the last line), like
+---`tail -f`. A user who moved up -- to an earlier line, or inside a long wrapped
+---last line -- or who is selecting text in the panel, is left alone.
+---@param panel Ai.Ui.Panel
 ---@return boolean
-local function is_following(surface)
+local function is_following(panel)
   local ok, res = pcall(function()
+    local surface = panel.surface
     local win, buf = surface.winid, surface.bufnr
     if not (win and buf and vim.api.nvim_win_is_valid(win) and vim.api.nvim_buf_is_valid(buf)) then
       return false
     end
-    if win == vim.api.nvim_get_current_win() and vim.fn.mode():find("^[vVs\22]") then
+    -- Visual and Select, characterwise / linewise / blockwise (CTRL-V, CTRL-S).
+    if win == vim.api.nvim_get_current_win() and vim.fn.mode():find("^[vVsS\22\19]") then
       return false
     end
-    return vim.api.nvim_win_get_cursor(win)[1] >= vim.api.nvim_buf_line_count(buf)
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    if cursor[1] < vim.api.nvim_buf_line_count(buf) then
+      return false
+    end
+    -- Nothing followed yet: the cursor is on the only line, which is the tail.
+    return panel.tail == nil or (cursor[1] == panel.tail[1] and cursor[2] == panel.tail[2])
   end)
   return ok and res == true
 end
 
 ---@internal
 ---Put the cursor at the very end of the buffer, so a wrapped last line shows
----its tail too.
----@param surface table the panel's `ui.kit` surface (`winid`, `bufnr`)
-local function follow_tail(surface)
+---its tail too, and remember where Neovim really put it (it clamps the column
+---to the last character) for `is_following`.
+---@param panel Ai.Ui.Panel
+local function follow_tail(panel)
   pcall(function()
+    local surface = panel.surface
     local rows = vim.api.nvim_buf_line_count(surface.bufnr)
     local last = vim.api.nvim_buf_get_lines(surface.bufnr, rows - 1, rows, false)[1] or ""
     vim.api.nvim_win_set_cursor(surface.winid, { rows, #last })
+    panel.tail = vim.api.nvim_win_get_cursor(surface.winid)
   end)
 end
 
@@ -144,11 +156,11 @@ function M.append(panel, delta)
   if panel.surface then
     -- Decided before the write: "was the cursor on the last line" is only
     -- answerable against the buffer as it was.
-    local follow = is_following(panel.surface)
+    local follow = is_following(panel)
     panel.surface:set_last_line(panel.lines[#panel.lines - #new_lines])
     panel.surface:append_lines(new_lines)
     if follow then
-      follow_tail(panel.surface)
+      follow_tail(panel)
     end
   end
 end

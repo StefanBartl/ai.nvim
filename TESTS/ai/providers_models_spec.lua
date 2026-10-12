@@ -13,14 +13,31 @@ describe("ai.providers.models", function()
       assert.is_true(models.is_known("openai", "gpt-4o"))
     end)
 
-    it("knows the current claude-5.x ids", function()
+    it("knows the current claude ids", function()
       for _, id in ipairs({
-        "claude-sonnet-5-5",
-        "claude-haiku-5-5",
-        "claude-opus-5-5",
         "claude-fable-5-1",
+        "claude-fable-5",
+        "claude-opus-5-5",
+        "claude-opus-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-5-5",
+        "claude-sonnet-5",
+        "claude-sonnet-4-6",
+        "claude-haiku-5-5",
       }) do
         assert.is_true(models.is_known("claude", id), id)
+      end
+    end)
+
+    it("no longer knows the retired claude ids", function()
+      for _, id in ipairs({
+        "claude-3-7-sonnet-latest",
+        "claude-3-5-haiku-latest",
+        "claude-opus-4-1",
+      }) do
+        assert.is_false(models.is_known("claude", id), id)
       end
     end)
 
