@@ -144,9 +144,18 @@ not a `temperature` the request itself carries -- and `res.bulk.deterministic`
 is `false`. When a provider error mentions the temperature, the error message of
 the bulk call carries this hint.
 
+The same is true of the `claude` models whose API rejects sampling parameters:
+Fable and Mythos, Opus 4.7 and later, and every Sonnet and Haiku from version 5
+(`claude-sonnet-5-5`, `claude-haiku-5-5`, ...). For those, bulk does not send its
+default `0` (the provider's `accepts_temperature(model)` says so), so the answer
+is not repeatable and `res.bulk.deterministic` is `false`. A temperature you set
+yourself (`bulk.temperature`, or the request's own) is still sent and gets the
+API's own error.
+
 `res.bulk.temperature` and `res.bulk.deterministic` always say what was really
-sent: `bulk.temperature` if set, else the request's own `temperature`, else `0`,
-and none for a provider that has no such parameter.
+sent: `bulk.temperature` if set, else the request's own `temperature`, else `0`
+(except for a model that rejects one, see above), and none for a provider that
+has no such parameter.
 
 ## Counters
 

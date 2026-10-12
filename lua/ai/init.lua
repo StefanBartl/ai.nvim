@@ -214,7 +214,8 @@ end
 
 ---Ask once, non-streaming. With `req.bulk` set the request runs under the
 ---guard rails of `ai.bulk` (size and budget caps, concurrency, strict policy,
----temperature 0) and a handle is returned: `handle:kill()` cancels it.
+---temperature 0 where the model takes one) and a handle is returned:
+---`handle:kill()` cancels it.
 ---@param req Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 ---@return Ai.BulkHandle|nil handle only for a bulk request
