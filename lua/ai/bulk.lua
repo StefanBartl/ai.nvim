@@ -514,8 +514,14 @@ function M.ask(req, cb, deps)
     -- here, once, and `res.bulk` reports exactly that: `bulk.temperature`
     -- (a number, or false for none) wins over the request's own, which stands
     -- when `bulk.temperature` is not set; without either it is 0. A provider
-    -- that has no temperature parameter gets none.
+    -- that has no temperature parameter gets none, and neither does a model
+    -- whose API rejects one: the default 0 is skipped there (an explicit number
+    -- still goes out, so a request that asked for one gets the API's own error).
     local can_temp = type(provider.capabilities) == "table" and provider.capabilities.temperature
+    local model_takes_default = true
+    if type(provider.accepts_temperature) == "function" then
+      model_takes_default = provider.accepts_temperature(resolved.model or provider.default_model)
+    end
     local sent_temperature = nil ---@type number|nil
     local bulk_temperature = bulk.temperature
     if can_temp and bulk_temperature ~= false then
@@ -523,7 +529,7 @@ function M.ask(req, cb, deps)
       if sent_temperature == nil then
         sent_temperature = resolved.temperature
       end
-      if sent_temperature == nil then
+      if sent_temperature == nil and model_takes_default then
         sent_temperature = 0
       end
     end

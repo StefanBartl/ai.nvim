@@ -107,6 +107,38 @@ describe("ai.bulk", function()
       assert.are.equal("m-2", results[1].res.bulk.model)
     end)
 
+    it(
+      "a model that rejects a temperature gets no default one, an explicit one still goes out",
+      function()
+        providers.register({
+          id = "strict",
+          default_model = "strict-1",
+          capabilities = { temperature = true },
+          accepts_temperature = function(model)
+            return model ~= "strict-1"
+          end,
+          available = function()
+            return true
+          end,
+          ask = function(req, cb)
+            calls[#calls + 1] = { req = req, cb = cb }
+            cb(true, { text = "ok", provider = "strict" })
+          end,
+        })
+        local results = {}
+        ask(req_of(nil, { provider = "strict" }), results)
+        ask(req_of({ temperature = 0.3 }, { provider = "strict" }), results)
+        ask(req_of(nil, { provider = "strict", model = "other" }), results)
+        wait_for(function()
+          return #results == 3
+        end)
+        assert.is_nil(calls[1].req.temperature)
+        assert.is_false(results[1].res.bulk.deterministic)
+        assert.are.equal(0.3, calls[2].req.temperature)
+        assert.are.equal(0, calls[3].req.temperature)
+      end
+    )
+
     it("a provider without a temperature parameter gets none and is not deterministic", function()
       local results = {}
       ask(req_of(nil, { provider = "plain" }), results)

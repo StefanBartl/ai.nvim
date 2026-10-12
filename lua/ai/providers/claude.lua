@@ -52,6 +52,35 @@ M.default_model = DEFAULT_MODEL
 -- the same way `req.model` overrides `DEFAULT_MODEL`.
 local DEFAULT_MAX_TOKENS = 4096
 
+---@internal
+---Model id patterns whose API rejects a non-default sampling parameter
+---(`temperature`, `top_p`, `top_k`) with HTTP 400: the Fable/Mythos family and
+---every Opus, Sonnet and Haiku from 4.7/5 on. Earlier models still take one.
+---@type string[]
+local SAMPLING_REJECTED = {
+  "^claude%-fable",
+  "^claude%-mythos",
+  "^claude%-opus%-4%-[78]",
+  "^claude%-opus%-5",
+  "^claude%-sonnet%-5",
+  "^claude%-haiku%-5",
+}
+
+---Whether the Messages API takes a `temperature` for `model`. A caller that
+---would send one by default (`ai.bulk`: 0, for repeatable answers) asks first,
+---because sending it to a model that rejects it fails the whole request.
+---@param model? string Falls back to the provider's default model
+---@return boolean
+function M.accepts_temperature(model)
+  model = model or DEFAULT_MODEL
+  for _, pattern in ipairs(SAMPLING_REJECTED) do
+    if model:find(pattern) then
+      return false
+    end
+  end
+  return true
+end
+
 ---@param req? Ai.Request
 ---@return string|nil
 local function api_key(req)

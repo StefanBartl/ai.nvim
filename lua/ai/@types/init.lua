@@ -186,6 +186,7 @@
 ---@field stream fun(req: Ai.Request, handlers: Ai.StreamHandlers): vim.SystemObj|nil returns the underlying process handle so a caller can `:kill()` it to cancel
 ---@field capabilities? Ai.ProviderCapabilities
 ---@field default_model? string The model the provider asks when `req.model` is unset (named in the result of a bulk request)
+---@field accepts_temperature? fun(model?: string): boolean Whether the API takes a `temperature` for this model; absent means yes. `ai.bulk` skips its default temperature of 0 for a model that rejects one
 
 ---What a provider backend can carry, as a *transport* fact -- "this API has
 ---a place to put one", not "the model you picked will understand it". The

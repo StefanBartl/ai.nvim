@@ -28,6 +28,37 @@ describe("ai.providers.claude", function()
     package.loaded["ai.providers.transport"] = nil
   end)
 
+  it(
+    "accepts_temperature() is false for the models whose API rejects sampling parameters",
+    function()
+      local claude = require("ai.providers.claude")
+      for _, model in ipairs({
+        "claude-sonnet-5-5",
+        "claude-sonnet-5",
+        "claude-haiku-5-5",
+        "claude-opus-5-5",
+        "claude-opus-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-fable-5-1",
+        "claude-mythos-5-1",
+      }) do
+        assert.is_false(claude.accepts_temperature(model), model)
+      end
+      for _, model in ipairs({
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+        "claude-opus-4-5",
+        "claude-3-5-haiku-latest",
+      }) do
+        assert.is_true(claude.accepts_temperature(model), model)
+      end
+      -- unset: the provider's own default model (claude-opus-4-5) decides
+      assert.is_true(claude.accepts_temperature(nil))
+    end
+  )
+
   describe("ask", function()
     it("maps a successful Messages API response to Ai.Response", function()
       package.loaded["lib.nvim.net.curl"] = {

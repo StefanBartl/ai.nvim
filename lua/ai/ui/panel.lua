@@ -33,6 +33,38 @@ local function untrack(panel)
   end
 end
 
+---@internal
+---Whether the panel should keep scrolling with the stream: only while the user
+---sits on the last line (like `tail -f`). A user who scrolled up to read, or
+---who is selecting text in the panel, is left alone.
+---@param surface table the panel's `ui.kit` surface (`winid`, `bufnr`)
+---@return boolean
+local function is_following(surface)
+  local ok, res = pcall(function()
+    local win, buf = surface.winid, surface.bufnr
+    if not (win and buf and vim.api.nvim_win_is_valid(win) and vim.api.nvim_buf_is_valid(buf)) then
+      return false
+    end
+    if win == vim.api.nvim_get_current_win() and vim.fn.mode():find("^[vVs\22]") then
+      return false
+    end
+    return vim.api.nvim_win_get_cursor(win)[1] >= vim.api.nvim_buf_line_count(buf)
+  end)
+  return ok and res == true
+end
+
+---@internal
+---Put the cursor at the very end of the buffer, so a wrapped last line shows
+---its tail too.
+---@param surface table the panel's `ui.kit` surface (`winid`, `bufnr`)
+local function follow_tail(surface)
+  pcall(function()
+    local rows = vim.api.nvim_buf_line_count(surface.bufnr)
+    local last = vim.api.nvim_buf_get_lines(surface.bufnr, rows - 1, rows, false)[1] or ""
+    vim.api.nvim_win_set_cursor(surface.winid, { rows, #last })
+  end)
+end
+
 ---@param opts { title?: string, theme?: string, progress_style?: string }
 ---@return Ai.Ui.Panel
 function M.open(opts)
@@ -49,9 +81,13 @@ function M.open(opts)
     filetype = "markdown",
     -- Without an explicit size the float is sized from the one "Thinking..."
     -- line and never grows, so everything after the first streamed line was
-    -- invisible.
-    width = 0.7,
-    height = 0.5,
+    -- invisible. Absolute cells, not fractions: fractions need a lib.nvim
+    -- that understands them, and an older checkout silently brings the
+    -- one-row float back.
+    width = math.max(40, math.floor(vim.o.columns * 0.7)),
+    height = math.max(8, math.floor(vim.o.lines * 0.5)),
+    -- Prose arrives as long single lines; without wrapping they are cut off.
+    wo = { wrap = true, linebreak = true },
     -- q / <Esc> in Normal mode close the panel (which cancels the stream).
     nice_quit = true,
   })
@@ -106,17 +142,13 @@ function M.append(panel, delta)
     new_lines[#new_lines + 1] = pieces[i]
   end
   if panel.surface then
+    -- Decided before the write: "was the cursor on the last line" is only
+    -- answerable against the buffer as it was.
+    local follow = is_following(panel.surface)
     panel.surface:set_last_line(panel.lines[#panel.lines - #new_lines])
     panel.surface:append_lines(new_lines)
-    -- Follow the stream: keep the newest line in view once the answer is
-    -- taller than the window.
-    local win = panel.surface.winid
-    if win and vim.api.nvim_win_is_valid(win) then
-      pcall(
-        vim.api.nvim_win_set_cursor,
-        win,
-        { vim.api.nvim_buf_line_count(panel.surface.bufnr), 0 }
-      )
+    if follow then
+      follow_tail(panel.surface)
     end
   end
 end

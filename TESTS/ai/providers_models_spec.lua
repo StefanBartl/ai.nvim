@@ -13,6 +13,17 @@ describe("ai.providers.models", function()
       assert.is_true(models.is_known("openai", "gpt-4o"))
     end)
 
+    it("knows the current claude-5.x ids", function()
+      for _, id in ipairs({
+        "claude-sonnet-5-5",
+        "claude-haiku-5-5",
+        "claude-opus-5-5",
+        "claude-fable-5-1",
+      }) do
+        assert.is_true(models.is_known("claude", id), id)
+      end
+    end)
+
     it("rejects an unknown model for a provider with a fixed catalogue", function()
       assert.is_false(models.is_known("claude", "claude-nonexistent-9"))
       assert.is_false(models.is_known("openai", "totally-not-a-model"))

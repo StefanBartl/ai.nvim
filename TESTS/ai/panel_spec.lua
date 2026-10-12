@@ -99,7 +99,7 @@ describe("ai.ui.panel", function()
     assert.is_function(surface_stub.on_close_cb)
   end)
 
-  it("open() gives the float an explicit size and q/<Esc> closing", function()
+  it("open() gives the float an absolute size, wrapping and q/<Esc> closing", function()
     local seen
     package.loaded["ui.kit"].surface.open = function(o)
       seen = o
@@ -107,8 +107,77 @@ describe("ai.ui.panel", function()
     end
     require("ai.ui.panel").open({})
     assert.is_true(seen.nice_quit)
-    assert.is_truthy(seen.height)
-    assert.is_truthy(seen.width)
+    -- absolute cells (> 1), never a fraction: an older lib.nvim reads 0.5 as one row
+    assert.are.equal(math.max(8, math.floor(vim.o.lines * 0.5)), seen.height)
+    assert.are.equal(math.max(40, math.floor(vim.o.columns * 0.7)), seen.width)
+    assert.is_true(seen.height > 1 and seen.width > 1)
+    assert.is_true(seen.wo.wrap)
+  end)
+
+  describe("following the stream in a real window", function()
+    local win, buf, real
+
+    before_each(function()
+      buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "Thinking..." })
+      win = vim.api.nvim_open_win(
+        buf,
+        true,
+        { relative = "editor", row = 1, col = 1, width = 30, height = 3 }
+      )
+      real = { winid = win, bufnr = buf }
+      function real:set_last_line(text)
+        vim.api.nvim_buf_set_lines(buf, -2, -1, false, { text })
+      end
+      function real:append_lines(new_lines)
+        vim.api.nvim_buf_set_lines(buf, -1, -1, false, new_lines)
+      end
+      function real:on_close() end
+      package.loaded["ui.kit"].surface.open = function()
+        return real
+      end
+    end)
+
+    after_each(function()
+      vim.cmd("stopinsert")
+      if vim.api.nvim_win_is_valid(win) then
+        vim.api.nvim_win_close(win, true)
+      end
+      if vim.api.nvim_buf_is_valid(buf) then
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+    end)
+
+    it("moves the cursor to the end while it sits on the last line", function()
+      local panel_mod = require("ai.ui.panel")
+      local panel = panel_mod.open({})
+      panel_mod.append(panel, "a\nb\nc\nd\nlast")
+      local cursor = vim.api.nvim_win_get_cursor(win)
+      assert.are.equal(5, cursor[1])
+      assert.is_true(cursor[2] >= #"last" - 1)
+    end)
+
+    it("leaves a cursor the user moved up to read earlier text", function()
+      local panel_mod = require("ai.ui.panel")
+      local panel = panel_mod.open({})
+      panel_mod.append(panel, "a\nb\nc\nd\ne")
+      vim.api.nvim_win_set_cursor(win, { 2, 0 })
+      panel_mod.append(panel, "\nf\ng")
+      assert.are.equal(2, vim.api.nvim_win_get_cursor(win)[1])
+      assert.are.equal(7, vim.api.nvim_buf_line_count(buf))
+    end)
+
+    it("does not drag a Visual selection along with the stream", function()
+      local panel_mod = require("ai.ui.panel")
+      local panel = panel_mod.open({})
+      panel_mod.append(panel, "a\nb\nc")
+      vim.api.nvim_win_set_cursor(win, { 3, 0 })
+      vim.cmd("normal! kV")
+      assert.is_truthy(vim.fn.mode():find("^[vV]"))
+      panel_mod.append(panel, "\nd\ne")
+      assert.are.equal(2, vim.api.nvim_win_get_cursor(win)[1])
+      vim.cmd("normal! \27")
+    end)
   end)
 
   it("append() accumulates a single-line delta onto the last line", function()
