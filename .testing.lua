@@ -47,6 +47,20 @@ return {
         reason = "ui.nvim is deliberately not on the suite's runtimepath (TESTS/README.md): :checkhealth reports ui.kit as missing there",
         expires = "2027-04-14",
       },
+      {
+        check = "K12",
+        level = "warn",
+        text = "Ai.quick",
+        reason = "the command counterpart is `:Ai stream` (prompts for text, streams the answer); the <leader>as keymap only adds the configured context assembly around it, which has no command-line spelling",
+        expires = "2027-04-14",
+      },
+      {
+        check = "K12",
+        level = "warn",
+        text = "Ai/completion.",
+        reason = "insert-mode inline-completion actions (accept, dismiss, trigger) act on the live ghost text of the current insert session; an ex command would leave insert mode and has no meaning there",
+        expires = "2027-04-14",
+      },
     },
   },
 }
