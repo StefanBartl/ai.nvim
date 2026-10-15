@@ -126,6 +126,22 @@ describe("ai.config", function()
       end
     )
 
+    it("accepts every ui.progress_style that lib.nvim.progress knows", function()
+      local config = require("ai.config")
+      for _, style in ipairs({ "auto", "notify", "statusline", "echo", "fidget", "float", "kit" }) do
+        local cfg = config.setup({ ui = { progress_style = style } })
+        assert.are.equal(style, cfg.ui.progress_style)
+        assert.are.equal(0, #config.issues(), style)
+      end
+    end)
+
+    it("still drops an unknown ui.progress_style", function()
+      local config = require("ai.config")
+      local cfg = config.setup({ ui = { progress_style = "bling" } })
+      assert.are.equal("auto", cfg.ui.progress_style)
+      assert.are.equal(1, #config.issues())
+    end)
+
     it("drops a wrong-typed timeout_ms to the default", function()
       local config = require("ai.config")
       local cfg = config.setup({ timeout_ms = "60s" })

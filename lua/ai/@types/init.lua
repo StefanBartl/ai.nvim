@@ -63,20 +63,20 @@
 ---@field cache_ms? integer `command` only: how long the key stays cached (at least 1000; default the whole session)
 
 ---@class Ai.UiOptions
----@field enable boolean
----@field progress_style? "auto"|"notify"|"statusline"|"fidget"|"float" Passed straight to `lib.nvim.progress`
+---@field enable? boolean
+---@field progress_style? "auto"|"notify"|"statusline"|"echo"|"fidget"|"float"|"kit" Passed straight to `lib.nvim.progress`
 ---@field panel_theme? string `ui.kit` theme/preset for the streaming answer panel
 ---@field badge_timeout_ms? integer Auto-dismiss delay for the explain badge (`kit.popup({type="note"})`)
 
 ---@class Ai.KeymapOptions
----@field enable boolean
+---@field enable? boolean
 ---@field prefix? string
 
 ---@class Ai.WhichKeyOptions
----@field enable boolean
+---@field enable? boolean
 
 ---@class Ai.UsercmdOptions
----@field enable boolean
+---@field enable? boolean
 
 ---@class Ai.ContextDefaults
 ---@field buffer? boolean Include the whole current buffer
@@ -87,12 +87,12 @@
 ---@field conflict? boolean Include both sides of every unresolved merge-conflict region in the buffer, labeled "ours"/"theirs", via `gitsuite.nvim` (optional soft dep) -- off by default
 
 ---@class Ai.CompletionOptions
----@field enable boolean
+---@field enable? boolean
 ---@field trigger? "manual"|"auto" `"manual"` (default): only an explicit keymap fires a suggestion. `"auto"`: an idle-while-typing timer fires one too -- pick this deliberately, it means an API call (possibly a paid cloud one) on every typing pause, not just on deliberate action.
 ---@field idle_ms? integer Auto-mode idle debounce before firing, in ms (default 500). Unused in `"manual"` mode.
 ---@field max_context_lines? integer Lines of buffer context to include before/after the cursor (default 60)
----@field provider? string Overrides `config.provider` for completion requests only
----@field model? string Overrides the resolved provider's default model for completion requests only
+---@field provider? string|false Overrides `config.provider` for completion requests only; `false` (default) = unset
+---@field model? string|false Overrides the resolved provider's default model for completion requests only; `false` (default) = unset
 ---@field keymap? Ai.CompletionKeymapOptions
 
 ---@class Ai.CompletionKeymapOptions

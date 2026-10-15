@@ -159,7 +159,7 @@ local VALUE_SCHEMA = {
   bulk = "table",
   ["bulk.max_session_chars"] = "number>=0|false",
   log_level = "number",
-  ["ui.progress_style"] = { "auto", "notify", "statusline", "fidget", "float" },
+  ["ui.progress_style"] = { "auto", "notify", "statusline", "echo", "fidget", "float", "kit" },
   ["ui.badge_timeout_ms"] = "number",
   ["completion.trigger"] = { "manual", "auto" },
   ["completion.idle_ms"] = "number",

@@ -20,7 +20,7 @@ require("ai").setup({
 
   ui = {
     enable = true,
-    progress_style = "auto",                  -- "auto" | "notify" | "statusline" | "fidget" | "float"
+    progress_style = "auto",                  -- "auto" | "notify" | "statusline" | "echo" | "fidget" | "float" | "kit"
     panel_theme = "rounded",                   -- ui.kit theme/preset for the streaming panel
     badge_timeout_ms = 6000,
   },
