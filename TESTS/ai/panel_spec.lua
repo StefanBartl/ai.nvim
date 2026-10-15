@@ -367,9 +367,25 @@ describe("ai.ui.panel", function()
       end,
     })
 
-    panel_mod.cancel_all()
+    assert.are.equal(2, panel_mod.cancel_all(), "cancel_all() says how many it stopped")
     assert.is_true(killed[1])
     assert.is_true(killed[2])
+  end)
+
+  -- `:Ai stop` / `<leader>ax`: the action reports what the panel module stopped
+  it("the stop action stops the running streams and returns how many", function()
+    local panel_mod = require("ai.ui.panel")
+    local killed = false
+    local p = panel_mod.open({})
+    panel_mod.attach_process(p, {
+      kill = function()
+        killed = true
+      end,
+    })
+    local actions = require("ai.bindings.actions")
+    assert.are.equal(1, actions.stop())
+    assert.is_true(killed)
+    assert.are.equal(0, actions.stop(), "nothing running: nothing stopped, and no error")
   end)
 
   it("cancel_all() on an empty panel list is a no-op", function()

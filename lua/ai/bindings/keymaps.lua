@@ -54,7 +54,7 @@ function M.setup(cfg)
   local spec = {
     prefix = prefix,
     which_key = cfg.which_key.enable and { group = "ai.nvim" } or nil,
-    order = { "ask", "quick", "explain", "rewrite", "append", "prepend" },
+    order = { "ask", "quick", "explain", "rewrite", "append", "prepend", "stop" },
     actions = {
       ask = {
         default = prefix .. "a",
@@ -158,6 +158,18 @@ function M.setup(cfg)
         },
       },
       -- Second quick action: a small auto-dismissing badge, no chat panel.
+      stop = {
+        default = prefix .. "x",
+        binds = {
+          {
+            mode = "n",
+            rhs = function()
+              actions.stop()
+            end,
+            desc = "Stop every running stream",
+          },
+        },
+      },
       explain = {
         default = prefix .. "e",
         binds = {

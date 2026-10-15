@@ -14,6 +14,7 @@ default `<leader>a`) and are individually overridable/disableable via
 | n, v | `<leader>ao` | `append` | Insert AI-generated code after current line/selection |
 | n, v | `<leader>aO` | `prepend` | Insert AI-generated code before current line/selection |
 | n, v | `<leader>ae` | `explain` | Explain the current context in a small badge, no panel |
+| n | `<leader>ax` | `stop` | Stop every running stream |
 
 ## Completion keymaps
 
@@ -39,6 +40,7 @@ see [configuration.md](configuration.md)). They follow the master switch:
 | `:[range]Ai prepend [prompt?]` | Insert AI-generated code before the range (default: current line) |
 | `:Ai provider <name>` | Switch the active provider, or back to `auto` |
 | `:Ai key [profile\|reset] [provider]` | Choose the API-key profile for this session |
+| `:Ai stop` | Stop every running stream |
 | `:Ai info` | Show active provider + availability |
 
 ## Autocmds

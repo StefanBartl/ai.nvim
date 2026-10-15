@@ -199,12 +199,13 @@ end
 ---`VimLeavePre` so quitting Neovim can never leave an orphaned curl request
 ---behind. Iterates a snapshot: `M.cancel` mutates `active_panels` itself
 ---(via `untrack`), which `ipairs` over the live table would not survive.
----@return nil
+---@return integer cancelled  # how many running streams were stopped
 function M.cancel_all()
   local panels = vim.list_extend({}, active_panels)
   for _, panel in ipairs(panels) do
     M.cancel(panel)
   end
+  return #panels
 end
 
 return M
