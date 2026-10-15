@@ -267,6 +267,23 @@ function M.explain_badge(context)
   end)
 end
 
+---Stop every running stream (the panels' curl requests). Only streams: `ask`, `rewrite`/`append`/`prepend` and
+---completion hold no process handle to cancel yet (decision of 2026-10-04), which the message says when it
+---stopped nothing.
+---@return integer cancelled
+function M.stop()
+  local cancelled = require("ai.ui.panel").cancel_all()
+  local notify = require("lib.nvim.notify").create("[ai]")
+  if cancelled > 0 then
+    notify.info(("stopped %d running stream%s"):format(cancelled, cancelled == 1 and "" or "s"))
+  else
+    notify.info(
+      "no stream is running (only streams can be stopped; a one-shot ask or an edit runs to its end)"
+    )
+  end
+  return cancelled
+end
+
 ---Show the active provider, the auto-resolution order, and per-provider
 ---availability -- never a key's actual value.
 ---@return nil

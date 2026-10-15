@@ -150,6 +150,14 @@ function M.setup()
         end,
       },
       {
+        path = { "stop" },
+        desc = "Stop every running stream (one-shot asks and edits cannot be stopped)",
+        run = function(ctx)
+          warn_if_ranged(ctx)
+          actions.stop()
+        end,
+      },
+      {
         path = { "info" },
         desc = "Show the active provider, resolution order, and per-provider availability",
         run = function(ctx)

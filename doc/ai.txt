@@ -318,6 +318,12 @@ MISSING: reason".
   that defines it, or only on {provider}. `reset` returns to the configured
   `active` profile / the provider's own variable; no argument shows the setup.
 
+:Ai stop                                                          *:Ai-stop*
+  Stop every running stream (the requests behind the panels) and say how many
+  were stopped. A one-shot `:Ai ask`, `rewrite`/`append`/`prepend` and
+  completion hold no handle yet and run to their end; the message says so when
+  nothing was stopped.
+
 :Ai info                                                          *:Ai-info*
   Show the active provider, resolution order, the provider policy, and
   per-provider availability (providers outside the allow-list are marked).
@@ -348,6 +354,7 @@ default `<leader>a`) and are individually overridable/disableable via
                                    line/selection
   n, v  <leader>ae     explain    Explain the current context in a small
                                    badge, no panel
+  n     <leader>ax     stop       Stop every running stream
 
 rewrite/append/prepend act on whole lines (see |:Ai-rewrite|): a charwise
 Visual selection still affects the full line(s) it touches, with a warning.
