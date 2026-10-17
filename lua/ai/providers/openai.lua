@@ -36,24 +36,119 @@ local M = {
   },
 }
 
-local API_URL = "https://api.openai.com/v1/chat/completions"
+local DEFAULT_BASE_URL = "https://api.openai.com"
 local DEFAULT_MODEL = "gpt-4o"
 M.default_model = DEFAULT_MODEL
 
+--- Hosts that may be reached over plain `http`: a server on this machine (LM Studio, vLLM, llama.cpp).
+--- Anything else must be `https`, because a key and the prompt travel with the request.
+---@type table<string, true>
+local LOOPBACK = { ["localhost"] = true, ["127.0.0.1"] = true, ["[::1]"] = true }
+
+---@internal
+---The base URL of this request: `req.host`, else `AI_OPENAI_BASE_URL`, else the OpenAI API. Returns
+---whether it is a custom (non-OpenAI) endpoint, or an error for a URL that must not be used.
 ---@param req? Ai.Request
+---@return string|nil base
+---@return boolean custom
+---@return string|nil err
+local function base_url(req)
+  local raw = (req and type(req.host) == "string" and req.host ~= "") and req.host
+    or util.env_value("AI_OPENAI_BASE_URL", DEFAULT_BASE_URL)
+  local base = raw:gsub("/+$", "")
+  if base == DEFAULT_BASE_URL then
+    return base, false, nil
+  end
+  local scheme, host = base:match("^(%a[%w+.-]*)://([^/:]+)")
+  if not scheme then
+    return nil, true, ("openai: base URL %q is not an http(s) URL"):format(raw)
+  end
+  scheme = scheme:lower()
+  if scheme ~= "https" and not (scheme == "http" and LOOPBACK[host:lower()]) then
+    return nil,
+      true,
+      ("openai: base URL %q must use https (plain http only for localhost)"):format(raw)
+  end
+  return base, true, nil
+end
+
+---@internal
+---The Chat Completions endpoint below `base`: a base that already ends in `/v1` (LM Studio's own
+---spelling, `http://localhost:1234/v1`) gets `/chat/completions`, any other `/v1/chat/completions`.
+---@param base string
+---@return string
+local function endpoint(base)
+  if base:match("/v1$") then
+    return base .. "/chat/completions"
+  end
+  return base .. "/v1/chat/completions"
+end
+
+---The key for this request. For the OpenAI API: `req.api_key`, else `OPENAI_API_KEY` (or a key profile).
+---For a custom endpoint the OpenAI key is NEVER sent -- a key meant for api.openai.com must not travel to
+---another host -- only `req.api_key` or `AI_OPENAI_COMPAT_API_KEY`; none at all is fine for a local server.
+---@param req? Ai.Request
+---@param custom boolean
 ---@return string|nil
-local function api_key(req)
+local function api_key(req, custom)
   if req and req.api_key then
     return req.api_key
   end
+  if custom then
+    return util.env_value("AI_OPENAI_COMPAT_API_KEY", nil)
+  end
   return require("ai.keys").get("openai", "OPENAI_API_KEY")
+end
+
+---@internal
+---Whether "openai" was chosen on purpose, by the request or the config (not reached by `provider = "auto"`).
+---@param req? Ai.Request
+---@return boolean
+local function chosen_explicitly(req)
+  if req and req.provider == "openai" then
+    return true
+  end
+  local ok, cfg = pcall(function()
+    return require("ai").config()
+  end)
+  return ok and type(cfg) == "table" and cfg.provider == "openai"
 end
 
 ---@param req? Ai.Request
 ---@return boolean
 function M.available(req)
+  if not util.executable("curl") then
+    return false
+  end
+  local base, custom = base_url(req)
+  if not base then
+    return false
+  end
+  if custom then
+    -- A local server often needs no key, but "auto" must not pick an endpoint nobody vouched for: without a
+    -- key it counts only when openai was chosen explicitly.
+    return api_key(req, true) ~= nil or chosen_explicitly(req)
+  end
   -- A command key profile counts as available before it has run (ai.keys).
-  return util.executable("curl") and (api_key(req) ~= nil or require("ai.keys").pending("openai"))
+  return api_key(req, false) ~= nil or require("ai.keys").pending("openai")
+end
+
+---@internal
+---Resolve URL and key for a request; `err` is a ready `LibErrorValue` when it must not go out.
+---@param req Ai.Request
+---@return string|nil url
+---@return string|nil key
+---@return LibErrorValue|nil err
+local function target(req)
+  local base, custom, url_err = base_url(req)
+  if not base then
+    return nil, nil, lib_error.new("invalid_request", url_err)
+  end
+  local key = api_key(req, custom)
+  if not key and not custom then
+    return nil, nil, util.missing_key_error("openai", "OPENAI_API_KEY")
+  end
+  return endpoint(base), key, nil
 end
 
 ---@internal
@@ -120,9 +215,9 @@ end
 ---@param req Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
-  local key = api_key(req)
-  if not key then
-    cb(false, util.missing_key_error("openai", "OPENAI_API_KEY"))
+  local url, key, target_err = target(req)
+  if not url then
+    cb(false, target_err)
     return
   end
 
@@ -139,7 +234,7 @@ function M.ask(req, cb)
   -- recognize (see claude.lua's `x-api-key`), not as a second way to spell
   -- the same thing.
   local timeout_ms = req.timeout_ms or 60000
-  local prepare_err = transport.post_json(API_URL, {
+  local prepare_err = transport.post_json(url, {
     method = "POST",
     headers = { ["Content-Type"] = "application/json" },
     bearer_token = key,
@@ -185,10 +280,10 @@ end
 ---@param handlers Ai.StreamHandlers
 ---@return vim.SystemObj|nil
 function M.stream(req, handlers)
-  local key = api_key(req)
-  if not key then
+  local url, key, target_err = target(req)
+  if not url then
     if handlers.on_error then
-      handlers.on_error(util.missing_key_error("openai", "OPENAI_API_KEY"))
+      handlers.on_error(target_err)
     end
     return nil
   end
@@ -212,7 +307,7 @@ function M.stream(req, handlers)
   -- also fire with an empty-but-"successful" response afterwards.
   local failed = false
 
-  local process, prepare_err = transport.stream_json(API_URL, {
+  local process, prepare_err = transport.stream_json(url, {
     method = "POST",
     headers = { ["Content-Type"] = "application/json" },
     bearer_token = key,

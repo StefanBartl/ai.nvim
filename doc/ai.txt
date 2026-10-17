@@ -46,7 +46,12 @@ migration is what |ai-attachments| were built for.
 - `curl` on `PATH` -- every provider shells out to it.
 - At least one provider actually usable:
   - claude:  `ANTHROPIC_API_KEY` set in the environment.
-  - openai:  `OPENAI_API_KEY` set in the environment.
+  - openai:  `OPENAI_API_KEY` set in the environment. For an
+             OpenAI-compatible endpoint (LM Studio, vLLM, a gateway) set
+             `AI_OPENAI_BASE_URL` (https, or http for localhost only). The
+             OpenAI key is never sent there: it gets
+             `AI_OPENAI_COMPAT_API_KEY`, or no key. Without a key, "auto"
+             does not pick it; choose `openai` explicitly.
   - gemini:  `GEMINI_API_KEY` set in the environment.
   - ollama:  the `ollama` binary on `PATH`, with the daemon running
              (default http://127.0.0.1:11434, override with
@@ -444,8 +449,9 @@ require("ai").ask({req}, {cb})
     api_key      string?    overrides the provider's env-var lookup, this
                             request only -- set `provider` explicitly with
                             it, a key belongs to one API
-    host         string?    overrides a self-hosted provider's base URL
-                            (`ollama`, `loomai`), this request only
+    host         string?    overrides the base URL of `ollama`, `loomai` or
+                            `openai` (an OpenAI-compatible endpoint), this
+                            request only
     allow_unlisted  boolean?  this request may use a provider outside
                             `policy.allowed`; set it only after asking the
                             user, see |ai-policy|
