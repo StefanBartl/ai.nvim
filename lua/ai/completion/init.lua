@@ -92,7 +92,7 @@ function M.trigger()
     timeout_ms = cfg.timeout_ms,
     -- a ghost suggestion is short: its own cap and a low effort keep latency and cost down
     max_tokens = cfg.completion.max_tokens,
-    effort = cfg.completion.effort,
+    effort = cfg.completion.effort or nil,
   }, function(ok, res)
     if my_generation ~= generation then
       return -- superseded by a newer trigger, or invalidated by leaving insert mode

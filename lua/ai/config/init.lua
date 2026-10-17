@@ -164,8 +164,10 @@ local VALUE_SCHEMA = {
   ["completion.trigger"] = { "manual", "auto" },
   ["completion.idle_ms"] = "number",
   ["completion.max_context_lines"] = "number",
-  ["completion.max_tokens"] = "number",
-  ["completion.effort"] = { "low", "medium", "high", "xhigh", "max" },
+  -- the API wants a whole number >= 1; 0 or a fraction would fail every completion request without a word
+  ["completion.max_tokens"] = "integer>=1",
+  -- `false` sends no effort at all (the model's own default)
+  ["completion.effort"] = { "low", "medium", "high", "xhigh", "max", false },
 }
 
 ---What `policy.allowed` holds when its configured value is malformed: a
@@ -246,6 +248,9 @@ local function value_ok(kind, value)
       end
     end
     return true
+  end
+  if kind == "integer>=1" then
+    return type(value) == "number" and value >= 1 and value % 1 == 0 and value ~= math.huge
   end
   if kind == "number>=0|false" then
     -- NaN fails `>= 0`; a negative number is no cap either.

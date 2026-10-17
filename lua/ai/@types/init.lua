@@ -91,8 +91,8 @@
 ---@field trigger? "manual"|"auto" `"manual"` (default): only an explicit keymap fires a suggestion. `"auto"`: an idle-while-typing timer fires one too -- pick this deliberately, it means an API call (possibly a paid cloud one) on every typing pause, not just on deliberate action.
 ---@field idle_ms? integer Auto-mode idle debounce before firing, in ms (default 500). Unused in `"manual"` mode.
 ---@field max_context_lines? integer Lines of buffer context to include before/after the cursor (default 60)
----@field max_tokens? integer Response-length cap of a completion request (default 512): a ghost suggestion is short, and an answer cut off at the cap is discarded, never shown
----@field effort? "low"|"medium"|"high"|"xhigh"|"max" Effort sent with a completion request (default "low", for latency); only where the provider and model take one
+---@field max_tokens? integer Response-length cap of a completion request (default 512, a whole number >= 1; only `claude` reads it): a ghost suggestion is short, and an answer cut off at the cap is discarded, never shown
+---@field effort? "low"|"medium"|"high"|"xhigh"|"max"|false Effort sent with a completion request (default "low", for latency; `false` sends none); only where the provider and model take one, a level the model lacks is lowered to the nearest one it has
 ---@field provider? string|false Overrides `config.provider` for completion requests only; `false` (default) = unset
 ---@field model? string|false Overrides the resolved provider's default model for completion requests only; `false` (default) = unset
 ---@field keymap? Ai.CompletionKeymapOptions
@@ -132,7 +132,7 @@
 ---@field api_key? string Overrides the provider's own env-var lookup for this request only. For an embedding plugin that already has the key in its own config (`pdfport.nvim`'s `claude_api_key`) and must not have to write it into the user's environment to use ai.nvim. Ignored by providers that need no key. **Set `provider` explicitly alongside it** -- a key belongs to one specific API, and under `provider = "auto"` it would be offered to whichever provider resolves first.
 ---@field host? string Overrides a provider's base URL for this request only: `ollama`, `loomai`, and `openai` for an OpenAI-compatible endpoint (https, or http for localhost; the OpenAI key is never sent there, see `AI_OPENAI_COMPAT_API_KEY`) -- same reasoning as `api_key`. Ignored by the other cloud providers, whose endpoint is not a user choice.
 ---@field temperature? number Sampling temperature, sent by the providers that take one (`capabilities.temperature`: claude, openai, gemini, ollama); ignored by the others
----@field effort? "low"|"medium"|"high"|"xhigh"|"max" How much the model may think and spend on the answer. Only the `claude` backend sends it (`output_config.effort`), and only to a model that takes it (`Ai.Provider.accepts_effort`); ignored otherwise
+---@field effort? "low"|"medium"|"high"|"xhigh"|"max" How much the model may think and spend on the answer. Only the `claude` backend sends it (`output_config.effort`), and only to a model that takes it (`Ai.Provider.accepts_effort`): a level the model lacks is lowered to the nearest one it has (`xhigh` on Opus 4.6 becomes `high`), an unknown value is dropped; ignored by the other providers
 ---@field bulk? Ai.BulkOptions Run this request under the guard rails for unattended bulk use (`ai.ask` only; see `Ai.BulkOptions`). Not combinable with `allow_unlisted`, `attachments` or `context`.
 ---@field allow_unlisted? boolean This request may use a provider outside `config.policy.allowed`. Set it only after asking the user; it exists so a caller with its own confirmation (a test mode for a provider the machine does not list) can go through, and so nothing steps outside the list by accident.
 

@@ -85,29 +85,70 @@ end
 ---Model id patterns whose Messages API takes `output_config.effort`: Opus 4.5 (low/medium/high), Opus and
 ---Sonnet from 4.6 on, every 5.x model and the Fable/Mythos family. Sonnet 4.5, Haiku 4.5 and older reject it
 ---with HTTP 400, so an unknown id gets none.
----@type string[]
-local EFFORT_ACCEPTED = {
-  "^claude%-fable",
-  "^claude%-mythos",
-  "^claude%-opus%-4%-[5-9]",
-  "^claude%-opus%-5",
-  "^claude%-sonnet%-4%-[6-9]",
-  "^claude%-sonnet%-5",
-  "^claude%-haiku%-5",
+---The levels differ per model: Opus 4.5 takes low/medium/high, Opus/Sonnet 4.6 add `max` (no `xhigh`, which
+---arrived with Opus 4.7), everything newer takes all five. First matching pattern wins.
+local ALL_LEVELS = { low = true, medium = true, high = true, xhigh = true, max = true }
+local NO_XHIGH = { low = true, medium = true, high = true, max = true }
+---@type { [1]: string, [2]: table<string, true> }[]
+local EFFORT_MODELS = {
+  { "^claude%-opus%-4%-5", { low = true, medium = true, high = true } },
+  { "^claude%-opus%-4%-6", NO_XHIGH },
+  { "^claude%-sonnet%-4%-[6-9]", NO_XHIGH },
+  { "^claude%-opus%-4%-[7-9]", ALL_LEVELS },
+  { "^claude%-opus%-5", ALL_LEVELS },
+  { "^claude%-sonnet%-5", ALL_LEVELS },
+  { "^claude%-haiku%-5", ALL_LEVELS },
+  { "^claude%-fable", ALL_LEVELS },
+  { "^claude%-mythos", ALL_LEVELS },
 }
 
----Whether the Messages API takes `output_config.effort` for `model`. `Ai.Request.effort` is dropped for a
----model that does not (sending it would fail the whole request).
----@param model? string Falls back to the provider's default model
----@return boolean
-function M.accepts_effort(model)
-  model = model or DEFAULT_MODEL
-  for _, pattern in ipairs(EFFORT_ACCEPTED) do
-    if model:find(pattern) then
-      return true
+--- Effort levels from lowest to highest.
+local EFFORT_ORDER = { "low", "medium", "high", "xhigh", "max" }
+---@type table<string, integer>
+local EFFORT_RANK = { low = 1, medium = 2, high = 3, xhigh = 4, max = 5 }
+
+---@param model string
+---@return table<string, true>|nil
+local function effort_levels(model)
+  for _, entry in ipairs(EFFORT_MODELS) do
+    if model:find(entry[1]) then
+      return entry[2]
     end
   end
-  return false
+  return nil
+end
+
+---Whether the Messages API takes `output_config.effort` for `model` -- at `level` when one is given.
+---`Ai.Request.effort` is adjusted or dropped for a model that does not (sending it fails the whole request).
+---@param model? string Falls back to the provider's default model
+---@param level? string
+---@return boolean
+function M.accepts_effort(model, level)
+  local levels = effort_levels(model or DEFAULT_MODEL)
+  if not levels then
+    return false
+  end
+  return level == nil or levels[level] == true
+end
+
+---@internal
+---The effort to send for `model`: `level` itself when the model takes it, else the highest level below it that
+---the model takes (`xhigh` on Opus 4.6 becomes `high`); nil for an unknown level or a model without effort.
+---@param model string
+---@param level any
+---@return string|nil
+local function effort_for(model, level)
+  local rank = type(level) == "string" and EFFORT_RANK[level]
+  local levels = rank and effort_levels(model)
+  if not levels then
+    return nil
+  end
+  for r = rank, 1, -1 do
+    if levels[EFFORT_ORDER[r]] then
+      return EFFORT_ORDER[r]
+    end
+  end
+  return nil
 end
 
 ---@param req? Ai.Request
@@ -156,7 +197,7 @@ end
 ---@return string json
 local function build_body(req, stream)
   local model = req.model or DEFAULT_MODEL
-  local effort = (type(req.effort) == "string" and M.accepts_effort(model)) and req.effort or nil
+  local effort = effort_for(model, req.effort)
   return vim.json.encode({
     model = model,
     max_tokens = req.max_tokens or DEFAULT_MAX_TOKENS,
