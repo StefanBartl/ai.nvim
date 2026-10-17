@@ -53,6 +53,8 @@ function M.parse(text)
   if type(text) ~= "string" then
     return ""
   end
+  -- CRLF / CR answers: the buffer gets "\n"-split lines, a "\r" would end up as ^M (and hide a fence)
+  text = text:gsub("\r\n?", "\n")
   -- Linear trim: the response is unbounded, and `^%s*(.-)%s*$` is quadratic on
   -- a long run of blanks inside it. Used to detect a blank answer and a fence.
   local trimmed = require("ai.providers.util").trim(text)
@@ -63,7 +65,20 @@ function M.parse(text)
   if fenced then
     return fenced
   end
-  return (text:gsub("\r?\n$", "", 1))
+  return (text:gsub("\n$", "", 1))
+end
+
+---Fit a parsed suggestion to the text before the cursor: when the prefix already ends in a space or tab
+---(`local x = |`, or an autoindented empty line), the blanks the model starts its answer with would be a
+---second copy of them, so they are dropped. A leading line break is never touched.
+---@param text string  # `M.parse`'s result
+---@param prefix string  # the buffer text before the cursor, as sent
+---@return string
+function M.fit(text, prefix)
+  if type(prefix) == "string" and prefix:match("[ \t]$") then
+    return (text:gsub("^[ \t]+", "", 1))
+  end
+  return text
 end
 
 return M

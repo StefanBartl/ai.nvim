@@ -117,7 +117,7 @@ function M.trigger()
       return
     end
 
-    local text = prompt.parse(res.text)
+    local text = prompt.fit(prompt.parse(res.text), prefix)
     if text ~= "" then
       ghost.show(bufnr, row - 1, col, text, changedtick)
     end

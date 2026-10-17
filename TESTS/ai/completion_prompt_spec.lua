@@ -49,6 +49,31 @@ describe("ai.completion.prompt", function()
       assert.is_true(system:find("starts exactly at the cursor", 1, true) ~= nil)
     end)
 
+    it("normalises CRLF / CR answers to LF", function()
+      assert.are.equal("a\nb", prompt.parse("a\r\nb\r\n"))
+      assert.are.equal("a\nb", prompt.parse("a\rb"))
+    end)
+
+    it("strips a fence written with CRLF line endings", function()
+      assert.are.equal("x", prompt.parse("```lua\r\nx\r\n```"))
+    end)
+  end)
+
+  describe("fit", function()
+    it("drops the answer's leading blanks when the prefix already ends in one", function()
+      assert.are.equal("5", prompt.fit(" 5", "local x = "))
+      assert.are.equal("return 1", prompt.fit("    return 1", "    "))
+      assert.are.equal("5", prompt.fit("\t5", "x =\t"))
+    end)
+
+    it("keeps the leading blank when the prefix does not end in one", function()
+      assert.are.equal(" 5", prompt.fit(" 5", "local x ="))
+    end)
+
+    it("never touches a leading line break", function()
+      assert.are.equal("\n  body", prompt.fit("\n  body", "foo() "))
+    end)
+
     it("strips a fenced code block with a language tag", function()
       assert.are.equal("local x = 1", prompt.parse("```lua\nlocal x = 1\n```"))
     end)
