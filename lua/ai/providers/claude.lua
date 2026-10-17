@@ -81,6 +81,35 @@ function M.accepts_temperature(model)
   return true
 end
 
+---@internal
+---Model id patterns whose Messages API takes `output_config.effort`: Opus 4.5 (low/medium/high), Opus and
+---Sonnet from 4.6 on, every 5.x model and the Fable/Mythos family. Sonnet 4.5, Haiku 4.5 and older reject it
+---with HTTP 400, so an unknown id gets none.
+---@type string[]
+local EFFORT_ACCEPTED = {
+  "^claude%-fable",
+  "^claude%-mythos",
+  "^claude%-opus%-4%-[5-9]",
+  "^claude%-opus%-5",
+  "^claude%-sonnet%-4%-[6-9]",
+  "^claude%-sonnet%-5",
+  "^claude%-haiku%-5",
+}
+
+---Whether the Messages API takes `output_config.effort` for `model`. `Ai.Request.effort` is dropped for a
+---model that does not (sending it would fail the whole request).
+---@param model? string Falls back to the provider's default model
+---@return boolean
+function M.accepts_effort(model)
+  model = model or DEFAULT_MODEL
+  for _, pattern in ipairs(EFFORT_ACCEPTED) do
+    if model:find(pattern) then
+      return true
+    end
+  end
+  return false
+end
+
 ---@param req? Ai.Request
 ---@return string|nil
 local function api_key(req)
@@ -126,10 +155,13 @@ end
 ---@param stream boolean
 ---@return string json
 local function build_body(req, stream)
+  local model = req.model or DEFAULT_MODEL
+  local effort = (type(req.effort) == "string" and M.accepts_effort(model)) and req.effort or nil
   return vim.json.encode({
-    model = req.model or DEFAULT_MODEL,
+    model = model,
     max_tokens = req.max_tokens or DEFAULT_MAX_TOKENS,
     temperature = req.temperature,
+    output_config = effort and { effort = effort } or nil,
     system = req.system,
     stream = stream or nil,
     messages = { { role = "user", content = user_content(req) } },

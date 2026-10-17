@@ -90,6 +90,9 @@ function M.trigger()
     provider = cfg.completion.provider or nil,
     model = cfg.completion.model or nil,
     timeout_ms = cfg.timeout_ms,
+    -- a ghost suggestion is short: its own cap and a low effort keep latency and cost down
+    max_tokens = cfg.completion.max_tokens,
+    effort = cfg.completion.effort,
   }, function(ok, res)
     if my_generation ~= generation then
       return -- superseded by a newer trigger, or invalidated by leaving insert mode
@@ -114,6 +117,10 @@ function M.trigger()
       return
     end
     if not ok then
+      return
+    end
+    -- an answer cut off at max_tokens is half a statement: never offer it (same rule as ai.bindings.edit)
+    if require("ai.bindings.edit").is_truncated(res.stop_reason) then
       return
     end
 

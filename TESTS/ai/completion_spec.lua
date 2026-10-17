@@ -70,6 +70,42 @@ describe("ai.completion", function()
       ghost.clear()
     end)
 
+    it("asks with the completion's own max_tokens and effort", function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "x" })
+      vim.api.nvim_win_set_cursor(0, { 1, 0 })
+      local seen
+      package.loaded["ai"] = {
+        config = function()
+          return {
+            completion = { enable = true, max_context_lines = 10, max_tokens = 300, effort = "low" },
+          }
+        end,
+        ask = function(req)
+          seen = req
+        end,
+      }
+      require("ai.completion").trigger()
+      assert.are.equal(300, seen.max_tokens)
+      assert.are.equal("low", seen.effort)
+    end)
+
+    for _, reason in ipairs({ "max_tokens", "length" }) do
+      it("discards an answer cut off at the cap (stop_reason " .. reason .. ")", function()
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local r = Z" })
+        vim.api.nvim_win_set_cursor(0, { 1, 10 })
+        package.loaded["ai"] = {
+          config = function()
+            return { completion = { enable = true, max_context_lines = 10 } }
+          end,
+          ask = function(_, cb)
+            cb(true, { text = "a +", stop_reason = reason })
+          end,
+        }
+        require("ai.completion").trigger()
+        assert.is_nil(require("ai.ui.ghost").current())
+      end)
+    end
+
     it("keeps a leading space of the answer through trigger() and accept()", function()
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local x =Z" })
       vim.api.nvim_win_set_cursor(0, { 1, 9 })

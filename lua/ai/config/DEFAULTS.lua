@@ -93,6 +93,8 @@ local DEFAULTS = {
     trigger = "manual",
     idle_ms = 500,
     max_context_lines = 60,
+    max_tokens = 512,
+    effort = "low",
     -- `nil` here would store no key at all (Lua collapses `key = nil` in a
     -- table constructor), which would make `warn_unknown_keys` below treat
     -- both of these documented options as unknown-key typos. `false` is a

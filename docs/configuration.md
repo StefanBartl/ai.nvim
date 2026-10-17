@@ -60,6 +60,8 @@ require("ai").setup({
     trigger = "manual",          -- "manual" | "auto"
     idle_ms = 500,                -- auto-mode idle debounce; unused in "manual"
     max_context_lines = 60,       -- buffer lines included before/after the cursor
+    max_tokens = 512,             -- response cap; an answer cut off at the cap is discarded, never shown
+    effort = "low",               -- "low"|"medium"|"high"|"xhigh"|"max"; sent only where provider and model take one (claude)
     provider = false,               -- overrides `provider` for completion requests only; `false` = unset
     model = false,
     keymap = {
