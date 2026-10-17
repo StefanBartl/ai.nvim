@@ -59,6 +59,33 @@ describe("ai.providers.claude", function()
     end
   )
 
+  it("accepts_effort() is true only for the models whose API takes output_config.effort", function()
+    local claude = require("ai.providers.claude")
+    for _, model in ipairs({
+      "claude-haiku-5-5",
+      "claude-sonnet-5-5",
+      "claude-opus-5-5",
+      "claude-opus-4-8",
+      "claude-opus-4-6",
+      "claude-sonnet-4-6",
+      "claude-opus-4-5",
+      "claude-fable-5-1",
+      "claude-mythos-5-1",
+    }) do
+      assert.is_true(claude.accepts_effort(model), model)
+    end
+    for _, model in ipairs({
+      "claude-sonnet-4-5",
+      "claude-haiku-4-5",
+      "claude-3-5-haiku-latest",
+      "something-else",
+    }) do
+      assert.is_false(claude.accepts_effort(model), model)
+    end
+    -- unset: the provider's own default model (claude-opus-4-5) decides
+    assert.is_true(claude.accepts_effort(nil))
+  end)
+
   describe("ask", function()
     it("maps a successful Messages API response to Ai.Response", function()
       package.loaded["lib.nvim.net.curl"] = {
@@ -251,6 +278,21 @@ describe("ai.providers.claude", function()
       claude.ask(req, function() end)
       return vim.json.decode(seen)
     end
+
+    it("sends effort as output_config.effort to a model that takes it", function()
+      local body = body_for({ prompt = "p", model = "claude-haiku-5-5", effort = "low" })
+      assert.are.same({ effort = "low" }, body.output_config)
+    end)
+
+    it("drops effort for a model that rejects it", function()
+      assert.is_nil(
+        body_for({ prompt = "p", model = "claude-haiku-4-5", effort = "low" }).output_config
+      )
+    end)
+
+    it("sends no output_config when no effort is asked for", function()
+      assert.is_nil(body_for({ prompt = "p", model = "claude-haiku-5-5" }).output_config)
+    end)
 
     it("keeps content a plain string when there is nothing but the prompt", function()
       local body = body_for({ prompt = "hi" })

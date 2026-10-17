@@ -164,6 +164,8 @@ local VALUE_SCHEMA = {
   ["completion.trigger"] = { "manual", "auto" },
   ["completion.idle_ms"] = "number",
   ["completion.max_context_lines"] = "number",
+  ["completion.max_tokens"] = "number",
+  ["completion.effort"] = { "low", "medium", "high", "xhigh", "max" },
 }
 
 ---What `policy.allowed` holds when its configured value is malformed: a
