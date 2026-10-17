@@ -353,4 +353,116 @@ describe("ai.providers.openai", function()
       assert.is_true(openai.available({ prompt = "hi", api_key = "from-caller" }))
     end)
   end)
+
+  describe("base URL (OpenAI-compatible endpoints)", function()
+    local saved_base, saved_compat
+
+    before_each(function()
+      saved_base, saved_compat = vim.env.AI_OPENAI_BASE_URL, vim.env.AI_OPENAI_COMPAT_API_KEY
+      vim.env.AI_OPENAI_BASE_URL = nil
+      vim.env.AI_OPENAI_COMPAT_API_KEY = nil
+    end)
+
+    after_each(function()
+      vim.env.AI_OPENAI_BASE_URL = saved_base
+      vim.env.AI_OPENAI_COMPAT_API_KEY = saved_compat
+    end)
+
+    ---Run one ask() and report what reached curl (nil url: curl was never called).
+    ---@param req table
+    ---@return { url: string|nil, bearer: string|nil, ok: boolean, res: any }
+    local function ask_with(req)
+      local seen = {}
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function(url, opts, cb)
+          seen.url, seen.bearer = url, opts.bearer_token
+          cb(true, { choices = { { message = { content = "x" }, finish_reason = "stop" } } })
+        end,
+      }
+      require("ai.providers.openai").ask(req, function(ok, res)
+        seen.ok, seen.res = ok, res
+      end)
+      return seen
+    end
+
+    it("uses the OpenAI API and its key by default", function()
+      local seen = ask_with({ prompt = "hi" })
+      assert.are.equal("https://api.openai.com/v1/chat/completions", seen.url)
+      assert.are.equal("test-key", seen.bearer)
+    end)
+
+    it("takes AI_OPENAI_BASE_URL, with or without a trailing /v1", function()
+      vim.env.AI_OPENAI_BASE_URL = "http://localhost:1234/v1/"
+      assert.are.equal("http://localhost:1234/v1/chat/completions", ask_with({ prompt = "hi" }).url)
+    end)
+
+    it("appends /v1/chat/completions to a bare host", function()
+      vim.env.AI_OPENAI_BASE_URL = "https://gateway.example.com"
+      assert.are.equal(
+        "https://gateway.example.com/v1/chat/completions",
+        ask_with({ prompt = "hi" }).url
+      )
+    end)
+
+    it("never sends OPENAI_API_KEY to a custom endpoint", function()
+      vim.env.AI_OPENAI_BASE_URL = "https://gateway.example.com"
+      local seen = ask_with({ prompt = "hi" })
+      assert.is_true(seen.ok)
+      assert.is_nil(seen.bearer)
+    end)
+
+    it("sends AI_OPENAI_COMPAT_API_KEY (or req.api_key) to a custom endpoint", function()
+      vim.env.AI_OPENAI_BASE_URL = "https://gateway.example.com"
+      vim.env.AI_OPENAI_COMPAT_API_KEY = "compat-key"
+      assert.are.equal("compat-key", ask_with({ prompt = "hi" }).bearer)
+    end)
+
+    it("lets req.host win over the environment", function()
+      vim.env.AI_OPENAI_BASE_URL = "https://gateway.example.com"
+      local seen = ask_with({ prompt = "hi", host = "http://127.0.0.1:8000" })
+      assert.are.equal("http://127.0.0.1:8000/v1/chat/completions", seen.url)
+    end)
+
+    for _, bad in ipairs({ "http://gateway.example.com", "ftp://x", "not a url" }) do
+      it("refuses " .. bad .. " without calling curl", function()
+        vim.env.AI_OPENAI_BASE_URL = bad
+        local seen = ask_with({ prompt = "hi" })
+        assert.is_nil(seen.url)
+        assert.is_false(seen.ok)
+        assert.are.equal("invalid_request", seen.res.kind)
+      end)
+    end
+
+    it("stream() goes to the same endpoint", function()
+      vim.env.AI_OPENAI_BASE_URL = "http://localhost:1234"
+      local seen_url
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_stream = function(url)
+          seen_url = url
+          return {}
+        end,
+      }
+      require("ai.providers.openai").stream({ prompt = "hi" }, {})
+      assert.are.equal("http://localhost:1234/v1/chat/completions", seen_url)
+    end)
+
+    it(
+      "a custom endpoint without a key is available only when openai was chosen explicitly",
+      function()
+        vim.env.AI_OPENAI_BASE_URL = "http://localhost:1234"
+        local openai = require("ai.providers.openai")
+        assert.is_false(openai.available({ prompt = "hi" }))
+        assert.is_true(openai.available({ prompt = "hi", provider = "openai" }))
+        vim.env.AI_OPENAI_COMPAT_API_KEY = "compat-key"
+        assert.is_true(openai.available({ prompt = "hi" }))
+      end
+    )
+
+    it("an unusable base URL is never available", function()
+      vim.env.AI_OPENAI_BASE_URL = "http://gateway.example.com"
+      assert.is_false(
+        require("ai.providers.openai").available({ prompt = "hi", provider = "openai" })
+      )
+    end)
+  end)
 end)

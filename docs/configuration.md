@@ -134,6 +134,23 @@ executable on `PATH` and/or an env var set), never a network round trip.
 Set `provider` to an explicit id to always use one provider; `:Ai provider
 <name>` switches it at runtime, and `:Ai provider auto` returns to the walk.
 
+## OpenAI-compatible endpoints
+
+The `openai` provider talks to any OpenAI-compatible Chat Completions server (LM Studio, vLLM, llama.cpp,
+a gateway) when `AI_OPENAI_BASE_URL` is set, or per request with `host`:
+
+```sh
+export AI_OPENAI_BASE_URL=http://localhost:1234/v1   # "/v1" optional, "/chat/completions" is appended
+```
+
+- `https` is required; plain `http` only for `localhost`, `127.0.0.1` and `::1`. Any other URL is refused
+  before a request goes out.
+- `OPENAI_API_KEY` is never sent to such an endpoint: a key meant for api.openai.com must not reach another
+  host. The endpoint gets `AI_OPENAI_COMPAT_API_KEY` (or the request's `api_key`) if set, otherwise no
+  key, which is what a local server usually wants.
+- Without a key, `provider = "auto"` does not pick the endpoint (nobody vouched for it being up); set
+  `provider = "openai"` or use `:Ai provider openai`.
+
 ## Provider policy
 
 Some machines may only use some providers -- an employer's allow-list, say.

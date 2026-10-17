@@ -18,7 +18,13 @@
 - `curl` on `PATH` -- every provider shells out to it.
 - At least one provider actually usable:
   - **claude**: `ANTHROPIC_API_KEY` set in the environment.
-  - **openai**: `OPENAI_API_KEY` set in the environment.
+  - **openai**: `OPENAI_API_KEY` set in the environment. Any OpenAI-compatible
+    endpoint (LM Studio, vLLM, a gateway) works too: set `AI_OPENAI_BASE_URL`
+    (e.g. `http://localhost:1234/v1`; `https` required, plain `http` only for
+    `localhost`/`127.0.0.1`/`::1`). `OPENAI_API_KEY` is never sent to such an
+    endpoint; it gets `AI_OPENAI_COMPAT_API_KEY` if set, otherwise no key (a
+    local server). Without a key, `provider = "auto"` does not pick it --
+    choose `openai` explicitly.
   - **gemini**: `GEMINI_API_KEY` set in the environment.
   - **ollama**: the `ollama` binary on `PATH`, with the daemon running
     (default `http://127.0.0.1:11434`, override with `AI_OLLAMA_HOST` --
