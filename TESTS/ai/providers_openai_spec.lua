@@ -417,10 +417,69 @@ describe("ai.providers.openai", function()
       assert.are.equal("compat-key", ask_with({ prompt = "hi" }).bearer)
     end)
 
-    it("lets req.host win over the environment", function()
+    it("lets req.host win over the environment when openai is chosen explicitly", function()
       vim.env.AI_OPENAI_BASE_URL = "https://gateway.example.com"
-      local seen = ask_with({ prompt = "hi", host = "http://127.0.0.1:8000" })
+      local seen = ask_with({ prompt = "hi", provider = "openai", host = "http://127.0.0.1:8000" })
       assert.are.equal("http://127.0.0.1:8000/v1/chat/completions", seen.url)
+    end)
+
+    it("ignores a req.host that was meant for another provider", function()
+      vim.env.AI_OPENAI_COMPAT_API_KEY = "compat-key"
+      -- `auto` with a host for ollama: openai keeps its own endpoint and key, no compat key goes to that host
+      local seen = ask_with({ prompt = "hi", provider = "auto", host = "http://localhost:11434" })
+      assert.are.equal("https://api.openai.com/v1/chat/completions", seen.url)
+      assert.are.equal("test-key", seen.bearer)
+      assert.is_true(require("ai.providers.openai").available({
+        prompt = "hi",
+        provider = "auto",
+        host = "http://localhost:11434",
+      }))
+    end)
+
+    for _, spelled in ipairs({
+      "https://api.openai.com/v1",
+      "HTTPS://API.OPENAI.COM",
+      "https://api.openai.com/",
+    }) do
+      it(spelled .. " is the OpenAI API (its key is sent)", function()
+        vim.env.AI_OPENAI_BASE_URL = spelled
+        local seen = ask_with({ prompt = "hi" })
+        assert.are.equal("https://api.openai.com/v1/chat/completions", seen.url)
+        assert.are.equal("test-key", seen.bearer)
+      end)
+    end
+
+    it("takes an IPv6 loopback over plain http", function()
+      vim.env.AI_OPENAI_BASE_URL = "http://[::1]:1234/v1"
+      assert.are.equal("http://[::1]:1234/v1/chat/completions", ask_with({ prompt = "hi" }).url)
+    end)
+
+    for _, bad in ipairs({
+      "http://localhost:x@evil.example/v1",
+      "http://127.0.0.1:80@evil.example/v1",
+      "https://user:s3cret@gw.example.com/v1",
+      "https://s3cret@gw.example.com/v1",
+      "https://gw.example.com/v1?x=1",
+      "https://gw.example.com/v1#frag",
+      "http://localhost.evil.example",
+      "http://127.0.0.2:8000",
+      "https://:443",
+    }) do
+      it("refuses " .. bad .. " without calling curl, and without quoting it", function()
+        vim.env.AI_OPENAI_BASE_URL = bad
+        local seen = ask_with({ prompt = "hi" })
+        assert.is_nil(seen.url)
+        assert.is_false(seen.ok)
+        assert.are.equal("invalid_request", seen.res.kind)
+        assert.is_nil(tostring(seen.res.message):find("s3cret", 1, true))
+      end)
+    end
+
+    it("an explicit provider = 'auto' is no choice of openai", function()
+      vim.env.AI_OPENAI_BASE_URL = "http://localhost:1234"
+      assert.is_false(
+        require("ai.providers.openai").available({ prompt = "hi", provider = "auto" })
+      )
     end)
 
     for _, bad in ipairs({ "http://gateway.example.com", "ftp://x", "not a url" }) do

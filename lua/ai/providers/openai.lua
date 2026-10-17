@@ -46,30 +46,68 @@ M.default_model = DEFAULT_MODEL
 local LOOPBACK = { ["localhost"] = true, ["127.0.0.1"] = true, ["[::1]"] = true }
 
 ---@internal
----The base URL of this request: `req.host`, else `AI_OPENAI_BASE_URL`, else the OpenAI API. Returns
----whether it is a custom (non-OpenAI) endpoint, or an error for a URL that must not be used.
+---Whether "openai" was chosen on purpose: by the request, or by the config when the request names no provider.
+---`provider = "auto"` is no choice, written in the request or not.
+---@param req? Ai.Request
+---@return boolean
+local function chosen_explicitly(req)
+  if req and req.provider ~= nil then
+    return req.provider == "openai"
+  end
+  local ok, cfg = pcall(function()
+    return require("ai").config()
+  end)
+  return ok and type(cfg) == "table" and cfg.provider == "openai"
+end
+
+---@internal
+---The base URL of this request: `req.host` (only when openai was chosen explicitly -- a `host` meant for
+---ollama must not redirect openai), else `AI_OPENAI_BASE_URL`, else the OpenAI API. Returns whether it is a
+---custom (non-OpenAI) endpoint, or an error for a URL that must not be used. Error texts name the host at most,
+---never the URL: it may carry credentials.
 ---@param req? Ai.Request
 ---@return string|nil base
 ---@return boolean custom
 ---@return string|nil err
 local function base_url(req)
-  local raw = (req and type(req.host) == "string" and req.host ~= "") and req.host
-    or util.env_value("AI_OPENAI_BASE_URL", DEFAULT_BASE_URL)
-  local base = raw:gsub("/+$", "")
-  if base == DEFAULT_BASE_URL then
-    return base, false, nil
-  end
-  local scheme, host = base:match("^(%a[%w+.-]*)://([^/:]+)")
+  local from_req = req
+    and type(req.host) == "string"
+    and req.host ~= ""
+    and chosen_explicitly(req)
+    and req.host
+  local raw = from_req or util.env_value("AI_OPENAI_BASE_URL", DEFAULT_BASE_URL)
+  local scheme, authority, rest = raw:match("^(%a[%w+.-]*)://([^/?#]*)(.*)$")
   if not scheme then
-    return nil, true, ("openai: base URL %q is not an http(s) URL"):format(raw)
+    return nil, true, "openai: the base URL is not an http(s) URL"
   end
-  scheme = scheme:lower()
-  if scheme ~= "https" and not (scheme == "http" and LOOPBACK[host:lower()]) then
+  -- `http://localhost:x@evil.example` connects to evil.example: userinfo is refused, not parsed around
+  if authority:find("@", 1, true) then
+    return nil, true, "openai: the base URL must not carry user credentials"
+  end
+  if rest:find("[?#]") then
+    return nil, true, "openai: the base URL must not have a query or a fragment"
+  end
+  local host = authority:match("^(%[[^%]]*%])") or authority:match("^([^:]*)")
+  local port = authority:sub(#host + 1)
+  if host == "" or (port ~= "" and not port:match("^:%d+$")) then
+    return nil, true, "openai: the base URL has no valid host"
+  end
+  scheme, host = scheme:lower(), host:lower()
+  local path = rest:gsub("/+$", "")
+  if
+    scheme == "https"
+    and host == "api.openai.com"
+    and port == ""
+    and (path == "" or path == "/v1")
+  then
+    return DEFAULT_BASE_URL, false, nil
+  end
+  if scheme ~= "https" and not (scheme == "http" and LOOPBACK[host]) then
     return nil,
       true,
-      ("openai: base URL %q must use https (plain http only for localhost)"):format(raw)
+      ("openai: the base URL for %s must use https (plain http only for localhost)"):format(host)
   end
-  return base, true, nil
+  return scheme .. "://" .. host .. port .. path, true, nil
 end
 
 ---@internal
@@ -98,20 +136,6 @@ local function api_key(req, custom)
     return util.env_value("AI_OPENAI_COMPAT_API_KEY", nil)
   end
   return require("ai.keys").get("openai", "OPENAI_API_KEY")
-end
-
----@internal
----Whether "openai" was chosen on purpose, by the request or the config (not reached by `provider = "auto"`).
----@param req? Ai.Request
----@return boolean
-local function chosen_explicitly(req)
-  if req and req.provider == "openai" then
-    return true
-  end
-  local ok, cfg = pcall(function()
-    return require("ai").config()
-  end)
-  return ok and type(cfg) == "table" and cfg.provider == "openai"
 end
 
 ---@param req? Ai.Request
