@@ -181,7 +181,12 @@ local function run_edit(system, prompt, range, apply)
         notify.warn("Empty response, buffer left unchanged")
         return
       end
-      apply(bufnr, line1, line2, new_lines)
+      -- `edit.buffer_changed` checks validity and changedtick, not 'modifiable': a read-only
+      -- buffer (help, a viewer, a plugin's scratch) makes `nvim_buf_set_lines` raise
+      local applied, apply_err = pcall(apply, bufnr, line1, line2, new_lines)
+      if not applied then
+        notify.error("Could not write the answer into the buffer: " .. tostring(apply_err))
+      end
     end)
   end
 
