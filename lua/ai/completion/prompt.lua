@@ -24,8 +24,10 @@ function M.build(prefix, suffix, filetype)
     .. "editor. Given the code immediately before and after the cursor, "
     .. "output ONLY the text that should be inserted at the cursor to "
     .. "continue it naturally. Do not repeat the given code. Do not "
-    .. "explain. Do not use markdown code fences. If nothing sensible can "
-    .. "be inserted, output nothing."
+    .. "explain. Do not use markdown code fences. Your output starts exactly "
+    .. "at the cursor: include any space or line break that belongs between "
+    .. "the code before the cursor and your continuation. If nothing "
+    .. "sensible can be inserted, output nothing."
 
   local lang = (filetype ~= nil and filetype ~= "") and filetype or "text"
   local prompt = string.format(
@@ -38,9 +40,12 @@ function M.build(prefix, suffix, filetype)
   return prompt, system
 end
 
----Strip a markdown code fence and surrounding whitespace a model adds
----despite the system prompt telling it not to -- instruct models routinely
----wrap anything that looks like code in a fence regardless of instructions.
+---Strip a markdown code fence a model adds despite the system prompt telling
+---it not to -- instruct models routinely wrap anything that looks like code in
+---a fence regardless of instructions. Leading whitespace is KEPT: the prefix
+---ends exactly at the cursor, so a leading space, line break or indentation is
+---part of what gets inserted (`local x =` + `" 5"` must not become `=5`). Only
+---one trailing line break is dropped; an all-blank answer is no suggestion.
 ---@param text string|nil Defensively typed: a provider's response field is
 ---not guaranteed non-nil by every caller
 ---@return string
@@ -49,13 +54,16 @@ function M.parse(text)
     return ""
   end
   -- Linear trim: the response is unbounded, and `^%s*(.-)%s*$` is quadratic on
-  -- a long run of blanks inside it.
+  -- a long run of blanks inside it. Used to detect a blank answer and a fence.
   local trimmed = require("ai.providers.util").trim(text)
+  if trimmed == "" then
+    return ""
+  end
   local fenced = trimmed:match("^```[%w_+-]*\n(.-)\n?```$")
   if fenced then
     return fenced
   end
-  return trimmed
+  return (text:gsub("\r?\n$", "", 1))
 end
 
 return M
