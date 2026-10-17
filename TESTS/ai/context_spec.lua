@@ -123,10 +123,12 @@ describe("ai.context -- structured_data (data.nvim)", function()
   wipe_opened_buffers()
 
   -- Optional soft dependency: see TESTS/minimal_init.lua's DATA_NVIM_DIR.
-  -- Registering zero `it`s below (rather than failing) is the correct
-  -- "skipped" outcome when it isn't present in this test environment.
+  -- When it isn't present the real cases do not run (never a failure); the
+  -- `pending` case makes that a visible skip in the run summary instead of
+  -- a silent zero.
   local data_ok = pcall(require, "data.detect")
   if not data_ok then
+    pending("data.nvim not found (set $DATA_NVIM_DIR or place it beside this repo)")
     return
   end
 
@@ -237,10 +239,11 @@ describe("ai.context -- conflict (gitsuite.nvim)", function()
   wipe_opened_buffers()
 
   -- Optional soft dependency: see TESTS/minimal_init.lua's GITSUITE_NVIM_DIR.
-  -- Registering zero `it`s below (rather than failing) is the correct
-  -- "skipped" outcome when it isn't present in this test environment.
+  -- Same as data.nvim above: a missing checkout is a visible skip, never a
+  -- failure and never a silent zero.
   local gitsuite_ok = pcall(require, "gitsuite.features.conflict")
   if not gitsuite_ok then
+    pending("gitsuite.nvim not found (set $GITSUITE_NVIM_DIR or place it beside this repo)")
     return
   end
 
