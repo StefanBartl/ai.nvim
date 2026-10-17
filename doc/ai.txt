@@ -450,8 +450,8 @@ require("ai").ask({req}, {cb})
                             request only -- set `provider` explicitly with
                             it, a key belongs to one API
     host         string?    overrides the base URL of `ollama`, `loomai` or
-                            `openai` (an OpenAI-compatible endpoint), this
-                            request only
+                            `openai` (an OpenAI-compatible endpoint; only
+                            when `provider = "openai"`), this request only
     allow_unlisted  boolean?  this request may use a provider outside
                             `policy.allowed`; set it only after asking the
                             user, see |ai-policy|

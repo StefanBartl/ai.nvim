@@ -143,8 +143,10 @@ a gateway) when `AI_OPENAI_BASE_URL` is set, or per request with `host`:
 export AI_OPENAI_BASE_URL=http://localhost:1234/v1   # "/v1" optional, "/chat/completions" is appended
 ```
 
-- `https` is required; plain `http` only for `localhost`, `127.0.0.1` and `::1`. Any other URL is refused
-  before a request goes out.
+- `https` is required; plain `http` only for `localhost`, `127.0.0.1` and `::1`. A URL with credentials
+  (`user@host`), a query or a fragment is refused too, before a request goes out.
+- A request's `host` points openai elsewhere only when openai was chosen explicitly (`provider = "openai"`);
+  a `host` meant for ollama does not redirect it.
 - `OPENAI_API_KEY` is never sent to such an endpoint: a key meant for api.openai.com must not reach another
   host. The endpoint gets `AI_OPENAI_COMPAT_API_KEY` (or the request's `api_key`) if set, otherwise no
   key, which is what a local server usually wants.
