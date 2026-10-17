@@ -27,7 +27,12 @@ nvim -n -i NONE --headless -u NONE -l /path/to/testing.nvim/scripts/testing.lua 
 
 `data.nvim` and `gitsuite.nvim` are optional soft dependencies: when a
 sibling or `.deps/` checkout exists, `TESTS/minimal_init.lua` puts it on the
-runtimepath and the specs that need it run; without it they skip themselves.
+runtimepath and the specs that need it run; without it they skip themselves
+with a `pending` case each, so the summary shows `N skip` (exit code still 0,
+verdict `green-partial`) rather than silently counting fewer cases. That holds
+for a single file too: `scripts/test.sh --file context_spec` starts the child
+with `TESTS/minimal_init.lua` exactly as the full run does (20 cases in
+`context_spec.lua` with both checkouts present).
 
 Each spec file runs in its own `nvim --headless` subprocess (`isolated =
 "file"` in `.testing.lua`), so `package.loaded` never leaks between files -- only between

@@ -92,8 +92,8 @@ end
 --- data.nvim is an OPTIONAL soft dependency (`ai.context`'s
 --- `structured_data` flag) -- unlike lib.nvim above, its absence
 --- must never fail the run: the spec that needs it checks
---- `pcall(require, "data.detect")` itself and skips (registers zero `it`s)
---- when missing, same convention data.nvim's own optional-dep specs use.
+--- `pcall(require, "data.detect")` itself and skips (one visible `pending`
+--- case instead of the real ones) when missing.
 --- Search order: the env var, `.deps/<name>`, a sibling checkout; a miss is
 --- silent (no `os.exit`).
 ---@param env_var string
