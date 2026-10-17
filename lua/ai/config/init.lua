@@ -436,9 +436,10 @@ end
 ---check and were dropped to their default instead (see `sanitize_values`) --
 ---empty when nothing was dropped. This is the `:checkhealth` surface ERR-22
 ---requires: a degraded value must stay visible, not just stay non-fatal.
+---A copy: a caller sorting or trimming it cannot change what the next reader sees.
 ---@return string[]
 function M.issues()
-  return _issues
+  return vim.list_extend({}, _issues)
 end
 
 ---Returns the active config table **by reference**, not a copy -- callers
