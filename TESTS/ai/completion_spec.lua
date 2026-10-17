@@ -99,12 +99,34 @@ describe("ai.completion", function()
         end,
       }
       require("ai.completion").trigger()
+      assert.are.equal("\n  return 1", require("ai.ui.ghost").current().text)
       assert.is_true(require("ai.completion").accept())
       assert.are.same(
         { "function foo()", "  return 1Z" },
         vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
       )
     end)
+
+    for _, case in ipairs({
+      { line = "local x = Z", col = 10, answer = " 5", want = "local x = 5Z" },
+      { line = "    Z", col = 4, answer = "    return 1", want = "    return 1Z" },
+    }) do
+      it("does not double the blanks the line already ends in: " .. case.line, function()
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { case.line })
+        vim.api.nvim_win_set_cursor(0, { 1, case.col })
+        package.loaded["ai"] = {
+          config = function()
+            return { completion = { enable = true, max_context_lines = 10 } }
+          end,
+          ask = function(_, cb)
+            cb(true, { text = case.answer })
+          end,
+        }
+        require("ai.completion").trigger()
+        assert.is_true(require("ai.completion").accept())
+        assert.are.same({ case.want }, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+      end)
+    end
 
     it("strips a markdown fence off the response before showing it", function()
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "" })
