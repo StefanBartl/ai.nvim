@@ -70,6 +70,42 @@ describe("ai.completion", function()
       ghost.clear()
     end)
 
+    it("keeps a leading space of the answer through trigger() and accept()", function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local x =Z" })
+      vim.api.nvim_win_set_cursor(0, { 1, 9 })
+      package.loaded["ai"] = {
+        config = function()
+          return { completion = { enable = true, max_context_lines = 10 } }
+        end,
+        ask = function(_, cb)
+          cb(true, { text = " 5" })
+        end,
+      }
+      require("ai.completion").trigger()
+      assert.are.equal(" 5", require("ai.ui.ghost").current().text)
+      assert.is_true(require("ai.completion").accept())
+      assert.are.same({ "local x = 5Z" }, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+    end)
+
+    it("keeps a leading line break and indentation through trigger() and accept()", function()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "function foo()Z" })
+      vim.api.nvim_win_set_cursor(0, { 1, 14 })
+      package.loaded["ai"] = {
+        config = function()
+          return { completion = { enable = true, max_context_lines = 10 } }
+        end,
+        ask = function(_, cb)
+          cb(true, { text = "\n  return 1" })
+        end,
+      }
+      require("ai.completion").trigger()
+      assert.is_true(require("ai.completion").accept())
+      assert.are.same(
+        { "function foo()", "  return 1Z" },
+        vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      )
+    end)
+
     it("strips a markdown fence off the response before showing it", function()
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "" })
       vim.api.nvim_win_set_cursor(0, { 1, 0 })

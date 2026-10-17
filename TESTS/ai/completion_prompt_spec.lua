@@ -25,8 +25,28 @@ describe("ai.completion.prompt", function()
       assert.is_true((vim.uv.hrtime() - started) / 1e6 < 500)
     end)
 
-    it("returns plain text unchanged, trimmed", function()
-      assert.are.equal("local x = 1", prompt.parse("  local x = 1  \n"))
+    it("keeps leading whitespace and drops only one trailing line break", function()
+      assert.are.equal("  local x = 1  ", prompt.parse("  local x = 1  \n"))
+      assert.are.equal("local x = 1\n", prompt.parse("local x = 1\n\n"))
+      assert.are.equal("local x = 1", prompt.parse("local x = 1\r\n"))
+    end)
+
+    it("keeps a leading space: it separates the insertion from the prefix", function()
+      assert.are.equal(" 5", prompt.parse(" 5"))
+    end)
+
+    it("keeps a leading line break and the indentation after it", function()
+      assert.are.equal("\n  body\nend", prompt.parse("\n  body\nend"))
+    end)
+
+    it("treats an all-blank answer as no suggestion", function()
+      assert.are.equal("", prompt.parse("  \n\t \n"))
+      assert.are.equal("", prompt.parse(""))
+    end)
+
+    it("asks the model for the whitespace that belongs at the cursor", function()
+      local _, system = prompt.build("a", "b", "lua")
+      assert.is_true(system:find("starts exactly at the cursor", 1, true) ~= nil)
     end)
 
     it("strips a fenced code block with a language tag", function()
