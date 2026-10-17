@@ -84,6 +84,11 @@ describe("ai.providers.claude", function()
     end
     -- unset: the provider's own default model (claude-opus-4-5) decides
     assert.is_true(claude.accepts_effort(nil))
+    -- per level
+    assert.is_false(claude.accepts_effort("claude-opus-4-5", "xhigh"))
+    assert.is_false(claude.accepts_effort("claude-opus-4-6", "xhigh"))
+    assert.is_true(claude.accepts_effort("claude-opus-4-6", "max"))
+    assert.is_true(claude.accepts_effort("claude-opus-4-7", "xhigh"))
   end)
 
   describe("ask", function()
@@ -287,6 +292,33 @@ describe("ai.providers.claude", function()
     it("drops effort for a model that rejects it", function()
       assert.is_nil(
         body_for({ prompt = "p", model = "claude-haiku-4-5", effort = "low" }).output_config
+      )
+    end)
+
+    -- the level is checked too: Opus 4.5 has no xhigh/max, Opus/Sonnet 4.6 no xhigh (a 400 otherwise)
+    for _, case in ipairs({
+      { model = "claude-opus-4-5", effort = "xhigh", sent = "high" },
+      { model = nil, effort = "max", sent = "high" }, -- the default model is claude-opus-4-5
+      { model = "claude-opus-4-5-20251101", effort = "max", sent = "high" },
+      { model = "claude-opus-4-6", effort = "xhigh", sent = "high" },
+      { model = "claude-sonnet-4-6", effort = "xhigh", sent = "high" },
+      { model = "claude-opus-4-6", effort = "max", sent = "max" },
+      { model = "claude-opus-4-7", effort = "xhigh", sent = "xhigh" },
+      { model = "claude-haiku-5-5", effort = "max", sent = "max" },
+      { model = "claude-opus-4-5", effort = "medium", sent = "medium" },
+    }) do
+      it(
+        ("sends effort %s as %s to %s"):format(case.effort, case.sent, tostring(case.model)),
+        function()
+          local body = body_for({ prompt = "p", model = case.model, effort = case.effort })
+          assert.are.same({ effort = case.sent }, body.output_config)
+        end
+      )
+    end
+
+    it("drops an effort value that is no level at all", function()
+      assert.is_nil(
+        body_for({ prompt = "p", model = "claude-haiku-5-5", effort = "hihg" }).output_config
       )
     end)
 

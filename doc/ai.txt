@@ -182,8 +182,8 @@ DEFAULTS.lua` is the source of truth. >lua
       trigger = "manual",        -- "manual"|"auto"
       idle_ms = 500,              -- auto-mode idle debounce
       max_context_lines = 60,
-      max_tokens = 512,            -- cut-off answers are discarded
-      effort = "low",              -- claude only, models that take it
+      max_tokens = 512,            -- claude only; cut-off answers are discarded
+      effort = "low",              -- claude only; false = none
       provider = false,            -- overrides `provider`, completion only; false = unset
       model = false,
       keymap = {
@@ -459,7 +459,7 @@ require("ai").ask({req}, {cb})
                             gemini and ollama, ignored by the others
     effort       string?    low, medium, high, xhigh or max; sent only by
                             claude, and only to a model that takes it
-    bulk       table?     run under the guard rails for unattended bulk
+    bulk         table?     run under the guard rails for unattended bulk
                             use, see |ai-bulk|; `ask` then returns a handle
 
   {cb} is called as `cb(ok, res_or_err)`: `res_or_err` is an `Ai.Response`

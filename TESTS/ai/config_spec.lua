@@ -126,6 +126,23 @@ describe("ai.config", function()
       assert.is_true(second[1]:find("provider_order", 1, true) ~= nil)
     end)
 
+    for _, bad in ipairs({ 0, -5, 1.5, "512", math.huge }) do
+      it("drops completion.max_tokens = " .. tostring(bad) .. " to the default", function()
+        local config = require("ai.config")
+        local cfg = config.setup({ completion = { max_tokens = bad } })
+        assert.are.equal(512, cfg.completion.max_tokens)
+        assert.are.equal(1, #config.issues())
+        assert.is_true(config.issues()[1]:find("completion.max_tokens", 1, true) ~= nil)
+      end)
+    end
+
+    it("takes completion.effort = false (no effort sent) without an issue", function()
+      local config = require("ai.config")
+      local cfg = config.setup({ completion = { effort = false } })
+      assert.are.equal(false, cfg.completion.effort)
+      assert.are.equal(0, #config.issues())
+    end)
+
     it(
       "drops an unrecognized completion.trigger to the default instead of a silent typo",
       function()
