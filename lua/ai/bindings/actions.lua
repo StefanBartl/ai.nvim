@@ -146,6 +146,11 @@ local function run_edit(system, prompt, range, apply)
     -- not just a deleted-buffer crash).
     local changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
     local notify = require("lib.nvim.notify").create("[ai]")
+    -- a read-only buffer can never take the answer: say so before the request, not after a round-trip
+    if not vim.bo[bufnr].modifiable then
+      notify.error("This buffer is not modifiable -- nothing was sent")
+      return
+    end
     local progress = require("lib.nvim.progress").create({ title = "[ai]" })
     require("ai").ask({
       prompt = block .. "\n\nTask: " .. task,
@@ -185,7 +190,9 @@ local function run_edit(system, prompt, range, apply)
       -- buffer (help, a viewer, a plugin's scratch) makes `nvim_buf_set_lines` raise
       local applied, apply_err = pcall(apply, bufnr, line1, line2, new_lines)
       if not applied then
-        notify.error("Could not write the answer into the buffer: " .. tostring(apply_err))
+        -- the API error arrives with the closure's `file:line:` in front: not for the user's eyes
+        local reason = tostring(apply_err):gsub("^.-:%d+: ", "", 1)
+        notify.error("Could not write the answer into the buffer: " .. reason)
       end
     end)
   end
