@@ -115,6 +115,17 @@ describe("ai.config", function()
       assert.is_true(config.issues()[1]:find("provider_order", 1, true) ~= nil)
     end)
 
+    it("hands out a copy of the issues: changing it does not change the next answer", function()
+      local config = require("ai.config")
+      config.setup({ provider_order = "claude" })
+      local first = config.issues()
+      table.insert(first, "injected")
+      first[1] = "overwritten"
+      local second = config.issues()
+      assert.are.equal(1, #second)
+      assert.is_true(second[1]:find("provider_order", 1, true) ~= nil)
+    end)
+
     it(
       "drops an unrecognized completion.trigger to the default instead of a silent typo",
       function()
