@@ -10,9 +10,6 @@ local DEFAULTS = require("ai.config.DEFAULTS")
 
 local M = {}
 
----@type Ai.Config|nil
-local _active = nil
-
 ---@internal
 ---Full dotted paths whose sub-table has an intentionally open-ended shape --
 ---arbitrary user data, not a fixed set of options -- and must not be checked
@@ -410,6 +407,19 @@ local function normalize_switch_groups(opts, issues)
   end
 end
 
+---The merge: a fresh copy of `DEFAULTS` on every `setup()`, sharing no table with it. The checks
+---(unknown keys, `VALUE_SCHEMA`, the fail-closed tables) are `setup()`'s own pipeline below and
+---run before the merge, so to the schema `lib.lua.config` infers from `DEFAULTS` every option is
+---open; what stays unknown at the top level after the pipeline is warned about by it already.
+local ANY = "boolean|number|string|table|function"
+---@type table<string, string>
+local SCHEMA = {}
+for key in pairs(DEFAULTS) do
+  SCHEMA[key] = ANY
+end
+
+local cfg = require("lib.lua.config").new(DEFAULTS, { name = "ai", schema = SCHEMA })
+
 ---Merge user options over the defaults and store the result. `user_opts` is
 ---typed loosely (`Ai.Config|table`, not a strict `Ai.Config`) because a
 ---caller legitimately passes a partial table (e.g. `{ ui = { panel_theme = "double" } }`)
@@ -435,8 +445,8 @@ function M.setup(user_opts)
   sanitize_values(user_opts, "", _issues)
   close_unknown_keys(user_opts, _issues)
   close_misspelt_policy(user_opts, _issues)
-  _active = vim.tbl_deep_extend("force", vim.deepcopy(DEFAULTS), user_opts)
-  return _active
+  cfg.setup(user_opts)
+  return cfg.get()
 end
 
 ---Config values from the last `setup()` call that failed their `VALUE_SCHEMA`
@@ -455,10 +465,7 @@ end
 ---call sites don't need to reach for direct mutation themselves).
 ---@return Ai.Config
 function M.get()
-  if _active == nil then
-    _active = vim.deepcopy(DEFAULTS)
-  end
-  return _active
+  return cfg.get()
 end
 
 ---Switch the active provider id directly, without a full `setup()` merge --
