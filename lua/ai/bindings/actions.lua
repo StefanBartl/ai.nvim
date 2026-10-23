@@ -390,8 +390,14 @@ function M.info()
   local policy = require("ai.policy")
 
   local active, def = require("ai.config").agent()
+  -- `auto` alone does not say where a request goes: name the provider it resolves to right now
+  local shown = cfg.provider
+  if shown == "auto" then
+    local ok, chosen = pcall(providers.resolve, "auto", cfg.provider_order, {})
+    shown = ("auto (-> %s)"):format(ok and chosen and chosen.id or "none available")
+  end
   local lines = {
-    "provider: " .. cfg.provider,
+    "provider: " .. shown,
     "agent: " .. (active and describe_agent(active, def) or "none"),
     "provider_order: " .. table.concat(cfg.provider_order, ", "),
     "policy: " .. policy.describe(),

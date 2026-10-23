@@ -10,7 +10,7 @@
 :Ai agent [<name>|none]          -- switch the active agent (a named provider, model and system prompt from config.agents) for this session; no argument shows it, none clears it
 :Ai key [<profile>|reset] [<provider>] -- choose the API-key profile for this session (config.keys); no argument shows the setup
 :Ai stop                          -- stop every running stream (the panels' requests); a one-shot ask or an edit has no handle and runs to its end
-:Ai info                          -- active provider and agent, resolution order, provider policy, the bulk session cap and grants, per-provider availability and capabilities (and the gateway host under claude-cli while ANTHROPIC_BASE_URL is set)
+:Ai info                          -- active provider (with `provider = "auto"`: the one it resolves to, `auto (-> claude)`) and agent, resolution order, provider policy, the bulk session cap and grants, per-provider availability and capabilities (and the gateway host under claude-cli while ANTHROPIC_BASE_URL is set)
 ```
 
 Bare `:Ai [prompt?]` is the same as `:Ai ask [prompt?]`.
