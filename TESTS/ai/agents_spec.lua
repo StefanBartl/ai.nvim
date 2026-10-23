@@ -118,6 +118,13 @@ describe("ai agents", function()
       end
     )
 
+    it("an agent named `none` is dropped (`:Ai agent none` clears the agent)", function()
+      local config = require("ai.config")
+      config.setup({ agents = { none = { provider = "fake" } } })
+      assert.are.same({}, config.get().agents)
+      assert.is_truthy(config.issues()[1]:find("none", 1, true))
+    end)
+
     it("a non-string agent is dropped to the default", function()
       local config = require("ai.config")
       config.setup({ agent = 5 })

@@ -438,6 +438,8 @@ local function check_agents(opts, issues)
       local problem
       if type(name) ~= "string" or name == "" or name:find("%s") then
         problem = "the name must be a non-empty string without whitespace"
+      elseif name == "none" then
+        problem = '"none" is the word that clears the active agent, it cannot name one'
       elseif type(def) ~= "table" then
         problem = "must be a table { provider, model, system }"
       else
