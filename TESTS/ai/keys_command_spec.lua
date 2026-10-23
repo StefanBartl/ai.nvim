@@ -266,6 +266,14 @@ describe("ai.keys command source", function()
         assert.are.equal(3, runs())
       end)
 
+      it("reset() ends the wait as well", function()
+        local keys = setup({ command = fake("os.exit(3)") })
+        fetch(keys)
+        keys.reset("claude")
+        fetch(keys)
+        assert.are.equal(2, runs())
+      end)
+
       it("a success is cached as before and clears the failure", function()
         local flag = dir .. "/ok.flag"
         local keys = setup({

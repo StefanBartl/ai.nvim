@@ -89,6 +89,16 @@ local command_failed = {}
 ---@type integer
 M.NEGATIVE_MS = 4000
 
+---End the wait after a failed command source (all, or only `only`'s provider).
+---@param only? string provider id
+local function forget_failed(only)
+  for key in pairs(command_failed) do
+    if not only or vim.startswith(key, only .. "\0") then
+      command_failed[key] = nil
+    end
+  end
+end
+
 ---Callbacks waiting for a command run that is already under way.
 ---@type table<string, fun(ok: boolean, err: LibErrorValue|nil)[]>
 local inflight = {}
@@ -657,11 +667,7 @@ function M.use(name, only)
       selected[id] = name
       switched[#switched + 1] = id
       -- whoever switches profile has probably just unlocked the vault: no waiting for the last failure to age out
-      for key in pairs(command_failed) do
-        if vim.startswith(key, id .. "\0") then
-          command_failed[key] = nil
-        end
-      end
+      forget_failed(id)
     end
   end
   return switched
@@ -677,6 +683,7 @@ function M.reset(only)
   else
     selected = {}
   end
+  forget_failed(only)
 end
 
 ---What is wrong with a key file, as text without the path or the content, or
