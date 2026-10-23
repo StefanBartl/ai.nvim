@@ -228,10 +228,60 @@ describe("ai.keys command source", function()
         assert.is_nil(dump:find("leaked", 1, true))
         assert.is_nil(keys.get("claude", "ANTHROPIC_API_KEY"))
         assert.is_truthy(keys.describe("claude"):find("KEY MISSING: exited with code 3", 1, true))
-        -- A failure is not cached: the next request runs the command again.
+        -- A failure is no key: the next request still has to fetch (and gets the answer, see below).
         assert.is_true(keys.needs_fetch("claude"))
       end
     )
+
+    describe("a failed source is not run again at once", function()
+      it("the second request within the window starts no process and says why", function()
+        local keys = setup({ command = fake("os.exit(3)") })
+        local ok = fetch(keys)
+        assert.is_false(ok)
+        assert.are.equal(1, runs())
+        local ok2, err2 = fetch(keys)
+        assert.is_false(ok2)
+        assert.are.equal("missing_api_key", err2.kind)
+        assert.is_truthy(err2.message:find("exited with code 3", 1, true))
+        assert.is_truthy(err2.message:find("not run again", 1, true))
+        assert.are.equal(1, runs())
+      end)
+
+      it("runs again once the window is over", function()
+        local keys = setup({ command = fake("os.exit(3)") })
+        keys.NEGATIVE_MS = 0
+        fetch(keys)
+        fetch(keys)
+        assert.are.equal(2, runs())
+      end)
+
+      it("forget() and switching the profile end the wait at once", function()
+        local keys = setup({ command = fake("os.exit(3)") })
+        fetch(keys)
+        keys.forget("claude")
+        fetch(keys)
+        assert.are.equal(2, runs())
+        keys.use("firma")
+        fetch(keys)
+        assert.are.equal(3, runs())
+      end)
+
+      it("a success is cached as before and clears the failure", function()
+        local flag = dir .. "/ok.flag"
+        local keys = setup({
+          command = fake(
+            ("local f = io.open(%q); if f then f:close(); io.write('k1') else os.exit(2) end"):format(
+              flag
+            )
+          ),
+        })
+        assert.is_false((fetch(keys)))
+        keys.forget()
+        write_file("ok.flag", "x")
+        assert.is_true((fetch(keys)))
+        assert.are.equal("k1", keys.get("claude", "ANTHROPIC_API_KEY"))
+      end)
+    end)
 
     it("a command that hangs is killed after timeout_ms", function()
       local keys = setup({

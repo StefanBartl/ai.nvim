@@ -79,6 +79,16 @@ local command_cache = {}
 ---@type table<string, string>
 local command_failure = {}
 
+---When, and why, a command source failed last: a request within `M.NEGATIVE_MS` of it gets the same answer without
+---a new run. A key command that asks for a password (`pass`, `gpg`, `op`) must not be started again by every request
+---while the vault is locked or the prompt was cancelled.
+---@type table<string, { at: integer, reason: string }>
+local command_failed = {}
+
+---How long a failed command source is not run again (ms). `:Ai key <profile>`, `forget()` and a success end it.
+---@type integer
+M.NEGATIVE_MS = 4000
+
 ---Callbacks waiting for a command run that is already under way.
 ---@type table<string, fun(ok: boolean, err: LibErrorValue|nil)[]>
 local inflight = {}
@@ -439,6 +449,21 @@ function M.fetch(id, cb)
     waiting[#waiting + 1] = once
     return cancel
   end
+  local failed = command_failed[key]
+  if failed and vim.uv.now() - failed.at < M.NEGATIVE_MS then
+    -- the same answer as the run that failed, without running the command again
+    vim.schedule(function()
+      once(
+        false,
+        command_error(
+          id,
+          name,
+          ("%s; not run again for %d s"):format(failed.reason, math.ceil(M.NEGATIVE_MS / 1000))
+        )
+      )
+    end)
+    return cancel
+  end
   inflight[key] = { once }
 
   local function finish(value, reason)
@@ -447,12 +472,14 @@ function M.fetch(id, cb)
     if value then
       command_cache[key] = { value = value, at = vim.uv.now() }
       command_failure[key] = nil
+      command_failed[key] = nil
       for _, waiter in ipairs(waiters) do
         waiter(true)
       end
     else
       command_cache[key] = nil
       command_failure[key] = reason
+      command_failed[key] = { at = vim.uv.now(), reason = reason }
       for _, waiter in ipairs(waiters) do
         waiter(false, command_error(id, name, reason))
       end
@@ -507,7 +534,7 @@ end
 ---@param only? string provider id
 ---@return nil
 function M.forget(only)
-  for _, tbl in ipairs({ command_cache, command_failure }) do
+  for _, tbl in ipairs({ command_cache, command_failure, command_failed }) do
     for key in pairs(tbl) do
       if not only or vim.startswith(key, only .. "\0") then
         tbl[key] = nil
@@ -629,6 +656,12 @@ function M.use(name, only)
     if (not only or only == id) and profile_spec(id, name) then
       selected[id] = name
       switched[#switched + 1] = id
+      -- whoever switches profile has probably just unlocked the vault: no waiting for the last failure to age out
+      for key in pairs(command_failed) do
+        if vim.startswith(key, id .. "\0") then
+          command_failed[key] = nil
+        end
+      end
     end
   end
   return switched

@@ -369,7 +369,9 @@ store, instead of a variable or a file:
   `provider = "auto"` and `:Ai info` never start it; it runs when a request is
   made. `:checkhealth ai` only checks that the executable exists.
 - **Cached in memory, never written.** The key lives in memory for `cache_ms`
-  (at least one second; default the whole session). A failed run is not cached.
+  (at least one second; default the whole session). A failed run caches no key, but
+  it is not started again for 4 seconds: requests in that time get the same error ("not run
+  again") instead of another password prompt. `:Ai key <profile>` and a success end the wait.
   Requests that arrive while it runs share one run. A per-request `api_key` skips
   the command.
 - **First non-empty line of stdout is the key.** stderr is discarded. An error
