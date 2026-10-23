@@ -95,7 +95,10 @@ configured model against `lua/ai/providers/models.lua`'s per-provider
 registry (Claude, Gemini, OpenAI) and warns about one it doesn't recognize.
 `ollama`/`loomai` are deliberately exempt -- both run whatever local model
 the user has pulled or loaded, so there is no fixed catalogue to check
-against; any model id is accepted for them. See
+against; any model id is accepted for them. loomAI picks its backend by the
+model name: `claude-`, `gpt-` and `gemini-` go to that cloud, everything else
+(and no model) to Ollama. A refused connection for such a request says so
+("loomAI sends this to Ollama - is it running?"). See
 [health.md](health.md#configuration).
 
 ## Inline completion

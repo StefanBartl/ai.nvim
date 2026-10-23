@@ -83,6 +83,44 @@ local function error_message(err)
   return tostring(err)
 end
 
+---Model-name prefixes loomAI sends to a cloud backend; anything else (and no model at all) goes to Ollama.
+local CLOUD_PREFIXES = { "claude-", "gpt-", "gemini-" }
+
+---Which backend loomAI picks for `model`: `"ollama"` for no model or a name without a cloud prefix, else the prefix.
+---@param model any
+---@return string backend
+function M.backend_of(model)
+  if type(model) == "string" then
+    for _, prefix in ipairs(CLOUD_PREFIXES) do
+      if vim.startswith(model, prefix) then
+        return prefix:sub(1, -2)
+      end
+    end
+  end
+  return "ollama"
+end
+
+---A connection failure of a request that loomAI would have sent to Ollama says so: an Ollama that is not running is
+---the likely cause, and the plain "could not connect" never names it.
+---@param err LibErrorValue
+---@param req Ai.Request
+---@return LibErrorValue
+local function with_backend(err, req)
+  if type(err) ~= "table" or err.kind ~= "network_error" or M.backend_of(req.model) ~= "ollama" then
+    return err
+  end
+  local model = type(req.model) == "string" and req.model ~= "" and ("model '%s'"):format(req.model)
+    or "no model"
+  return lib_error.new(
+    "network_error",
+    ("%s (%s: loomAI sends this to Ollama - is it running? A claude-, gpt- or gemini- model in config.model.loomai goes to that cloud backend)"):format(
+      err.message,
+      model
+    ),
+    err.data
+  )
+end
+
 ---@internal
 ---@param req Ai.Request
 ---@return string json
@@ -112,7 +150,7 @@ function M.ask(req, cb)
     timeout_ms = timeout_ms,
   }, function(ok, data, obj)
     if not ok then
-      cb(false, util.fetch_error("loomai", data, obj, timeout_ms))
+      cb(false, with_backend(util.fetch_error("loomai", data, obj, timeout_ms), req))
       return
     end
     -- curl exits 0 regardless of HTTP status (see fetch_json's own doc), so
@@ -138,7 +176,7 @@ function M.ask(req, cb)
     })
   end)
   if prepare_err then
-    cb(false, lib_error.new("network_error", "loomai: " .. prepare_err))
+    cb(false, with_backend(lib_error.new("network_error", "loomai: " .. prepare_err), req))
   end
 end
 
@@ -203,7 +241,7 @@ function M.stream(req, handlers)
       end
       if obj.code ~= 0 then
         if handlers.on_error then
-          handlers.on_error(util.curl_exit_error("loomai", obj, timeout_ms))
+          handlers.on_error(with_backend(util.curl_exit_error("loomai", obj, timeout_ms), req))
         end
         return
       end
@@ -224,7 +262,7 @@ function M.stream(req, handlers)
     on_error = function(err)
       failed = true
       if handlers.on_error then
-        handlers.on_error(lib_error.new("network_error", err))
+        handlers.on_error(with_backend(lib_error.new("network_error", err), req))
       end
     end,
   })
@@ -232,7 +270,7 @@ function M.stream(req, handlers)
   -- See claude.lua: a body that never reached curl fires none of the
   -- handlers above, so it has to be reported here.
   if prepare_err and handlers.on_error then
-    handlers.on_error(lib_error.new("network_error", "loomai: " .. prepare_err))
+    handlers.on_error(with_backend(lib_error.new("network_error", "loomai: " .. prepare_err), req))
   end
   return process
 end

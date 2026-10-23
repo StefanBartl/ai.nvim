@@ -175,6 +175,55 @@ describe("ai.providers.loomai", function()
       assert.are.equal("network_error", err.kind)
     end)
 
+    it("a refused connection for a request that goes to Ollama says so", function()
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_stream = function(_, _, handlers)
+          handlers.on_done({ code = 7, signal = 0, stdout = "", stderr = "connection refused" })
+        end,
+      }
+      local loomai = require("ai.providers.loomai")
+      local err
+      loomai.stream({ prompt = "hi" }, {
+        on_error = function(e)
+          err = e
+        end,
+      })
+      assert.is_truthy(err.message:find("sends this to Ollama", 1, true))
+      assert.is_truthy(err.message:find("no model", 1, true))
+      loomai.stream({ prompt = "hi", model = "llama3" }, {
+        on_error = function(e)
+          err = e
+        end,
+      })
+      assert.is_truthy(err.message:find("model 'llama3'", 1, true))
+    end)
+
+    it("a refused connection for a cloud model does not blame Ollama", function()
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_stream = function(_, _, handlers)
+          handlers.on_done({ code = 7, signal = 0, stdout = "", stderr = "connection refused" })
+        end,
+      }
+      local loomai = require("ai.providers.loomai")
+      local err
+      loomai.stream({ prompt = "hi", model = "claude-sonnet-5-5" }, {
+        on_error = function(e)
+          err = e
+        end,
+      })
+      assert.are.equal("network_error", err.kind)
+      assert.is_nil(err.message:find("Ollama", 1, true))
+    end)
+
+    it("backend_of() follows loomAI's routing by model prefix", function()
+      local loomai = require("ai.providers.loomai")
+      assert.are.equal("ollama", loomai.backend_of(nil))
+      assert.are.equal("ollama", loomai.backend_of("llama3"))
+      assert.are.equal("claude", loomai.backend_of("claude-opus-5-5"))
+      assert.are.equal("gpt", loomai.backend_of("gpt-5"))
+      assert.are.equal("gemini", loomai.backend_of("gemini-2"))
+    end)
+
     it("does not also call on_done after a transport-level on_error fires", function()
       -- See claude.lua's identical test: fetch_stream's on_error can fire
       -- independently of the process exit callback, and on_done must not
