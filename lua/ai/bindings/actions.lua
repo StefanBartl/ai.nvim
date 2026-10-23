@@ -296,6 +296,91 @@ function M.stop()
   return cancelled
 end
 
+---@internal
+---One line for an agent: its name and what it sets.
+---@param name string
+---@param def Ai.Agent
+---@return string
+local function describe_agent(name, def)
+  local parts = {}
+  if def.provider then
+    parts[#parts + 1] = "provider=" .. def.provider
+  end
+  if def.model then
+    parts[#parts + 1] = "model=" .. def.model
+  end
+  if def.system then
+    parts[#parts + 1] = ("system=%d chars"):format(#def.system)
+  end
+  return ("%s (%s)"):format(name, #parts > 0 and table.concat(parts, ", ") or "no fields set")
+end
+
+---Switch the active agent for this session (`none` = no agent; no name shows
+---the active one). Nothing is written anywhere, like `set_provider`: the next
+---Neovim starts with `config.agent` again. An agent whose provider the policy
+---does not allow is switched to all the same, with a warning: the policy
+---refuses its requests, as it refuses any request for that provider.
+---@param name string|nil
+---@return nil
+function M.set_agent(name)
+  local config = require("ai.config")
+  local notify = require("lib.nvim.notify").create("[ai]")
+  local active, def = config.agent()
+  if name == nil or name == "" then
+    notify.info("agent: " .. (active and describe_agent(active, def) or "none"))
+    return
+  end
+  if name == "none" then
+    config.set_agent(false)
+    notify.info("agent: none")
+    return
+  end
+  local agents = config.get().agents or {}
+  local chosen = agents[name]
+  if not chosen then
+    local names = config.agent_names()
+    notify.warn(
+      ("unknown agent %q (configured: %s)"):format(
+        name,
+        #names > 0 and table.concat(names, ", ") or "none"
+      )
+    )
+    return
+  end
+  config.set_agent(name)
+  notify.info("agent: " .. describe_agent(name, chosen))
+  if chosen.provider and chosen.provider ~= "auto" then
+    local policy = require("ai.policy")
+    if not policy.is_allowed(chosen.provider) then
+      notify.warn(
+        ("provider '%s' of this agent is not on the allow-list (%s): its requests are refused"):format(
+          chosen.provider,
+          policy.describe()
+        )
+      )
+    end
+  end
+end
+
+---Switch to the next configured agent, in name order, wrapping around.
+---@return nil
+function M.next_agent()
+  local config = require("ai.config")
+  local names = config.agent_names()
+  if #names == 0 then
+    require("lib.nvim.notify").create("[ai]").warn("no agents configured (config.agents)")
+    return
+  end
+  local active = config.agent()
+  local at = 0
+  for i, name in ipairs(names) do
+    if name == active then
+      at = i
+    end
+  end
+  M.set_agent(names[at % #names + 1])
+end
+
 ---Show the active provider, the auto-resolution order, and per-provider
 ---availability -- never a key's actual value.
 ---@return nil
@@ -304,8 +389,10 @@ function M.info()
   local providers = require("ai.providers")
   local policy = require("ai.policy")
 
+  local active, def = require("ai.config").agent()
   local lines = {
     "provider: " .. cfg.provider,
+    "agent: " .. (active and describe_agent(active, def) or "none"),
     "provider_order: " .. table.concat(cfg.provider_order, ", "),
     "policy: " .. policy.describe(),
   }

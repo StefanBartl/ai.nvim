@@ -22,7 +22,7 @@ local M = {}
 ---single string) still gets checked normally.
 ---@type table<string, true>
 local OPEN_SHAPE_KEYS =
-  { model = true, provider_order = true, ["policy.allowed"] = true, keys = true }
+  { model = true, provider_order = true, ["policy.allowed"] = true, keys = true, agents = true }
 
 ---Tables in which an unknown key must not be ignored, each with what it
 ---refuses (`effect`) and the table that replaces it (`replace`) when one is
@@ -150,6 +150,8 @@ end
 ---@type table<string, string|string[]>
 local VALUE_SCHEMA = {
   provider_order = "string[]",
+  agents = "table",
+  agent = "string|false",
   policy = "table",
   ["policy.allowed"] = "string[]",
   timeout_ms = "number",
@@ -245,6 +247,9 @@ local function value_ok(kind, value)
       end
     end
     return true
+  end
+  if kind == "string|false" then
+    return value == false or type(value) == "string"
   end
   if kind == "integer>=1" then
     return type(value) == "number" and value >= 1 and value % 1 == 0 and value ~= math.huge
@@ -407,6 +412,66 @@ local function normalize_switch_groups(opts, issues)
   end
 end
 
+---The fields of one agent preset, and the type each must have.
+---@type table<string, string>
+local AGENT_FIELDS = { provider = "string", model = "string", system = "string" }
+
+---@internal
+---Check `opts.agents` and `opts.agent` of the caller's copy, in place: an agent
+---whose name is not a non-empty word, which is not a table, which has an
+---unknown field (`modell`) or a field of the wrong type is dropped, and an
+---`agent` that names no agent is reset to none. Each is recorded into `issues`
+---and warned about right away: a preset that was meant and silently does not
+---exist would send the next request to another provider than the one chosen.
+---@param opts table
+---@param issues string[]
+---@return nil
+local function check_agents(opts, issues)
+  local notify = require("lib.nvim.notify").create("[ai]")
+  local function report(issue)
+    issues[#issues + 1] = issue
+    notify.warn(issue)
+  end
+
+  if type(opts.agents) == "table" then
+    for name, def in pairs(opts.agents) do
+      local problem
+      if type(name) ~= "string" or name == "" or name:find("%s") then
+        problem = "the name must be a non-empty string without whitespace"
+      elseif type(def) ~= "table" then
+        problem = "must be a table { provider, model, system }"
+      else
+        for field, value in pairs(def) do
+          local kind = AGENT_FIELDS[field]
+          if not kind then
+            problem = ("unknown field %q (allowed: provider, model, system)"):format(
+              tostring(field)
+            )
+          elseif type(value) ~= kind or (kind == "string" and value == "") then
+            problem = ("%s must be a non-empty string"):format(field)
+          end
+          if problem then
+            break
+          end
+        end
+      end
+      if problem then
+        report(("agents.%s: %s -- the agent is dropped"):format(tostring(name), problem))
+        opts.agents[name] = nil
+      end
+    end
+  end
+
+  local agent = opts.agent
+  if type(agent) == "string" then
+    local agents = type(opts.agents) == "table" and opts.agents or {}
+    if agents[agent] == nil then
+      report(("agent: %q is not one of the configured agents -- no agent is active"):format(agent))
+      opts.agent = false
+    end
+  end
+end
+
 ---The merge: a fresh copy of `DEFAULTS` on every `setup()`, sharing no table with it. The checks
 ---(unknown keys, `VALUE_SCHEMA`, the fail-closed tables) are `setup()`'s own pipeline below and
 ---run before the merge, so to the schema `lib.lua.config` infers from `DEFAULTS` every option is
@@ -443,6 +508,7 @@ function M.setup(user_opts)
   normalize_switch_groups(user_opts, _issues)
   warn_unknown_keys(user_opts, DEFAULTS, "")
   sanitize_values(user_opts, "", _issues)
+  check_agents(user_opts, _issues)
   close_unknown_keys(user_opts, _issues)
   close_misspelt_policy(user_opts, _issues)
   cfg.setup(user_opts)
@@ -477,6 +543,42 @@ end
 ---@return nil
 function M.set_provider(id)
   M.get().provider = id
+end
+
+---The active agent: its name and its preset, or `nil` when none is active (or
+---the active one no longer exists).
+---@return string|nil name
+---@return Ai.Agent|nil agent
+function M.agent()
+  local c = M.get()
+  local name = c.agent
+  if type(name) ~= "string" then
+    return nil, nil
+  end
+  local def = c.agents and c.agents[name]
+  if not def then
+    return nil, nil
+  end
+  return name, def
+end
+
+---Names of the configured agents, sorted.
+---@return string[]
+function M.agent_names()
+  local names = {}
+  for name in pairs(M.get().agents or {}) do
+    names[#names + 1] = name
+  end
+  table.sort(names)
+  return names
+end
+
+---Make `name` the active agent for this session; `false` or `nil` switches to
+---none. The name is trusted to exist, like `set_provider`: the callers check.
+---@param name string|false|nil
+---@return nil
+function M.set_agent(name)
+  M.get().agent = name or false
 end
 
 return M

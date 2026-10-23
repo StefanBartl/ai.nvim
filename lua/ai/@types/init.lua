@@ -3,12 +3,20 @@
 --- Type declarations for ai.nvim's configuration, requests and provider
 --- interface.
 
+---One agent preset: what a request uses for the fields it does not set itself.
+---@class Ai.Agent
+---@field provider? string Provider id (or `"auto"`); the request's own `provider` wins
+---@field model? string Model for that provider; used only when the resolved provider is the agent's own (or the agent names none)
+---@field system? string System prompt; a request that sets `system` itself (edits do) keeps its own
+
 ---@class Ai.Config
 ---@field provider? string Active provider id, or `"auto"` (default) to pick the first available id in `provider_order`
 ---@field provider_order? string[] `"auto"` resolution order (default `{"claude","ollama","openai","gemini","loomai"}`) -- `"loomai"` is last since it needs a local server the user must run themselves; see `ai.providers`'s module doc
 ---@field policy? Ai.PolicyOptions Which providers this machine may use at all (`lua/ai/policy.lua`)
 ---@field keys? table<string, Ai.KeyProvider> Named API-key profiles per provider id (`lua/ai/keys.lua`); empty (default) = each provider reads its own environment variable
 ---@field model? table<string, string> Default model per provider id, e.g. `{ claude = "claude-opus-4-5" }`
+---@field agents? table<string, Ai.Agent> Named presets of provider, model and system prompt (default `{}`); see `:Ai agent`
+---@field agent? string|false Name of the active agent from `agents`, `false` (default) = none; changed for the session by `:Ai agent`
 ---@field timeout_ms? integer Request timeout in ms, passed through to lib.nvim.net.curl (default 60000)
 ---@field bulk? Ai.BulkConfig Guard rails for unattended bulk requests (`lua/ai/bulk.lua`)
 ---@field ui? Ai.UiOptions

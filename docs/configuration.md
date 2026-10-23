@@ -12,6 +12,8 @@ require("ai").setup({
   },
   keys = {},                                  -- named API-key profiles per provider; empty = each provider's own variable, see "Key profiles"
   model = {},                                 -- e.g. { claude = "claude-opus-4-5" } -- not validated here, see "Model ids" below
+  agents = {},                                -- named presets { name = { provider, model, system } }, see "Agents" below
+  agent = false,                              -- the agent active at startup, a name from agents; false = none
   timeout_ms = 60000,
 
   bulk = {
@@ -133,6 +135,45 @@ provider whose `available()` is true -- a cheap, synchronous check (an
 executable on `PATH` and/or an env var set), never a network round trip.
 Set `provider` to an explicit id to always use one provider; `:Ai provider
 <name>` switches it at runtime, and `:Ai provider auto` returns to the walk.
+
+## Agents
+
+An agent is a named preset of provider, model and system prompt, so one
+keystroke swaps "the careful reviewer on Claude" for "the quick local
+model" without three separate settings:
+
+```lua
+-- two more keys of the setup() block above
+agents = {
+  review = { provider = "claude", model = "claude-opus-4-5", system = "You review code. Be strict." },
+  quick = { provider = "ollama", model = "llama3" },
+  terse = { system = "Answer in one sentence." }, -- keeps the configured provider and model
+},
+agent = "review", -- active at startup; false = none
+```
+
+Every field is optional. `:Ai agent <name>` (Tab-completes the names, plus
+`none`) or `<leader>an` (the next agent, in name order) switches the agent
+**for this Neovim session only**: nothing is written anywhere, the next
+start begins with `config.agent` again, exactly like `:Ai provider` and
+`:Ai key`. `:Ai info` shows the active agent.
+
+What a request resolves, per field: the request's own value wins, then the
+agent's, then the configuration's. So a request that names `provider`,
+`model` or `system` itself keeps it -- the in-place edits (`rewrite`,
+`append`, `prepend`) bring their own system prompt and so keep it. The
+agent's `model` belongs to the agent's `provider`: a request that moves to
+another provider does not inherit it. An agent without a `provider` uses the
+configured one, and its `model` applies to whichever provider that resolves
+to. The agent's provider goes through the provider policy like any other
+request for it (see "Provider policy"): one outside `policy.allowed` is
+refused, and `:Ai agent` warns when it switches to such an agent.
+
+A misconfigured agent is a config error, not a silent default: an agent with
+an unknown field (`modell`), a field of the wrong type or a name with
+whitespace is dropped, and `agent = "x"` for an `x` that does not exist
+leaves no agent active -- each is warned about at `setup()` and listed by
+`:checkhealth ai`.
 
 ## OpenAI-compatible endpoints
 

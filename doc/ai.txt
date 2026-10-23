@@ -140,6 +140,8 @@ DEFAULTS.lua` is the source of truth. >lua
     },
     keys = {},                                -- named API-key profiles per provider; empty = each provider's own variable
     model = {},                               -- e.g. { claude = "claude-opus-4-5" }
+    agents = {},                              -- named presets { name = { provider, model, system } }, see |:Ai-agent|
+    agent = false,                            -- the agent active at startup, a name from agents; false = none
     timeout_ms = 60000,
 
     bulk = {
@@ -320,6 +322,22 @@ MISSING: reason".
   ids and `auto`. A provider outside `policy.allowed` (|ai-policy|) asks
   first; a yes allows it for this session only.
 
+:Ai agent [{name}|none]                                          *:Ai-agent*
+  Switch the active agent for this session: a named preset of provider,
+  model and system prompt from `config.agents`. `<Tab>`-completes the names
+  and `none`; no argument shows the active agent. Nothing is written, the
+  next start begins with `config.agent` again. Per field, a request's own
+  value wins over the agent's, which wins over the configuration's; the
+  agent's `model` is used only with the agent's own provider. The agent's
+  provider is subject to |ai-policy| like any request for it.
+  Configure: >lua
+    agents = {
+      review = { provider = "claude", model = "claude-opus-4-5", system = "You review code." },
+      terse = { system = "Answer in one sentence." },
+    },
+    agent = "review",
+<
+
 :Ai key [{profile}|reset] [{provider}]                              *:Ai-key*
   Choose the API-key profile (|ai-keys|) for this session on every provider
   that defines it, or only on {provider}. `reset` returns to the configured
@@ -332,7 +350,7 @@ MISSING: reason".
   nothing was stopped.
 
 :Ai info                                                          *:Ai-info*
-  Show the active provider, resolution order, the provider policy, and
+  Show the active provider and agent, resolution order, the provider policy, and
   per-provider availability (providers outside the allow-list are marked).
   While `ANTHROPIC_BASE_URL` is set, a line under `claude-cli` names the host
   the CLI will talk to (the host only; it can be a company gateway).
@@ -361,6 +379,7 @@ default `<leader>a`) and are individually overridable/disableable via
                                    line/selection
   n, v  <leader>ae     explain    Explain the current context in a small
                                    badge, no panel
+  n     <leader>an     agent      Switch to the next agent (config.agents)
   n     <leader>ax     stop       Stop every running stream
 
 rewrite/append/prepend act on whole lines (see |:Ai-rewrite|): a charwise

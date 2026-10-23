@@ -38,6 +38,21 @@ local DEFAULTS = {
   -- means each provider module's own built-in default.
   model = {},
 
+  -- Named presets of provider, model and system prompt that `:Ai agent <name>`
+  -- switches between. Empty means no preset: every request resolves its
+  -- provider, model and system prompt as before. Shape:
+  --   agents = {
+  --     review = { provider = "claude", model = "claude-opus-4-5", system = "You review code." },
+  --     local_ = { provider = "ollama", model = "llama3" },
+  --   }
+  -- Every field is optional; a field a request sets itself always wins.
+  agents = {},
+
+  -- The agent that is active at startup, a name from `agents`; `false` is none.
+  -- `:Ai agent <name>` changes it for the running session only (nothing is
+  -- persisted, like `:Ai provider`).
+  agent = false,
+
   timeout_ms = 60000,
 
   -- Guard rails for unattended bulk requests (`req.bulk`, see lua/ai/bulk.lua).

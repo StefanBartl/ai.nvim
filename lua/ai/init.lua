@@ -161,7 +161,11 @@ end
 ---provider resolution itself failed (`err` is what matters then, not this)
 local function resolve(req)
   local cfg = M.config()
-  local requested = req.provider or cfg.provider or "auto"
+  -- The active agent (`:Ai agent`) fills in what the request leaves open: a
+  -- field the request sets itself always wins.
+  local _, agent = require("ai.config").agent()
+  agent = agent or {}
+  local requested = req.provider or agent.provider or cfg.provider or "auto"
   local provider, err = providers.resolve(requested, cfg.provider_order, req)
   if not provider then
     return nil, err, req, nil
@@ -170,7 +174,20 @@ local function resolve(req)
   local resolved = vim.tbl_extend("force", {}, req)
   resolved.provider = provider.id
   resolved.timeout_ms = resolved.timeout_ms or cfg.timeout_ms
-  resolved.model = resolved.model or cfg.model[provider.id]
+  -- The agent's model belongs to the agent's provider: when the request moved
+  -- to another one, that name means nothing there.
+  local agent_model = nil
+  if agent.model then
+    if agent.provider and agent.provider ~= "auto" then
+      if provider.id == agent.provider then
+        agent_model = agent.model
+      end
+    elseif req.provider == nil then
+      agent_model = agent.model
+    end
+  end
+  resolved.model = resolved.model or agent_model or cfg.model[provider.id]
+  resolved.system = resolved.system or agent.system
   local prompt, context_errors = build_prompt(resolved)
   resolved.prompt = prompt
 

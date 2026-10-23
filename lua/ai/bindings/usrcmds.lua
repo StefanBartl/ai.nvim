@@ -50,6 +50,9 @@ function M.setup()
     end
   end
 
+  -- Same registration-time snapshot for the agent names of `config.agents`.
+  local agent_choices = vim.list_extend({ "none" }, require("ai.config").agent_names())
+
   composer.verb("Ai", {
     desc = "Ask or stream a prompt to the active AI provider",
     -- Command-level, not per-route (composer's own rule): every route below
@@ -122,6 +125,24 @@ function M.setup()
         run = function(ctx)
           warn_if_ranged(ctx)
           actions.set_provider(ctx.args.name)
+        end,
+      },
+      {
+        path = { "agent" },
+        args = {
+          {
+            name = "name",
+            type = "STRING",
+            optional = true,
+            enum = agent_choices,
+            desc = "Agent to switch to; omit to show the active one",
+            enum_desc = { none = "No agent: provider, model and system prompt as configured" },
+          },
+        },
+        desc = "Switch the active agent (a named provider, model and system prompt) for this session",
+        run = function(ctx)
+          warn_if_ranged(ctx)
+          actions.set_agent(ctx.args.name)
         end,
       },
       {
