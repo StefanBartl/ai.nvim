@@ -680,10 +680,20 @@ describe("ai.policy", function()
       it("ignores a huge key without comparing it (120 kB)", function()
         local config = require("ai.config")
         local key = ("p"):rep(120000)
-        local t0 = vim.uv.hrtime()
-        config.setup({ [key] = true })
-        local ms = (vim.uv.hrtime() - t0) / 1e6
-        assert.is_true(ms < 1000, ("%d ms"):format(ms))
+        -- counted, not timed: a time limit measures the CI runner. `misspelt_policy` lower-cases a key only
+        -- after the length gate, so a long key reaching `lower` means it is about to be compared.
+        local lower = string.lower
+        local long_lowered = 0
+        string.lower = function(s, ...)
+          if type(s) == "string" and #s > 1000 then
+            long_lowered = long_lowered + 1
+          end
+          return lower(s, ...)
+        end
+        local ok, err = pcall(config.setup, { [key] = true })
+        string.lower = lower
+        assert.is_true(ok, tostring(err))
+        assert.are.equal(0, long_lowered)
         assert.is_false(require("ai.policy").restricted())
       end)
 
