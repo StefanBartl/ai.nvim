@@ -264,6 +264,16 @@ describe("ai.ui.panel", function()
     assert.are.equal("streaming...", progress_stub.updates[1].text)
   end)
 
+  it("append() sets the streaming status once per stream, not once per chunk", function()
+    local panel_mod = require("ai.ui.panel")
+    local panel = panel_mod.open({})
+    for _, chunk in ipairs({ "a", "b\nc", "d", "e" }) do
+      panel_mod.append(panel, chunk)
+    end
+    assert.are.equal(1, #progress_stub.updates)
+    assert.are.same({ "ab", "cde" }, panel.lines)
+  end)
+
   it("finish() stops the progress indicator and clears the process handle", function()
     local panel_mod = require("ai.ui.panel")
     local panel = panel_mod.open({})

@@ -13,6 +13,7 @@ local M = {}
 ---@class Ai.Ui.Panel
 ---@field surface Ui.Kit.Surface|nil
 ---@field progress Lib.Progress.Handle|nil
+---@field streaming_shown? boolean  The "streaming..." status was set (once per stream).
 ---@field process vim.SystemObj|nil
 ---@field lines string[]
 ---@field tail integer[]|nil {row, col} where the stream follow last put the cursor; `nil` before the first follow
@@ -143,7 +144,10 @@ function M.append(panel, delta)
   if delta == "" then
     return
   end
-  if panel.progress then
+  -- Once per stream: the text never changes, and a progress style that writes a message per update (the echo
+  -- style) would put one line per chunk into the message history.
+  if panel.progress and not panel.streaming_shown then
+    panel.streaming_shown = true
     panel.progress:update({ text = "streaming..." })
   end
   local pieces = vim.split(delta, "\n", { plain = true })
