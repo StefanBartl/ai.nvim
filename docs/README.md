@@ -10,6 +10,6 @@
 | [attachments.md](attachments.md) | Sending images/PDFs with a prompt, and which provider takes which |
 | [bulk.md](bulk.md) | Guard rails for unattended bulk requests: limits, policy, cancel, cost cap |
 | [BINDINGS.md](BINDINGS.md) | All keymaps, usercmds, autocmds in one table |
-| [scope.md](scope.md) | What ai.nvim does, and where the boundary with `loomAI` sits |
+| [scope.md](scope.md) | What ai.nvim does, and where the boundary with `ai-desktop` sits |
 | [architecture.md](architecture.md) | Why the transport/domain split, why providers are a registry |
 | [health.md](health.md) | What `:checkhealth ai` reports, line by line |

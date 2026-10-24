@@ -9,7 +9,7 @@
 --- something a health check can *report*, not a new failure mode at
 --- request time.
 ---
---- Local/self-hosted providers (`ollama`, `loomai`) run whatever model the
+--- Local/self-hosted providers (`ollama`, `ai_desktop`) run whatever model the
 --- user has pulled or already has loaded on their own machine -- there is
 --- no fixed catalogue to check that against, so both are deliberately left
 --- out of `M.KNOWN` and treated as always-valid (see `M.is_known`) rather
@@ -70,9 +70,9 @@ M.KNOWN = {
 ---catalogue -- see the module doc. Kept as an explicit set (not just "any
 ---id absent from `M.KNOWN`") so a future provider that *should* get a real
 ---catalogue but hasn't been filled in yet fails loudly in review/tests
----instead of silently behaving like `ollama`/`loomai`.
+---instead of silently behaving like `ollama`/`ai_desktop`.
 ---@type table<string, true>
-M.OPEN_ENDED = { ollama = true, loomai = true, ["claude-cli"] = true, copilot = true }
+M.OPEN_ENDED = { ollama = true, ai_desktop = true, ["claude-cli"] = true, copilot = true }
 
 ---Whether `provider_id` has a fixed catalogue at all in this registry.
 ---False for an open-ended (local) provider, and false for any id this

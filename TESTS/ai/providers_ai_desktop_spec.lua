@@ -1,17 +1,17 @@
 -- Same `package.loaded` stubbing approach as providers_claude_spec.lua --
 -- see that file's module doc for why the stub must land before each fresh
--- `require("ai.providers.loomai")`.
+-- `require("ai.providers.ai_desktop")`.
 --
 -- Same need-check-nil suppression reasoning as that file: the test body
 -- itself is the guard.
 ---@diagnostic disable: need-check-nil
-describe("ai.providers.loomai", function()
+describe("ai.providers.ai_desktop", function()
   local original_host
 
   before_each(function()
-    original_host = vim.env.LOOMAI_HOST
-    vim.env.LOOMAI_HOST = nil
-    package.loaded["ai.providers.loomai"] = nil
+    original_host = vim.env.AI_DESKTOP_HOST
+    vim.env.AI_DESKTOP_HOST = nil
+    package.loaded["ai.providers.ai_desktop"] = nil
     -- `ai.providers.transport` sits between this provider and
     -- `lib.nvim.net.curl` and captures `curl` as its own require-time
     -- upvalue too, so it has to be dropped alongside the provider --
@@ -20,9 +20,9 @@ describe("ai.providers.loomai", function()
   end)
 
   after_each(function()
-    vim.env.LOOMAI_HOST = original_host
+    vim.env.AI_DESKTOP_HOST = original_host
     package.loaded["lib.nvim.net.curl"] = nil
-    package.loaded["ai.providers.loomai"] = nil
+    package.loaded["ai.providers.ai_desktop"] = nil
     package.loaded["ai.providers.transport"] = nil
   end)
 
@@ -33,14 +33,14 @@ describe("ai.providers.loomai", function()
           cb(true, { text = "hello", usage = { total_tokens = 3 }, stop_reason = "end" })
         end,
       }
-      local loomai = require("ai.providers.loomai")
+      local ai_desktop = require("ai.providers.ai_desktop")
       local ok, res
-      loomai.ask({ prompt = "hi" }, function(a, b)
+      ai_desktop.ask({ prompt = "hi" }, function(a, b)
         ok, res = a, b
       end)
       assert.is_true(ok)
       assert.are.equal("hello", res.text)
-      assert.are.equal("loomai", res.provider)
+      assert.are.equal("ai_desktop", res.provider)
       assert.are.equal("end", res.stop_reason)
     end)
 
@@ -50,9 +50,9 @@ describe("ai.providers.loomai", function()
           cb(true, { error = { message = "queue full" } })
         end,
       }
-      local loomai = require("ai.providers.loomai")
+      local ai_desktop = require("ai.providers.ai_desktop")
       local ok, err
-      loomai.ask({ prompt = "hi" }, function(a, b)
+      ai_desktop.ask({ prompt = "hi" }, function(a, b)
         ok, err = a, b
       end)
       assert.is_false(ok)
@@ -61,7 +61,7 @@ describe("ai.providers.loomai", function()
     end)
 
     it("reports a bare string error as a failure too", function()
-      -- loomai.lua's own `data.error` check accepts either shape -- see the
+      -- ai_desktop.lua's own `data.error` check accepts either shape -- see the
       -- `type(data.error) == "table" and data.error.message or data.error`
       -- fallback in the source.
       package.loaded["lib.nvim.net.curl"] = {
@@ -69,9 +69,9 @@ describe("ai.providers.loomai", function()
           cb(true, { error = "malformed request" })
         end,
       }
-      local loomai = require("ai.providers.loomai")
+      local ai_desktop = require("ai.providers.ai_desktop")
       local ok, err
-      loomai.ask({ prompt = "hi" }, function(a, b)
+      ai_desktop.ask({ prompt = "hi" }, function(a, b)
         ok, err = a, b
       end)
       assert.is_false(ok)
@@ -85,10 +85,10 @@ describe("ai.providers.loomai", function()
           cb(true, 42, { code = 0 })
         end,
       }
-      local loomai = require("ai.providers.loomai")
+      local ai_desktop = require("ai.providers.ai_desktop")
       local ok, err
       local raised = not pcall(function()
-        loomai.ask({ prompt = "hi" }, function(a, b)
+        ai_desktop.ask({ prompt = "hi" }, function(a, b)
           ok, err = a, b
         end)
       end)
@@ -97,16 +97,16 @@ describe("ai.providers.loomai", function()
       assert.are.equal("invalid_response", err.kind)
     end)
 
-    it("rejects any attachment -- loomAI's /ask contract has no payload field for one", function()
+    it("rejects any attachment -- ai-desktop's /ask contract has no payload field for one", function()
       local called = false
       package.loaded["lib.nvim.net.curl"] = {
         fetch_json = function()
           called = true
         end,
       }
-      local loomai = require("ai.providers.loomai")
+      local ai_desktop = require("ai.providers.ai_desktop")
       local ok, err
-      loomai.ask({
+      ai_desktop.ask({
         prompt = "hi",
         attachments = { { kind = "image", media_type = "image/png", data = "AAA" } },
       }, function(a, b)
@@ -127,9 +127,9 @@ describe("ai.providers.loomai", function()
           handlers.on_done({ code = 0, signal = 0, stdout = "", stderr = "" })
         end,
       }
-      local loomai = require("ai.providers.loomai")
+      local ai_desktop = require("ai.providers.ai_desktop")
       local chunks, done_res = {}, nil
-      loomai.stream({ prompt = "hi" }, {
+      ai_desktop.stream({ prompt = "hi" }, {
         on_chunk = function(d)
           chunks[#chunks + 1] = d
         end,
@@ -148,9 +148,9 @@ describe("ai.providers.loomai", function()
           handlers.on_done({ code = 0, signal = 0, stdout = "", stderr = "" })
         end,
       }
-      local loomai = require("ai.providers.loomai")
+      local ai_desktop = require("ai.providers.ai_desktop")
       local err
-      loomai.stream({ prompt = "hi" }, {
+      ai_desktop.stream({ prompt = "hi" }, {
         on_error = function(e)
           err = e
         end,
@@ -165,9 +165,9 @@ describe("ai.providers.loomai", function()
           handlers.on_done({ code = 7, signal = 0, stdout = "", stderr = "connection refused" })
         end,
       }
-      local loomai = require("ai.providers.loomai")
+      local ai_desktop = require("ai.providers.ai_desktop")
       local err
-      loomai.stream({ prompt = "hi" }, {
+      ai_desktop.stream({ prompt = "hi" }, {
         on_error = function(e)
           err = e
         end,
@@ -181,16 +181,16 @@ describe("ai.providers.loomai", function()
           handlers.on_done({ code = 7, signal = 0, stdout = "", stderr = "connection refused" })
         end,
       }
-      local loomai = require("ai.providers.loomai")
+      local ai_desktop = require("ai.providers.ai_desktop")
       local err
-      loomai.stream({ prompt = "hi" }, {
+      ai_desktop.stream({ prompt = "hi" }, {
         on_error = function(e)
           err = e
         end,
       })
       assert.is_truthy(err.message:find("sends this to Ollama", 1, true))
       assert.is_truthy(err.message:find("no model", 1, true))
-      loomai.stream({ prompt = "hi", model = "llama3" }, {
+      ai_desktop.stream({ prompt = "hi", model = "llama3" }, {
         on_error = function(e)
           err = e
         end,
@@ -204,9 +204,9 @@ describe("ai.providers.loomai", function()
           handlers.on_done({ code = 7, signal = 0, stdout = "", stderr = "connection refused" })
         end,
       }
-      local loomai = require("ai.providers.loomai")
+      local ai_desktop = require("ai.providers.ai_desktop")
       local err
-      loomai.stream({ prompt = "hi", model = "claude-sonnet-5-5" }, {
+      ai_desktop.stream({ prompt = "hi", model = "claude-sonnet-5-5" }, {
         on_error = function(e)
           err = e
         end,
@@ -215,13 +215,13 @@ describe("ai.providers.loomai", function()
       assert.is_nil(err.message:find("Ollama", 1, true))
     end)
 
-    it("backend_of() follows loomAI's routing by model prefix", function()
-      local loomai = require("ai.providers.loomai")
-      assert.are.equal("ollama", loomai.backend_of(nil))
-      assert.are.equal("ollama", loomai.backend_of("llama3"))
-      assert.are.equal("claude", loomai.backend_of("claude-opus-5-5"))
-      assert.are.equal("gpt", loomai.backend_of("gpt-5"))
-      assert.are.equal("gemini", loomai.backend_of("gemini-2"))
+    it("backend_of() follows ai-desktop's routing by model prefix", function()
+      local ai_desktop = require("ai.providers.ai_desktop")
+      assert.are.equal("ollama", ai_desktop.backend_of(nil))
+      assert.are.equal("ollama", ai_desktop.backend_of("llama3"))
+      assert.are.equal("claude", ai_desktop.backend_of("claude-opus-5-5"))
+      assert.are.equal("gpt", ai_desktop.backend_of("gpt-5"))
+      assert.are.equal("gemini", ai_desktop.backend_of("gemini-2"))
     end)
 
     it("does not also call on_done after a transport-level on_error fires", function()
@@ -234,9 +234,9 @@ describe("ai.providers.loomai", function()
           handlers.on_done({ code = 0, signal = 0, stdout = "", stderr = "" })
         end,
       }
-      local loomai = require("ai.providers.loomai")
+      local ai_desktop = require("ai.providers.ai_desktop")
       local err_count, done_count = 0, 0
-      loomai.stream({ prompt = "hi" }, {
+      ai_desktop.stream({ prompt = "hi" }, {
         on_error = function()
           err_count = err_count + 1
         end,
@@ -256,9 +256,9 @@ describe("ai.providers.loomai", function()
           handlers.on_done({ code = 0, signal = 0, stdout = "", stderr = "" })
         end,
       }
-      local loomai = require("ai.providers.loomai")
+      local ai_desktop = require("ai.providers.ai_desktop")
       local chunks = {}
-      loomai.stream({ prompt = "hi" }, {
+      ai_desktop.stream({ prompt = "hi" }, {
         on_chunk = function(d)
           chunks[#chunks + 1] = d
         end,
@@ -276,13 +276,14 @@ describe("ai.providers.loomai", function()
           cb(true, { text = "" }, { code = 0 })
         end,
       }
-      local loomai = require("ai.providers.loomai")
-      loomai.ask({ prompt = "hi" }, function() end)
+      local ai_desktop = require("ai.providers.ai_desktop")
+      ai_desktop.ask({ prompt = "hi" }, function() end)
       assert.are.equal("http://127.0.0.1:8080/ask", seen_url)
     end)
 
-    it("honors LOOMAI_HOST over the default", function()
-      vim.env.LOOMAI_HOST = "http://example.internal:9000"
+    it("still honors the old variable LOOMAI_HOST, and AI_DESKTOP_HOST wins over it", function()
+      local original = vim.env.LOOMAI_HOST
+      vim.env.LOOMAI_HOST = "http://old.internal:9001"
       local seen_url
       package.loaded["lib.nvim.net.curl"] = {
         fetch_json = function(url, _, cb)
@@ -290,8 +291,26 @@ describe("ai.providers.loomai", function()
           cb(true, { text = "" }, { code = 0 })
         end,
       }
-      local loomai = require("ai.providers.loomai")
-      loomai.ask({ prompt = "hi" }, function() end)
+      local ai_desktop = require("ai.providers.ai_desktop")
+      ai_desktop.ask({ prompt = "hi" }, function() end)
+      assert.are.equal("http://old.internal:9001/ask", seen_url)
+      vim.env.AI_DESKTOP_HOST = "http://new.internal:9002"
+      ai_desktop.ask({ prompt = "hi" }, function() end)
+      assert.are.equal("http://new.internal:9002/ask", seen_url)
+      vim.env.LOOMAI_HOST = original
+    end)
+
+    it("honors AI_DESKTOP_HOST over the default", function()
+      vim.env.AI_DESKTOP_HOST = "http://example.internal:9000"
+      local seen_url
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function(url, _, cb)
+          seen_url = url
+          cb(true, { text = "" }, { code = 0 })
+        end,
+      }
+      local ai_desktop = require("ai.providers.ai_desktop")
+      ai_desktop.ask({ prompt = "hi" }, function() end)
       assert.are.equal("http://example.internal:9000/ask", seen_url)
     end)
 
@@ -303,18 +322,18 @@ describe("ai.providers.loomai", function()
           handlers.on_done({ code = 0, signal = 0, stdout = "", stderr = "" })
         end,
       }
-      local loomai = require("ai.providers.loomai")
-      loomai.stream({ prompt = "hi" }, {})
+      local ai_desktop = require("ai.providers.ai_desktop")
+      ai_desktop.stream({ prompt = "hi" }, {})
       assert.are.equal("http://127.0.0.1:8080/ask/stream", seen_url)
     end)
   end)
 
   describe("available", function()
-    -- loomAI has no daemon-installed proxy the way ollama.lua checks for the
+    -- ai-desktop has no daemon-installed proxy the way ollama.lua checks for the
     -- `ollama` binary -- see the source's own comment: it only checks curl.
     it("is true when curl is on PATH, without checking for anything else", function()
-      local loomai = require("ai.providers.loomai")
-      assert.is_true(loomai.available())
+      local ai_desktop = require("ai.providers.ai_desktop")
+      assert.is_true(ai_desktop.available())
     end)
   end)
 
@@ -327,8 +346,8 @@ describe("ai.providers.loomai", function()
           cb(true, { text = "" }, { code = 0 })
         end,
       }
-      local loomai = require("ai.providers.loomai")
-      loomai.ask(
+      local ai_desktop = require("ai.providers.ai_desktop")
+      ai_desktop.ask(
         { prompt = "hi", system = "be terse", model = "x", timeout_ms = 5000 },
         function() end
       )

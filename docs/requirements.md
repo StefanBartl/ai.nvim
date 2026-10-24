@@ -30,9 +30,9 @@
     (default `http://127.0.0.1:11434`, override with `AI_OLLAMA_HOST` --
     deliberately not `OLLAMA_HOST`, which is Ollama's own env var for the
     *server*'s bind address, not a client target).
-  - **loomai**: a loomAI server reachable at `http://127.0.0.1:8080` (default,
-    override with `LOOMAI_HOST`). Last in the default `provider_order`, see
-    `docs/scope.md`.
+  - **ai_desktop**: an ai-desktop server reachable at `http://127.0.0.1:8080` (default,
+    override with `AI_DESKTOP_HOST`; the old name `LOOMAI_HOST` still works, and so does the
+    provider id `loomai`). Last in the default `provider_order`, see `docs/scope.md`.
   - **claude-cli**: the Claude Code CLI (`claude`) on `PATH`, logged in
     (`claude auth status`). Opt-in -- not in the default `provider_order`;
     select it with `:Ai provider claude-cli`. It uses the account the CLI is

@@ -507,6 +507,8 @@ function M.setup(user_opts)
   -- runs again.
   user_opts = type(user_opts) == "table" and vim.deepcopy(user_opts) or {}
   _issues = {}
+  -- An old provider id (`loomai`) is the current one (`ai_desktop`) from here on.
+  require("ai.providers.aliases").apply(user_opts)
   normalize_switch_groups(user_opts, _issues)
   warn_unknown_keys(user_opts, DEFAULTS, "")
   sanitize_values(user_opts, "", _issues)

@@ -48,8 +48,8 @@ M.default_model = DEFAULT_MODEL
 --- Ollama's own env var for the *server*'s bind address (commonly something
 --- like "0.0.0.0:11434", with no scheme and not a valid client target) --
 --- reusing it here as a client override would silently break on any machine
---- that already sets it for that purpose. Same reasoning loomai.lua applies
---- with LOOMAI_HOST vs. LOOMAI_OLLAMA_HOST.
+--- that already sets it for that purpose. Same reasoning ai_desktop.lua applies
+--- with AI_DESKTOP_HOST vs. AI_DESKTOP_OLLAMA_HOST.
 ---@param req? Ai.Request
 ---@return string
 local function host(req)

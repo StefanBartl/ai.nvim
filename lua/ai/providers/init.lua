@@ -5,8 +5,8 @@
 --- `pdfport.nvim/lua/pdfport/backends/init.lua` uses for its extraction
 --- backends.
 ---
---- `"loomai"` is in both `BUILTIN` and `DEFAULTS.lua`'s `provider_order`
---- (loomAI exposes `/ask`/`/ask/stream`, see `lua/ai/providers/loomai.lua`)
+--- `"ai_desktop"` is in both `BUILTIN` and `DEFAULTS.lua`'s `provider_order`
+--- (ai-desktop exposes `/ask`/`/ask/stream`, see `lua/ai/providers/ai_desktop.lua`)
 --- -- listed last, since it needs a local server the user must run
 --- themselves and should not shadow a cloud/CLI provider that is already
 --- configured and working. `resolve("auto", order)` only ever walks `order`,
@@ -26,7 +26,7 @@ local BUILTIN = {
   { id = "ollama", module = "ai.providers.ollama" },
   { id = "openai", module = "ai.providers.openai" },
   { id = "gemini", module = "ai.providers.gemini" },
-  { id = "loomai", module = "ai.providers.loomai" },
+  { id = "ai_desktop", module = "ai.providers.ai_desktop" },
   { id = "claude-cli", module = "ai.providers.claude_cli" },
   { id = "copilot", module = "ai.providers.copilot" },
 }
@@ -99,7 +99,7 @@ end
 ---@param id string
 ---@return Ai.Provider|nil
 function M.get(id)
-  return registered[id]
+  return registered[require("ai.providers.aliases").canonical(id)]
 end
 
 ---@return string[] every registered provider id, built-in and custom, sorted
@@ -164,7 +164,7 @@ end
 ---true; an explicit `id` is looked up directly and must itself be
 ---available. A provider absent from `order` is only ever reachable by
 ---naming it explicitly -- see the module doc for why that matters for
----`"loomai"`. A provider that is unavailable only because its chosen key
+---`"ai_desktop"`. A provider that is unavailable only because its chosen key
 ---profile has no key fails the request with `missing_api_key` (explicit or
 ---`"auto"`): the walk never moves on to another provider from there.
 ---@param id string
@@ -186,6 +186,8 @@ function M.resolve(id, order, req)
   end
 
   local policy = require("ai.policy")
+  -- A request that names a provider by an old id (`loomai`) gets the current one.
+  id = require("ai.providers.aliases").canonical(id)
 
   if id ~= "auto" then
     local p = registered[id]

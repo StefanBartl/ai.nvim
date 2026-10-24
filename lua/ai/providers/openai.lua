@@ -222,7 +222,7 @@ end
 ---`{"error": 1}`. Indexing `.message` off a non-table value there raises
 ---inside the transport callback -- which is wrapped in `vim.schedule` by
 ---`lib.nvim.net.curl.fetch_json`/`fetch_stream`, so the error is swallowed
----and `cb`/`handlers` never fires at all -- see loomai.lua's identical
+---and `cb`/`handlers` never fires at all -- see ai_desktop.lua's identical
 ---`error_message` helper for the same guard.
 ---@param err table|string|boolean|number
 ---@return string
@@ -273,7 +273,7 @@ function M.ask(req, cb)
     -- number, string or `null`) reaches this point as `ok`. Reading fields
     -- off it raises inside curl's own callback, which means `cb` is never
     -- called at all and the caller waits forever -- so it is reported as a
-    -- response we could not understand, the way ollama.lua/loomai.lua
+    -- response we could not understand, the way ollama.lua/ai_desktop.lua
     -- already do.
     if type(data) ~= "table" then
       cb(false, lib_error.new("invalid_response", "openai: invalid response body", data))

@@ -39,9 +39,9 @@ meant to: a future HTTP-backed provider pointing at such a system is welcome
 framework itself stays a separate project with its own release cycle, not a
 mode of `ai.nvim`.
 
-`loomai` (`lua/ai/providers/loomai.lua`) is exactly that: a registered
-provider talking to loomAI's own `/ask`/`/ask/stream` endpoints, nothing more
--- it does not expose, and will never expose, loomAI's dashboard, sandbox, or
+`ai_desktop` (`lua/ai/providers/ai_desktop.lua`) is exactly that: a registered
+provider talking to ai-desktop's own `/ask`/`/ask/stream` endpoints, nothing more
+-- it does not expose, and will never expose, ai-desktop's dashboard, sandbox, or
 decision-queue machinery through this interface.
 
 `claude-cli` (`lua/ai/providers/claude_cli.lua`) is the other registered
@@ -106,7 +106,7 @@ answer is usable stay with the calling plugin.
 ## Fallback guarantee
 
 `provider = "auto"` only ever walks `provider_order` (default `{"claude",
-"ollama", "openai", "gemini", "loomai"}`, `loomai` listed last so it never shadows a
+"ollama", "openai", "gemini", "ai_desktop"}`, `ai_desktop` listed last so it never shadows a
 cloud/CLI provider that is already configured and working). A provider not
 listed there -- a custom one registered under its own id, or any future
 agent-framework-backed one -- is reachable only by naming it explicitly

@@ -56,7 +56,7 @@ M.default_model = DEFAULT_MODEL
 
 -- Unlike claude.lua/openai.lua, `model` here is interpolated straight into
 -- the request URL's path (Gemini has no way to pass it in the JSON body
--- instead). cpp-httplib on the loomAI side escapes `\r`/`\n` but not `/`, so
+-- instead). cpp-httplib on the ai-desktop side escapes `\r`/`\n` but not `/`, so
 -- an unchecked `model` could redirect the authenticated request to an
 -- arbitrary path on Google's host. Real model names are alphanumeric plus
 -- `.`/`-`/`_`; anything else is rejected before it ever reaches the URL.
@@ -188,7 +188,7 @@ function M.ask(req, cb)
     -- number, string or `null`) reaches this point as `ok`. Reading fields
     -- off it raises inside curl's own callback, which means `cb` is never
     -- called at all and the caller waits forever -- so it is reported as a
-    -- response we could not understand, the way ollama.lua/loomai.lua
+    -- response we could not understand, the way ollama.lua/ai_desktop.lua
     -- already do.
     if type(data) ~= "table" then
       cb(false, lib_error.new("invalid_response", "gemini: invalid response body", data))

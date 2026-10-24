@@ -130,7 +130,7 @@ do not do this: the queue goes on.
 ## Repeatable answers and the cache key
 
 Bulk sends `temperature = 0` to the providers that take one (`claude`, `openai`,
-`gemini`, `ollama`: `capabilities.temperature`). `loomai`, `claude-cli` and `copilot` have
+`gemini`, `ollama`: `capabilities.temperature`). `ai_desktop`, `claude-cli` and `copilot` have
 no such parameter, so their answers are not repeatable; `res.bulk.deterministic`
 says which case applied. The result names what answered, for the caller's cache
 key: `res.bulk.provider` and `res.bulk.model` (`req.model`, the configured model,

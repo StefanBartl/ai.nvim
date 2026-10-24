@@ -128,14 +128,14 @@ names): `attachments.lua`, `config/init.lua`, `context/init.lua` +
 assertion-based specs already, not load-time smoke tests.
 
 Gaps closed:
-- **`providers/ollama.lua`, `providers/openai.lua`, `providers/loomai.lua`
+- **`providers/ollama.lua`, `providers/openai.lua`, `providers/ai_desktop.lua`
   had no spec file at all.** Three of the five built-in providers --
   `build_body()`'s per-API wire shape, `ask`/`stream` response parsing, error
   mapping (`api_error`/`invalid_response`/`missing_api_key`/`timeout`),
   attachment rejection, host resolution -- were completely untested, despite
   `claude.lua`/`gemini.lua` having thorough coverage of exactly this shape of
   logic. New `providers_ollama_spec.lua` (19 tests), `providers_openai_spec.lua`
-  (15), `providers_loomai_spec.lua` (14), all following the existing
+  (15), `providers_ai_desktop_spec.lua` (14), all following the existing
   `providers_claude_spec.lua` convention (`package.loaded["lib.nvim.net.curl"]`
   stubbed before each fresh `require`).
 - **`ui/panel.lua` had zero coverage.** The streaming-answer panel's real
@@ -254,7 +254,7 @@ here needed adjusting.
 Covered: `attachments.lua`, `completion/context.lua`, `completion/init.lua`,
 `completion/prompt.lua`, `config/init.lua`, `context/init.lua`,
 `context/diagnostics.lua`, `providers/init.lua` (registry), all five
-built-in providers (`claude`, `gemini`, `loomai`, `ollama`, `openai`),
+built-in providers (`claude`, `gemini`, `ai_desktop`, `ollama`, `openai`),
 `providers/transport.lua`, `providers/util.lua`, `providers/sse.lua`,
 `ui/panel.lua`, `ui/ghost.lua`.
 
@@ -284,7 +284,7 @@ Skipped, with reasons:
   Consistent with `TESTS/minimal_init.lua`'s own existing note on why
   `ui.nvim` isn't added to the rtp here.
 - The real network call inside `curl.fetch_json`/`curl.fetch_stream` itself
-  (an actual request to Anthropic/OpenAI/Google/a local Ollama or loomAI
+  (an actual request to Anthropic/OpenAI/Google/a local Ollama or ai-desktop
   server) -- real external process, stubbed at the `lib.nvim.net.curl` seam
   in every provider spec instead, per this campaign's standing rule for
   "real network requests to an actual AI provider."

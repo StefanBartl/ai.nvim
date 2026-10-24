@@ -1,15 +1,15 @@
----@module 'ai.providers.loomai'
---- Provider backend for a local loomAI server (`POST /ask`, `POST
---- /ask/stream`). loomAI's own HTTP contract is specified in
---- `nvim/docs/ROADMAP/reports/loomai-ai-nvim-integration.md` (Aufgabe B/C)
---- and implemented in `E:\repos\loomAI\src\main.cpp` -- unlike Claude/OpenAI,
---- loomAI's stream endpoint was designed against that report from the start,
+---@module 'ai.providers.ai_desktop'
+--- Provider backend for a local ai-desktop server (`POST /ask`, `POST
+--- /ask/stream`). ai-desktop's own HTTP contract is specified in
+--- `nvim/docs/ROADMAP/reports/ai-desktop-ai-nvim-integration.md` (Aufgabe B/C)
+--- and implemented in `E:\repos\ai-desktop\src\main.cpp` -- unlike Claude/OpenAI,
+--- ai-desktop's stream endpoint was designed against that report from the start,
 --- so it never hits the "fatal error arrives as a plain, non-SSE JSON body"
---- quirk `ai.providers.sse`'s `recover_error_body` exists for: a loomAI
+--- quirk `ai.providers.sse`'s `recover_error_body` exists for: an ai-desktop
 --- error, streaming or not, is always `{"error":{"message":...}}`, and a
 --- stream-time error is always a regular `data: {"error":...}` event.
 ---
---- Attachments: none. loomAI's `/ask` contract is prompt-and-system text,
+--- Attachments: none. ai-desktop's `/ask` contract is prompt-and-system text,
 --- and there is no field to smuggle bytes through -- so both capability
 --- flags are false and any attachment fails the request outright. This is
 --- the case `ai.attachments.unsupported` exists for: the alternative is a
@@ -27,10 +27,10 @@ local util = require("ai.providers.util")
 --- Declared as a class (not `---@type Ai.Provider`) so the `function M.*`
 --- methods defined below the literal count as fulfilling the interface --
 --- see `claude.lua`.
----@class Ai.Providers.Loomai : Ai.Provider
+---@class Ai.Providers.AiDesktop : Ai.Provider
 local M = {
-  id = "loomai",
-  name = "loomAI (local)",
+  id = "ai_desktop",
+  name = "ai-desktop (local)",
   capabilities = {
     streaming = true,
     vision = false,
@@ -48,15 +48,16 @@ local function host(req)
   if req and req.host then
     return req.host
   end
-  return util.env_value("LOOMAI_HOST", DEFAULT_HOST)
+  -- The old variable (the program was called loomAI) still counts when the new one is not set.
+  return util.env_value("AI_DESKTOP_HOST", util.env_value("LOOMAI_HOST", DEFAULT_HOST))
 end
 
----loomAI is a locally-run server process, not a CLI binary on PATH -- there
+---ai-desktop is a locally-run server process, not a CLI binary on PATH -- there
 ---is no "is it installed" proxy the way `ollama.lua` has (the `ollama`
 ---binary). Per the design decision recorded in `nvim/docs/ROADMAP/reports/
----loomai-ai-nvim-integration.md` (Abschnitt 9, Option a): this stays cheap
+---ai-desktop-ai-nvim-integration.md` (Abschnitt 9, Option a): this stays cheap
 ---and synchronous rather than making a network round trip against `/health`
------ an unreachable loomAI instance surfaces as a normal `ask`/`stream`
+----- an unreachable ai-desktop instance surfaces as a normal `ask`/`stream`
 ---failure instead, exactly like `ollama.lua`'s own comment describes for an
 ---unreachable Ollama daemon.
 ---@return boolean
@@ -66,7 +67,7 @@ end
 
 ---@internal
 ---`data.error`/`decoded.error` is either a plain string or a table that
----*should* carry a `message` field -- but loomAI can send `{"error":{}}` or
+---*should* carry a `message` field -- but ai-desktop can send `{"error":{}}` or
 ---`{"error":{"message":null}}` (the latter already turned into Lua `nil` by
 ---`util.denil`), and `a and b or c` falls through to `c` (the whole table)
 ---as soon as `b` is falsy, independent of `a`. An explicit check avoids
@@ -83,10 +84,10 @@ local function error_message(err)
   return tostring(err)
 end
 
----Model-name prefixes loomAI sends to a cloud backend; anything else (and no model at all) goes to Ollama.
+---Model-name prefixes ai-desktop sends to a cloud backend; anything else (and no model at all) goes to Ollama.
 local CLOUD_PREFIXES = { "claude-", "gpt-", "gemini-" }
 
----Which backend loomAI picks for `model`: `"ollama"` for no model or a name without a cloud prefix, else the prefix.
+---Which backend ai-desktop picks for `model`: `"ollama"` for no model or a name without a cloud prefix, else the prefix.
 ---@param model any
 ---@return string backend
 function M.backend_of(model)
@@ -100,7 +101,7 @@ function M.backend_of(model)
   return "ollama"
 end
 
----A connection failure of a request that loomAI would have sent to Ollama says so: an Ollama that is not running is
+---A connection failure of a request that ai-desktop would have sent to Ollama says so: an Ollama that is not running is
 ---the likely cause, and the plain "could not connect" never names it.
 ---@param err LibErrorValue
 ---@param req Ai.Request
@@ -113,7 +114,7 @@ local function with_backend(err, req)
     or "no model"
   return lib_error.new(
     "network_error",
-    ("%s (%s: loomAI sends this to Ollama - is it running? A claude-, gpt- or gemini- model in config.model.loomai goes to that cloud backend)"):format(
+    ("%s (%s: ai-desktop sends this to Ollama - is it running? A claude-, gpt- or gemini- model in config.model.ai_desktop goes to that cloud backend)"):format(
       err.message,
       model
     ),
@@ -136,7 +137,7 @@ end
 ---@param req Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 function M.ask(req, cb)
-  local rejected = attachments.unsupported("loomai", M.capabilities, req.attachments)
+  local rejected = attachments.unsupported("ai_desktop", M.capabilities, req.attachments)
   if rejected then
     cb(false, rejected)
     return
@@ -150,21 +151,21 @@ function M.ask(req, cb)
     timeout_ms = timeout_ms,
   }, function(ok, data, obj)
     if not ok then
-      cb(false, with_backend(util.fetch_error("loomai", data, obj, timeout_ms), req))
+      cb(false, with_backend(util.fetch_error("ai_desktop", data, obj, timeout_ms), req))
       return
     end
     -- curl exits 0 regardless of HTTP status (see fetch_json's own doc), so
-    -- a loomAI 4xx/5xx with a valid `{"error":{"message":...}}` body still
+    -- an ai-desktop 4xx/5xx with a valid `{"error":{"message":...}}` body still
     -- decodes fine here and must be checked explicitly.
     if type(data) ~= "table" then
-      cb(false, lib_error.new("invalid_response", "loomai: invalid response", data))
+      cb(false, lib_error.new("invalid_response", "ai_desktop: invalid response", data))
       return
     end
     data = util.denil(data)
     if data.error ~= nil then
       cb(
         false,
-        lib_error.new("api_error", "loomai error: " .. error_message(data.error), data.error)
+        lib_error.new("api_error", "ai_desktop error: " .. error_message(data.error), data.error)
       )
       return
     end
@@ -172,11 +173,11 @@ function M.ask(req, cb)
       text = data.text or "",
       usage = data.usage,
       stop_reason = data.stop_reason,
-      provider = "loomai",
+      provider = "ai_desktop",
     })
   end)
   if prepare_err then
-    cb(false, with_backend(lib_error.new("network_error", "loomai: " .. prepare_err), req))
+    cb(false, with_backend(lib_error.new("network_error", "ai_desktop: " .. prepare_err), req))
   end
 end
 
@@ -184,7 +185,7 @@ end
 ---@param handlers Ai.StreamHandlers
 ---@return vim.SystemObj|nil
 function M.stream(req, handlers)
-  local rejected = attachments.unsupported("loomai", M.capabilities, req.attachments)
+  local rejected = attachments.unsupported("ai_desktop", M.capabilities, req.attachments)
   if rejected then
     if handlers.on_error then
       handlers.on_error(rejected)
@@ -220,7 +221,7 @@ function M.stream(req, handlers)
           handlers.on_error(
             lib_error.new(
               "api_error",
-              "loomai error: " .. error_message(decoded.error),
+              "ai_desktop error: " .. error_message(decoded.error),
               decoded.error
             )
           )
@@ -241,14 +242,14 @@ function M.stream(req, handlers)
       end
       if obj.code ~= 0 then
         if handlers.on_error then
-          handlers.on_error(with_backend(util.curl_exit_error("loomai", obj, timeout_ms), req))
+          handlers.on_error(with_backend(util.curl_exit_error("ai_desktop", obj, timeout_ms), req))
         end
         return
       end
       if handlers.on_done then
         handlers.on_done({
           text = table.concat(text_parts, ""),
-          provider = "loomai",
+          provider = "ai_desktop",
         })
       end
     end,
@@ -270,7 +271,7 @@ function M.stream(req, handlers)
   -- See claude.lua: a body that never reached curl fires none of the
   -- handlers above, so it has to be reported here.
   if prepare_err and handlers.on_error then
-    handlers.on_error(with_backend(lib_error.new("network_error", "loomai: " .. prepare_err), req))
+    handlers.on_error(with_backend(lib_error.new("network_error", "ai_desktop: " .. prepare_err), req))
   end
   return process
 end

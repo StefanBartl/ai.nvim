@@ -51,8 +51,8 @@ describe("ai.providers.models", function()
       assert.is_true(models.is_known("ollama", "whatever-the-user-pulled-locally"))
     end)
 
-    it("treats loomai as open-ended for the same reason as ollama", function()
-      assert.is_true(models.is_known("loomai", "any-local-model"))
+    it("treats ai_desktop as open-ended for the same reason as ollama", function()
+      assert.is_true(models.is_known("ai_desktop", "any-local-model"))
     end)
 
     it("does not flag a provider it has never heard of (e.g. a custom one)", function()
@@ -93,7 +93,7 @@ describe("ai.providers.models", function()
 
     it("is false for the open-ended local providers", function()
       assert.is_false(models.is_validated("ollama"))
-      assert.is_false(models.is_validated("loomai"))
+      assert.is_false(models.is_validated("ai_desktop"))
     end)
 
     it("is false for an unregistered/custom provider id", function()
@@ -124,10 +124,10 @@ describe("ai.providers.models", function()
       assert.is_true(issues[1]:find("claude", 1, true) ~= nil)
     end)
 
-    it("never reports an ollama/loomai model, however unusual", function()
+    it("never reports an ollama/ai_desktop model, however unusual", function()
       local issues = models.check_config({
         provider = "ollama",
-        model = { ollama = "my-custom-finetune", loomai = "whatever-is-loaded" },
+        model = { ollama = "my-custom-finetune", ai_desktop = "whatever-is-loaded" },
       })
       assert.are.same({}, issues)
     end)

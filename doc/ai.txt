@@ -57,8 +57,9 @@ migration is what |ai-attachments| were built for.
              (default http://127.0.0.1:11434, override with
              `AI_OLLAMA_HOST` -- deliberately not `OLLAMA_HOST`, which is
              Ollama's own env var for the *server*'s bind address).
-  - loomai:  a loomAI server reachable at http://127.0.0.1:8080 (default,
-             override with `LOOMAI_HOST`). Last in the default
+  - ai_desktop:  an ai-desktop server reachable at http://127.0.0.1:8080 (default,
+             override with `AI_DESKTOP_HOST`; the old name `LOOMAI_HOST` still
+             works, and so does the provider id `loomai`). Last in the default
              `provider_order` -- see |ai-scope|.
   - claude-cli: the Claude Code CLI (`claude`) on `PATH`, logged in
              (`claude auth status`). Opt-in: not in the default
@@ -133,8 +134,8 @@ run or one of the default `<leader>a*` keymaps is pressed.
 Pass a table to |ai.setup()|. All keys are optional; `lua/ai/config/
 DEFAULTS.lua` is the source of truth. >lua
   require("ai").setup({
-    provider = "auto",                        -- "auto"|"claude"|"ollama"|"openai"|"gemini"|"loomai"|"claude-cli"|"copilot"|custom id
-    provider_order = { "claude", "ollama", "openai", "gemini", "loomai" },  -- "auto" resolution order
+    provider = "auto",                        -- "auto"|"claude"|"ollama"|"openai"|"gemini"|"ai_desktop"|"claude-cli"|"copilot"|custom id
+    provider_order = { "claude", "ollama", "openai", "gemini", "ai_desktop" },  -- "auto" resolution order
     policy = {
       allowed = {},                           -- provider ids this machine may use; empty = no restriction
     },
@@ -199,7 +200,7 @@ DEFAULTS.lua` is the source of truth. >lua
   })
 <
 
-"loomai" is a registered built-in provider (a local loomAI server, see
+"ai_desktop" is a registered built-in provider (a local ai-desktop server, see
 |ai-providers|) and is in `provider_order`'s default, listed last since it
 needs a local server the user must run themselves -- see |ai-scope|.
 
@@ -468,7 +469,7 @@ require("ai").ask({req}, {cb})
     api_key      string?    overrides the provider's env-var lookup, this
                             request only -- set `provider` explicitly with
                             it, a key belongs to one API
-    host         string?    overrides the base URL of `ollama`, `loomai` or
+    host         string?    overrides the base URL of `ollama`, `ai_desktop` or
                             `openai` (an OpenAI-compatible endpoint; only
                             when `provider = "openai"`), this request only
     allow_unlisted  boolean?  this request may use a provider outside
@@ -600,10 +601,11 @@ require("ai.context").assemble({opts})
   openai   OpenAI Chat Completions API. Streaming via SSE. Requires
            OPENAI_API_KEY.
   gemini   Google Gemini API. Streaming via SSE. Requires GEMINI_API_KEY.
-  loomai   Local loomAI server (`POST /ask`, `POST /ask/stream`). Streaming
-           via SSE. Requires a running loomAI instance (default
-           http://127.0.0.1:8080, override with `LOOMAI_HOST`). Last in the
-           default `provider_order` -- see |ai-scope|.
+  ai_desktop   Local ai-desktop server (`POST /ask`, `POST /ask/stream`). Streaming
+           via SSE. Requires a running ai-desktop instance (default
+           http://127.0.0.1:8080, override with `AI_DESKTOP_HOST`, or the old
+           `LOOMAI_HOST`; the old provider id `loomai` still works). Last in
+           the default `provider_order` -- see |ai-scope|.
   claude-cli  Claude Code CLI (`claude -p`), text only, streaming via its
            stream-json output. Uses the account the CLI is logged in as, so
            no API key is configured in ai.nvim -- every variable the CLI
@@ -701,7 +703,7 @@ What each provider can carry:
   gemini   image, document    `inline_data` parts with a `mime_type`
   openai   image              `image_url` part whose url is a `data:` URI
   ollama   image              bare `images` array on the message
-  loomai   --                 text only
+  ai_desktop   --                 text only
   claude-cli --               text only (the CLI is run without tools)
   copilot  --                 text only (the CLI is run without tools)
 
@@ -770,10 +772,10 @@ repo for the full reasoning.
 The `Ai.Provider` interface (`id`, `available()`, `ask()`, `stream()`,
 `capabilities`) is deliberately narrow so that an HTTP-backed provider
 pointing at such a system can be added as one registry entry, with no
-redesign. `loomai` is exactly that (a thin client for loomAI's own
+redesign. `ai_desktop` is exactly that (a thin client for ai-desktop's own
 `/ask`/`/ask/stream`, nothing more -- see |ai-providers|) and is, unlike a
 hypothetical deeper integration, in the default `provider_order` (default
-`{"claude", "ollama", "openai", "gemini", "loomai"}`, `loomai` last). Any *other*
+`{"claude", "ollama", "openai", "gemini", "ai_desktop"}`, `ai_desktop` last). Any *other*
 provider -- a custom one registered under its own id, or a future built-in
 not yet added to `provider_order` -- stays reachable only by naming it
 explicitly (`provider = "<name>"`), never through `"auto"` by accident.

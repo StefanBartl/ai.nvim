@@ -50,7 +50,7 @@
 ---   that exits 0 without a `result` event and without any text is an
 ---   `invalid_response`, never an empty answer.
 ---
---- Attachments: none (`vision`/`documents` false), as for `loomai` -- a request
+--- Attachments: none (`vision`/`documents` false), as for `ai_desktop` -- a request
 --- carrying one fails with `invalid_request` rather than losing it. Opt-in:
 --- not in the default `provider_order`.
 

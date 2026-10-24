@@ -143,8 +143,8 @@ describe("ai.attachments", function()
       { kind = "document", media_type = "application/pdf", data = "x", name = "r.pdf" }
 
     it("returns nil when there is nothing to send", function()
-      assert.is_nil(attachments.unsupported("loomai", { vision = false }, nil))
-      assert.is_nil(attachments.unsupported("loomai", { vision = false }, {}))
+      assert.is_nil(attachments.unsupported("ai_desktop", { vision = false }, nil))
+      assert.is_nil(attachments.unsupported("ai_desktop", { vision = false }, {}))
     end)
 
     it("passes an image through to a vision-capable provider", function()
@@ -163,12 +163,12 @@ describe("ai.attachments", function()
     end)
 
     it("names the attachment by file name when it has one", function()
-      local err = attachments.unsupported("loomai", {}, { document })
+      local err = attachments.unsupported("ai_desktop", {}, { document })
       assert.is_true(err.message:find("r.pdf", 1, true) ~= nil)
     end)
 
     it("falls back to the index when the attachment has no name", function()
-      local err = attachments.unsupported("loomai", {}, { image })
+      local err = attachments.unsupported("ai_desktop", {}, { image })
       assert.is_true(err.message:find("#1", 1, true) ~= nil)
     end)
 

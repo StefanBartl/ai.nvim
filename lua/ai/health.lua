@@ -216,7 +216,7 @@ function M.check()
   -- `ai.providers.models`'s module doc) -- this is the surface the roadmap
   -- item asked for: report it here instead, against each provider's own
   -- known-model catalogue, with no fixed catalogue at all for a local
-  -- provider like ollama/loomai (there is nothing to validate a
+  -- provider like ollama/ai_desktop (there is nothing to validate a
   -- self-hosted model name against).
   for _, issue in ipairs(require("ai.providers.models").check_config(cfg)) do
     vim.health.warn(issue, { "Check the provider's current docs for supported model ids" })

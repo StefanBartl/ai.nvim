@@ -5,8 +5,8 @@ truth; this table mirrors it):
 
 ```lua
 require("ai").setup({
-  provider = "auto",                         -- "auto" | "claude" | "ollama" | "openai" | "gemini" | "loomai" | "claude-cli" | "copilot" | a custom id
-  provider_order = { "claude", "ollama", "openai", "gemini", "loomai" }, -- "auto" resolution order; "loomai" last, see docs/scope.md
+  provider = "auto",                         -- "auto" | "claude" | "ollama" | "openai" | "gemini" | "ai_desktop" | "claude-cli" | "copilot" | a custom id
+  provider_order = { "claude", "ollama", "openai", "gemini", "ai_desktop" }, -- "auto" resolution order; "ai_desktop" last, see docs/scope.md
   policy = {
     allowed = {},                             -- provider ids this machine may use; empty = no restriction, see "Provider policy"
   },
@@ -93,12 +93,12 @@ API error rather than being caught early.
 `:checkhealth ai` catches the common case instead: it checks every
 configured model against `lua/ai/providers/models.lua`'s per-provider
 registry (Claude, Gemini, OpenAI) and warns about one it doesn't recognize.
-`ollama`/`loomai` are deliberately exempt -- both run whatever local model
+`ollama`/`ai_desktop` are deliberately exempt -- both run whatever local model
 the user has pulled or loaded, so there is no fixed catalogue to check
-against; any model id is accepted for them. loomAI picks its backend by the
+against; any model id is accepted for them. ai-desktop picks its backend by the
 model name: `claude-`, `gpt-` and `gemini-` go to that cloud, everything else
 (and no model) to Ollama. A refused connection for such a request says so
-("loomAI sends this to Ollama - is it running?"). See
+("ai-desktop sends this to Ollama - is it running?"). See
 [health.md](health.md#configuration).
 
 ## Inline completion

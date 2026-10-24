@@ -68,7 +68,7 @@ describe("ai.providers.openai", function()
       -- a failure as `{"error": true}` rather than Anthropic/OpenAI's own
       -- `{"error":{"message":...}}` object. Indexing `.message` off a
       -- boolean would raise inside the transport callback and drop `cb`
-      -- entirely -- see loomai.lua's "reports a bare string error" test.
+      -- entirely -- see ai_desktop.lua's "reports a bare string error" test.
       package.loaded["lib.nvim.net.curl"] = {
         fetch_json = function(_, _, cb)
           cb(true, { error = true })

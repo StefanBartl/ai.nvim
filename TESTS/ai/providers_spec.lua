@@ -150,7 +150,7 @@ describe("ai.providers", function()
     local providers = require("ai.providers")
     providers.load_builtin()
     assert.are.same(
-      { "claude", "claude-cli", "copilot", "gemini", "loomai", "ollama", "openai" },
+      { "ai_desktop", "claude", "claude-cli", "copilot", "gemini", "ollama", "openai" },
       providers.ids()
     )
   end)

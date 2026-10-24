@@ -67,7 +67,7 @@ end
 
 ---Truncation-indicating `stop_reason`/`finish_reason` values across the five
 ---built-in providers -- never normalized to one shared vocabulary elsewhere
----in this codebase, so this is a best-effort superset: Anthropic/loomAI use
+---in this codebase, so this is a best-effort superset: Anthropic/ai-desktop use
 ---`"max_tokens"`, Gemini's (upper-cased) `finish_reason` is `"MAX_TOKENS"`,
 ---OpenAI/Ollama use `"length"`. Case-folded before lookup.
 ---@internal

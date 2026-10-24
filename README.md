@@ -64,7 +64,7 @@ each page answers.
 
 ### The Rest
 
-- [What it does and what not](docs/scope.md) -- the boundary with `loomAI`.
+- [What it does and what not](docs/scope.md) -- the boundary with `ai-desktop`.
 - [Why it does it that way](docs/architecture.md)
 - [Health check](docs/health.md) -- what `:checkhealth ai` reports, line by line.
 - [Feedback](https://github.com/StefanBartl/ai.nvim/issues)

@@ -39,7 +39,7 @@ shape onto each is the backend's job, the same split as every response
 schema in this directory.
 
 Where the formats genuinely disagree -- Ollama and OpenAI have no slot for a
-document, loomAI none for anything -- `ai.attachments.unsupported` fails the
+document, ai-desktop none for anything -- `ai.attachments.unsupported` fails the
 request with `"invalid_request"` before it is sent. Dropping the block
 instead would be worse than an error: a prompt asking about a page, sent
 without the page, does not fail. It answers confidently about nothing.
@@ -72,7 +72,7 @@ about *this* plugin's request shape rather than about HTTP:
 ## Provider registry
 
 `lua/ai/providers/init.lua` lazy-loads seven built-ins (`claude`, `ollama`,
-`openai`, `gemini`, `loomai`, `claude-cli`, `copilot`) behind the same proxy pattern
+`openai`, `gemini`, `ai_desktop`, `claude-cli`, `copilot`) behind the same proxy pattern
 [`pdfport.nvim`](https://github.com/StefanBartl/pdfport.nvim) uses for its
 extraction backends: the real module only loads once one of its fields is
 actually touched. `M.register(provider)` lets a user (or a future built-in)
@@ -130,11 +130,11 @@ real Gemini error response** (no `GEMINI_API_KEY` was available while writing
 it). Verify this during the next live test pass, see `docs/ROADMAP/reports/
 ai/live-testing-plan.md` in the nvim config repo.
 
-`loomai` is SSE too, but deliberately does not need any of that: its server
+`ai_desktop` is SSE too, but deliberately does not need any of that: its server
 (a project this collection also controls) was specified and implemented so
 that a stream-time error is always a regular `data: {"error":...}` event,
 never a raw non-SSE body -- see `nvim/docs/ROADMAP/reports/
-loomai-ai-nvim-integration.md`, Aufgabe C/D.
+ai-desktop-ai-nvim-integration.md`, Aufgabe C/D.
 
 ## Inline completion
 

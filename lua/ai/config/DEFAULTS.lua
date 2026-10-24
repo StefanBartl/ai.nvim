@@ -8,10 +8,10 @@
 local DEFAULTS = {
   provider = "auto",
 
-  -- "auto" resolution order. "loomai" is last: it needs a local server the
-  -- user must run themselves (see lua/ai/providers/loomai.lua), so it should
+  -- "auto" resolution order. "ai_desktop" is last: it needs a local server the
+  -- user must run themselves (see lua/ai/providers/ai_desktop.lua), so it should
   -- not shadow a cloud/CLI provider that is already configured and working.
-  provider_order = { "claude", "ollama", "openai", "gemini", "loomai" },
+  provider_order = { "claude", "ollama", "openai", "gemini", "ai_desktop" },
 
   -- Which providers this machine may use at all (see lua/ai/policy.lua). An
   -- empty `allowed` list means no restriction -- the default, and the

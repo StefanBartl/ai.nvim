@@ -183,7 +183,7 @@ describe("ai.bindings.edit", function()
   end)
 
   describe("is_truncated", function()
-    it("is true for claude/loomai's max_tokens", function()
+    it("is true for claude/ai_desktop's max_tokens", function()
       assert.is_true(edit.is_truncated("max_tokens"))
     end)
 

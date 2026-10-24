@@ -66,7 +66,7 @@ What each section reports:
   session cap is and how much of it this session has used. Also a warning for a configured
   `model`/`completion.model` that isn't a known id for its provider, per
   `lua/ai/providers/models.lua`'s registry (Claude/Gemini/OpenAI only --
-  `ollama`/`loomai`/`claude-cli` run arbitrary local or CLI-side models, so any id is accepted for
+  `ollama`/`ai_desktop`/`claude-cli` run arbitrary local or CLI-side models, so any id is accepted for
   them). Reporting only: an unrecognized model still reaches the provider
   and fails there as a normal API error, `opts.model` is never blocked here.
   See [configuration.md](configuration.md#model-ids).

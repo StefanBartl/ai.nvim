@@ -65,7 +65,7 @@ message rather than as an editor that stops responding.
 | `gemini` | yes | yes | `inline_data` parts with a `mime_type` |
 | `openai` | yes | no | `image_url` content part whose `url` is a `data:` URI (an OpenAI-compatible endpoint behind `AI_OPENAI_BASE_URL` may not take images; that is the server's answer, not checked here) |
 | `ollama` | yes | no | bare `images` array of base64 strings on the message |
-| `loomai` | no | no | — |
+| `ai_desktop` | no | no | — |
 | `claude-cli` | no | no | — |
 | `copilot` | no | no | — |
 
