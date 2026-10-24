@@ -271,7 +271,9 @@ function M.stream(req, handlers)
   -- See claude.lua: a body that never reached curl fires none of the
   -- handlers above, so it has to be reported here.
   if prepare_err and handlers.on_error then
-    handlers.on_error(with_backend(lib_error.new("network_error", "ai_desktop: " .. prepare_err), req))
+    handlers.on_error(
+      with_backend(lib_error.new("network_error", "ai_desktop: " .. prepare_err), req)
+    )
   end
   return process
 end

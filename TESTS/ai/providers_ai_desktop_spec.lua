@@ -97,25 +97,28 @@ describe("ai.providers.ai_desktop", function()
       assert.are.equal("invalid_response", err.kind)
     end)
 
-    it("rejects any attachment -- ai-desktop's /ask contract has no payload field for one", function()
-      local called = false
-      package.loaded["lib.nvim.net.curl"] = {
-        fetch_json = function()
-          called = true
-        end,
-      }
-      local ai_desktop = require("ai.providers.ai_desktop")
-      local ok, err
-      ai_desktop.ask({
-        prompt = "hi",
-        attachments = { { kind = "image", media_type = "image/png", data = "AAA" } },
-      }, function(a, b)
-        ok, err = a, b
-      end)
-      assert.is_false(ok)
-      assert.is_false(called)
-      assert.are.equal("invalid_request", err.kind)
-    end)
+    it(
+      "rejects any attachment -- ai-desktop's /ask contract has no payload field for one",
+      function()
+        local called = false
+        package.loaded["lib.nvim.net.curl"] = {
+          fetch_json = function()
+            called = true
+          end,
+        }
+        local ai_desktop = require("ai.providers.ai_desktop")
+        local ok, err
+        ai_desktop.ask({
+          prompt = "hi",
+          attachments = { { kind = "image", media_type = "image/png", data = "AAA" } },
+        }, function(a, b)
+          ok, err = a, b
+        end)
+        assert.is_false(ok)
+        assert.is_false(called)
+        assert.are.equal("invalid_request", err.kind)
+      end
+    )
   end)
 
   describe("stream", function()
