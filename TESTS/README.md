@@ -180,7 +180,7 @@ keeps finding elsewhere:
   module's own top-level `require("lib.nvim.health")` is an unconditional
   hard dependency, but that matches this repo's own documented stance
   (`ai/init.lua`'s module doc: "Depends on lib.nvim (deliberate hard
-  dependency, like lsp.nvim/dap.nvim/documentation.nvim in this collection)")
+  dependency, like lsp.nvim/dap.nvim/docmap.nvim in this collection)")
   -- not the "warn, then crash into the same thing" pattern this check is
   for.
 - **An augroup created without `clear = true`, doubling handlers on a second

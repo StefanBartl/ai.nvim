@@ -4,7 +4,7 @@
 --- lib.nvim (net.curl, harvest.scope, progress, ui.kit, usercmd.composer).
 ---
 --- Depends on lib.nvim (deliberate hard dependency, like `lsp.nvim`/
---- `dap.nvim`/`documentation.nvim` in this collection).
+--- `dap.nvim`/`docmap.nvim` in this collection).
 ---
 --- Example: >lua
 ---   require("ai").setup()
