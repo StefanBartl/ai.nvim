@@ -26,7 +26,7 @@ function M.check()
 
   -- ── lib.nvim dependency ────────────────────────────────────────────────
   vim.health.start("ai.nvim: lib.nvim")
-  local advice = { 'Install "StefanBartl/lib.nvim"' }
+  local advice = { 'Install "WKDSteve/lib.nvim"' }
   lib_health.check_require("lib.nvim.net.curl", "net.curl (transport)", "error", advice)
   lib_health.check_require("lib.nvim.harvest.scope", "harvest.scope (context)", "error", advice)
   lib_health.check_require(
@@ -54,7 +54,7 @@ function M.check()
     "ui.kit",
     "ui.kit (answer panel + badge)",
     "error",
-    { 'Install "StefanBartl/ui.nvim"' }
+    { 'Install "WKDSteve/ui.nvim"' }
   )
 
   local ok_curl, curl = pcall(require, "lib.nvim.net.curl")
@@ -64,7 +64,7 @@ function M.check()
     else
       vim.health.error(
         "lib.nvim.net.curl.fetch_stream missing -- lib.nvim checkout is too old for ai.nvim",
-        { "Update StefanBartl/lib.nvim" }
+        { "Update WKDSteve/lib.nvim" }
       )
     end
   end

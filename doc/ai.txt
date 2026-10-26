@@ -34,10 +34,10 @@ migration is what |ai-attachments| were built for.
 2. REQUIREMENTS                                              *ai-requirements*
 
 - Neovim >= 0.10 (needs `vim.system`, which `lib.nvim.net.curl` requires).
-- lib.nvim (github.com/StefanBartl/lib.nvim) -- hard dependency.
+- lib.nvim (github.com/WKDSteve/lib.nvim) -- hard dependency.
   `fetch_stream`/`secret_headers` on `lib.nvim.net.curl` must be present; a
   too-old checkout is flagged by |:checkhealth| ai.
-- ui.nvim (github.com/StefanBartl/ui.nvim) -- also a hard dependency: `ui.kit`
+- ui.nvim (github.com/WKDSteve/ui.nvim) -- also a hard dependency: `ui.kit`
   backs the streaming answer panel, the explain badge, the non-streaming
   viewer and the prompt popup. All lazy-loaded (no cost until an `:Ai`
   action actually runs), but none of them has another rendering path.
@@ -111,8 +111,8 @@ matching |ai-context| flag is a silent no-op):
 
 With lazy.nvim: >lua
   {
-    "StefanBartl/ai.nvim",
-    dependencies = { "StefanBartl/lib.nvim", "StefanBartl/ui.nvim" },
+    "WKDSteve/ai.nvim",
+    dependencies = { "WKDSteve/lib.nvim", "WKDSteve/ui.nvim" },
     cmd  = "Ai",
     keys = { { "<leader>a", mode = { "n", "v" } } },
     config = function()

@@ -288,10 +288,10 @@ describe("docs examples (REL-08) --", function()
 
   describe("installation.md", function()
     it("the lazy.nvim spec parses, and its cmd/keys/config match what setup() installs", function()
-      local code = block_with("installation.md", '"StefanBartl/ai.nvim"')
+      local code = block_with("installation.md", '"WKDSteve/ai.nvim"')
       local spec = run_chunk("return " .. code:gsub(",%s*$", ""), "installation.md")
 
-      assert.are.equal("StefanBartl/ai.nvim", spec[1])
+      assert.are.equal("WKDSteve/ai.nvim", spec[1])
       assert.is_function(spec.config)
       spec.config()
       assert.are.same({}, notified, "setup() emitted warnings")
@@ -338,8 +338,8 @@ describe("docs examples (REL-08) --", function()
     it("the documented dependencies are exactly the externally required modules", function()
       local code = block_with("installation.md", "dependencies")
       local documented = {}
-      for dep in code:gmatch("[\"'](StefanBartl/[%w%.%-_]+)[\"']") do
-        if dep ~= "StefanBartl/ai.nvim" then
+      for dep in code:gmatch("[\"'](WKDSteve/[%w%.%-_]+)[\"']") do
+        if dep ~= "WKDSteve/ai.nvim" then
           documented[dep] = true
         end
       end
@@ -358,7 +358,7 @@ describe("docs examples (REL-08) --", function()
               if not line:match("^%s*%-%-") then
                 for root in line:gmatch('require%("([%w_]+)%.') do
                   if root ~= "ai" then
-                    used["StefanBartl/" .. root .. ".nvim"] = true
+                    used["WKDSteve/" .. root .. ".nvim"] = true
                   end
                 end
               end

@@ -1,6 +1,6 @@
 # Architecture
 
-Two layers, the same split as [`lsp.nvim`](https://github.com/StefanBartl/lsp.nvim):
+Two layers, the same split as [`lsp.nvim`](https://github.com/WKDSteve/lsp.nvim):
 
 ```
 ai.nvim (this repo)
@@ -73,7 +73,7 @@ about *this* plugin's request shape rather than about HTTP:
 
 `lua/ai/providers/init.lua` lazy-loads seven built-ins (`claude`, `ollama`,
 `openai`, `gemini`, `ai_desktop`, `claude-cli`, `copilot`) behind the same proxy pattern
-[`pdfport.nvim`](https://github.com/StefanBartl/pdfport.nvim) uses for its
+[`pdfport.nvim`](https://github.com/WKDSteve/pdfport.nvim) uses for its
 extraction backends: the real module only loads once one of its fields is
 actually touched. `M.register(provider)` lets a user (or a future built-in)
 add another under any id; `M.resolve(id, order)` is the only place that
@@ -94,7 +94,7 @@ proves it, a caller such as casedesk must treat web access as unavailable.
 ## Context assembly
 
 `lua/ai/context/init.lua` is a thin wrapper over
-[`lib.nvim.harvest.scope`](https://github.com/StefanBartl/lib.nvim) for
+[`lib.nvim.harvest.scope`](https://github.com/WKDSteve/lib.nvim) for
 buffer/selection/cwd -- it already returns the exact shape
 (`file`/`bufnr`/`lines`/`first`) a prompt builder needs. Diagnostics
 formatting (`file:line:[SEVERITY]:message`, chosen over raw text because a

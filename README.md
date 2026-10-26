@@ -14,7 +14,7 @@
                                                .nvim
 ```
 
-> Pairs well with [pdfport.nvim](https://github.com/StefanBartl/pdfport.nvim):
+> Pairs well with [pdfport.nvim](https://github.com/WKDSteve/pdfport.nvim):
 > its `claude`/`ollama` extraction backends send their PDFs and page images
 > through this plugin's `ask()`, rather than carrying a second hand-written
 > curl/provider path of their own. That migration is what
@@ -25,10 +25,10 @@
 [![Lua](https://img.shields.io/badge/Lua-5.1%2FLuaJIT-2C2D72?logo=lua&logoColor=white)](https://www.lua.org)
 ![Status](https://img.shields.io/badge/status-beta-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
-[![CI](https://github.com/StefanBartl/ai.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/StefanBartl/ai.nvim/actions/workflows/ci.yml)
-[![wkd](https://img.shields.io/badge/wkd-family-c6ff3d)](https://stefanbartl.github.io/wkd/p/ai/)
+[![CI](https://github.com/WKDSteve/ai.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/WKDSteve/ai.nvim/actions/workflows/ci.yml)
+[![wkd](https://img.shields.io/badge/wkd-family-c6ff3d)](https://wkdsteve.github.io/wkd/p/ai/)
 
-> Part of the [wkd](https://stefanbartl.github.io/wkd/) family — see this plugin's [page](https://stefanbartl.github.io/wkd/p/ai/) on the site.
+> Part of the [wkd](https://wkdsteve.github.io/wkd/) family — see this plugin's [page](https://wkdsteve.github.io/wkd/p/ai/) on the site.
 
 A provider-agnostic ask/stream layer for talking to an AI from inside Neovim --
 context assembly (buffer/selection/diagnostics), a streaming answer panel, and
@@ -67,7 +67,7 @@ each page answers.
 - [What it does and what not](docs/scope.md) -- the boundary with `ai-desktop`.
 - [Why it does it that way](docs/architecture.md)
 - [Health check](docs/health.md) -- what `:checkhealth ai` reports, line by line.
-- [Feedback](https://github.com/StefanBartl/ai.nvim/issues)
+- [Feedback](https://github.com/WKDSteve/ai.nvim/issues)
 
 `:help ai` is the same reference inside the editor.
 

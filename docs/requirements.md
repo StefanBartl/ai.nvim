@@ -1,10 +1,10 @@
 # Requirements
 
 - Neovim >= 0.10 (needs `vim.system`, which `lib.nvim.net.curl` requires).
-- [`lib.nvim`](https://github.com/StefanBartl/lib.nvim) -- hard dependency.
+- [`lib.nvim`](https://github.com/WKDSteve/lib.nvim) -- hard dependency.
   `fetch_stream`/`secret_headers` on `lib.nvim.net.curl` must be present; a
   too-old checkout is flagged by `:checkhealth ai`.
-- [`ui.nvim`](https://github.com/StefanBartl/ui.nvim) -- also a hard
+- [`ui.nvim`](https://github.com/WKDSteve/ui.nvim) -- also a hard
   dependency: `ui.kit` backs the streaming answer panel, the explain badge,
   the non-streaming viewer and the prompt popup (`lua/ai/ui/panel.lua`,
   `lua/ai/ui/badge.lua`, `lua/ai/bindings/actions.lua`). All lazy-loaded (no
@@ -74,7 +74,7 @@
 
 The two external tools -- `curl`, and `ollama` for that provider -- are
 declared in [install.json](install.json) and read by lib.nvim's
-[deps module](https://github.com/StefanBartl/lib.nvim/blob/main/lua/lib/nvim/deps/README.md):
+[deps module](https://github.com/WKDSteve/lib.nvim/blob/main/lua/lib/nvim/deps/README.md):
 `:Lib deps show ai.nvim` says what is missing and why it matters, and
 `:Lib deps install ai.nvim` offers to install it, asking first.
 
@@ -84,7 +84,7 @@ the first available one in `provider_order`.
 
 ## Optional
 
-- [`data.nvim`](https://github.com/StefanBartl/data.nvim) -- backs
+- [`data.nvim`](https://github.com/WKDSteve/data.nvim) -- backs
   `context.structured_data` (see [configuration.md](configuration.md)):
   when the cursor sits inside a json/yaml/xml block, the assembled prompt
   context includes that block's flattened `path: value` form via
@@ -93,7 +93,7 @@ the first available one in `provider_order`.
   other integration here -- without it, `structured_data` is a silent
   no-op and every other context flag still works. `:checkhealth ai` reports
   whether it was found.
-- [`gitsuite.nvim`](https://github.com/StefanBartl/gitsuite.nvim) -- backs
+- [`gitsuite.nvim`](https://github.com/WKDSteve/gitsuite.nvim) -- backs
   `context.conflict` (see [configuration.md](configuration.md)): both sides
   of every unresolved merge-conflict region in the buffer, labeled
   "ours"/"theirs", via `gitsuite.features.conflict.scan()`. Called via

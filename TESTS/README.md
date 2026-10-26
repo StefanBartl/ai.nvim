@@ -1,7 +1,7 @@
 # ai.nvim tests
 
 A busted-style suite (`describe`/`it`/`before_each`, busted assertions) run by
-[testing.nvim](https://github.com/StefanBartl/testing.nvim) -- this repo's own
+[testing.nvim](https://github.com/WKDSteve/testing.nvim) -- this repo's own
 established convention (see `.github/workflows/ci.yml`'s `test` job,
 `.testing.lua` and `TESTS/minimal_init.lua`), not the framework-free
 `H.eq`/`H.ok` harness some sibling repos in this collection use instead.

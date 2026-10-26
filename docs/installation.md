@@ -4,8 +4,8 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
 {
-  "StefanBartl/ai.nvim",
-  dependencies = { "StefanBartl/lib.nvim", "StefanBartl/ui.nvim" },
+  "WKDSteve/ai.nvim",
+  dependencies = { "WKDSteve/lib.nvim", "WKDSteve/ui.nvim" },
   cmd = "Ai",
   keys = { { "<leader>a", mode = { "n", "v" } } },
   config = function()

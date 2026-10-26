@@ -62,7 +62,7 @@ local opts = require("docmap.config").build(root, {
   source = "lua/ai",
   title = "ai.nvim",
   out_dir = "docs/map",
-  repo_url = "https://github.com/StefanBartl/ai.nvim",
+  repo_url = "https://github.com/WKDSteve/ai.nvim",
   branch = "main",
 })
 

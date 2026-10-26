@@ -1,17 +1,17 @@
 {
-  "$schema": "https://raw.githubusercontent.com/StefanBartl/docmap.nvim/main/docs/docmap.schema.json",
+  "$schema": "https://raw.githubusercontent.com/WKDSteve/docmap.nvim/main/docs/docmap.schema.json",
   "source": "lua/ai",
   "title": "ai.nvim",
-  "repo_url": "https://github.com/StefanBartl/ai.nvim",
+  "repo_url": "https://github.com/WKDSteve/ai.nvim",
   "branch": "main",
   "external_repos": {
     "lib.nvim": {
-      "repo": "StefanBartl/lib.nvim",
+      "repo": "WKDSteve/lib.nvim",
       "name": "lib.nvim",
       "local_path": "../lib.nvim"
     },
     "ui.nvim": {
-      "repo": "StefanBartl/ui.nvim",
+      "repo": "WKDSteve/ui.nvim",
       "name": "ui.nvim",
       "local_path": "../ui.nvim"
     }
