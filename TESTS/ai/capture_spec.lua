@@ -182,6 +182,23 @@ describe("ai.capture", function()
     assert.are.equal("Context (selection):\n```\nx = 1\n```", capture.format(cap, "x = 1"))
   end)
 
+  it("format widens the fence past any backtick run in the text", function()
+    local cap = { source = "buffer", text = "a\n```lua\nx\n```\nb" }
+    local out = capture.format(cap)
+    assert.are.equal("Context (buffer):\n````\na\n```lua\nx\n```\nb\n````", out)
+  end)
+
+  it("preview sends nothing when every line was struck out", function()
+    local called = false
+    local win = capture.preview({ source = "messages", text = "secret" }, function()
+      called = true
+    end)
+    local buf = vim.api.nvim_win_get_buf(win)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "x", false)
+    assert.is_false(called)
+  end)
+
   it("preview sends the edited text on <CR> and nothing on q", function()
     local got
     local cap = { source = "messages", text = "keep\nsecret\nkeep too" }

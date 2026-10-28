@@ -280,10 +280,15 @@ end
 ---@param text? string  # what the user left after editing the preview
 ---@return string
 function M.format(cap, text)
-  return ("Context (%s):\n```\n%s\n```"):format(
-    cap.source,
-    text or table.concat(M.lines(cap), "\n")
-  )
+  text = text or table.concat(M.lines(cap), "\n")
+  -- The fence must be longer than any backtick run inside, or the context
+  -- would end early and the rest would read as part of the prompt.
+  local longest = 0
+  for run in text:gmatch("`+") do
+    longest = math.max(longest, #run)
+  end
+  local fence = ("`"):rep(math.max(3, longest + 1))
+  return ("Context (%s):\n%s\n%s\n%s"):format(cap.source, fence, text, fence)
 end
 
 ---Show `cap` in an editable float. `<CR>` (Normal mode) hands the edited text
@@ -310,7 +315,10 @@ function M.preview(cap, on_submit)
   vim.keymap.set("n", "<CR>", function()
     local text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
     pcall(vim.api.nvim_win_close, winid, true)
-    on_submit(text)
+    -- Everything struck out means nothing to send.
+    if text:match("%S") then
+      on_submit(text)
+    end
   end, { buffer = bufnr, nowait = true, desc = "Send this context" })
   return winid
 end
