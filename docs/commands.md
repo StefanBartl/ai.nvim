@@ -3,6 +3,7 @@
 ```
 :Ai ask [prompt?]                 -- ask once, non-streaming; prompts for text if omitted
 :Ai stream [prompt?]              -- like ask, but the panel opens and fills in live
+:[range]Ai capture [source?]      -- take context (selection, messages, notify, buffer; default: the selection with a range, else the last message), redacted (home -> ~, user name -> <user>) and shown in an editable float first; <CR> asks for the question and streams the answer
 :[range]Ai rewrite [prompt?]      -- replace the range with AI-generated code (default: current line)
 :[range]Ai append [prompt?]       -- insert AI-generated code after the range (default: current line)
 :[range]Ai prepend [prompt?]      -- insert AI-generated code before the range (default: current line)

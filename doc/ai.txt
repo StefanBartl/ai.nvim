@@ -300,6 +300,15 @@ MISSING: reason".
 :Ai stream [prompt?]                                            *:Ai-stream*
   Like `ask`, but the answer panel opens and fills in live as it streams.
 
+:[range]Ai capture [source?]                                   *:Ai-capture*
+  Take context into a prompt. `source` is `selection`, `messages` (the
+  last line of |:messages|), `notify` (the last notification) or `buffer`
+  (the lines around the cursor); default: the selection with a range,
+  else the last message. The text is redacted (the home folder becomes
+  `~`, the user name `<user>`) and shown in an editable float: delete
+  what must not go out, <CR> asks for the question and streams the
+  answer, `q` cancels. Other plugins: `require("ai.capture").get(source)`.
+
 :[range]Ai rewrite [prompt?]                                   *:Ai-rewrite*
   Replace the range (default: the current line) with AI-generated code.
 
@@ -372,6 +381,8 @@ default `<leader>a`) and are individually overridable/disableable via
                                    text; v: about the selection)
   n, v  <leader>as     quick      Send context + a typed task, stream
                                    the answer
+  n, v  <leader>ac     capture    Ask about the last message (v: the
+                                   selection), shown redacted first
   n, v  <leader>ar     rewrite    Replace current line/selection with
                                    AI-generated code
   n, v  <leader>ao     append     Insert AI-generated code after current

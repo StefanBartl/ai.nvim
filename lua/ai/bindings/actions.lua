@@ -103,6 +103,30 @@ function M.quick_action(context)
   end)
 end
 
+---Take context from `source` (`ai.capture`, redacted), show it in an editable
+---float so the user can strike what must not go out, then ask for the
+---question and stream the answer with the context below it.
+---@param source Ai.CaptureSource
+---@param range? {line1: integer, line2: integer}  # `selection`: these lines instead of the marks
+---@return nil
+function M.capture(source, range)
+  local capture = require("ai.capture")
+  local cap, err = capture.get(source, range and { line1 = range.line1, line2 = range.line2 })
+  if not cap then
+    require("lib.nvim.notify").create("[ai]").warn(err or "nothing to capture")
+    return
+  end
+  capture.preview(cap, function(text)
+    prompt_for_text(function(question)
+      local prompt = question
+      if text:match("%S") then
+        prompt = question .. "\n\n" .. capture.format(cap, text)
+      end
+      M.stream_prompt(prompt)
+    end)
+  end)
+end
+
 local edit = require("ai.bindings.edit")
 
 ---@internal

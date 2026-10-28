@@ -10,6 +10,7 @@ default `<leader>a`) and are individually overridable/disableable via
 | ---- | ------- | --------- | ---- |
 | n, v | `<leader>aa` | `ask` | Ask once, non-streaming (prompts for text; v: about the selection) |
 | n, v | `<leader>as` | `quick` | Send context + a typed task, stream the answer |
+| n, v | `<leader>ac` | `capture` | Ask about the last message (v: the selection), shown redacted and editable first |
 | n, v | `<leader>ar` | `rewrite` | Replace current line/selection with AI-generated code |
 | n, v | `<leader>ao` | `append` | Insert AI-generated code after current line/selection |
 | n, v | `<leader>aO` | `prepend` | Insert AI-generated code before current line/selection |
@@ -36,6 +37,7 @@ see [configuration.md](configuration.md)). They follow the master switch:
 | ------- | ---- |
 | `:Ai ask [prompt?]` | Ask once, non-streaming |
 | `:Ai stream [prompt?]` | Ask, streaming the answer into a panel |
+| `:[range]Ai capture [source?]` | Take context (selection, messages, notify, buffer), shown redacted and editable, then ask about it |
 | `:[range]Ai rewrite [prompt?]` | Replace the range (default: current line) with AI-generated code |
 | `:[range]Ai append [prompt?]` | Insert AI-generated code after the range (default: current line) |
 | `:[range]Ai prepend [prompt?]` | Insert AI-generated code before the range (default: current line) |

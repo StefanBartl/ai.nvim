@@ -111,6 +111,36 @@ function M.setup()
         end,
       },
       {
+        path = { "capture" },
+        args = {
+          {
+            name = "source",
+            type = "STRING",
+            optional = true,
+            enum = require("ai.capture").SOURCES,
+            desc = "What to take; default: the selection with a range, else the last message",
+            enum_desc = {
+              selection = "The last visual selection",
+              messages = "The last line of :messages",
+              notify = "The last notification",
+              buffer = "The lines around the cursor",
+            },
+          },
+        },
+        desc = "Take context into a prompt: shown first, editable, then a question is asked about it",
+        run = function(ctx)
+          local ranged = ctx.range and (ctx.range.range or 0) > 0
+          local source = ctx.args.source or (ranged and "selection" or "messages")
+          actions.capture(
+            source,
+            ranged
+                and source == "selection"
+                and { line1 = ctx.range.line1, line2 = ctx.range.line2 }
+              or nil
+          )
+        end,
+      },
+      {
         path = { "provider" },
         args = {
           {

@@ -26,14 +26,16 @@ function M.setup(cfg)
   local keymap = require("lib.nvim.bindings.keymap")
   local actions = require("ai.bindings.actions")
 
-  -- The Visual-mode binds below read `'<`/`'>` directly rather than passing
+  -- The Visual-mode binds below take line numbers rather than passing
   -- `context.selection` -- these actions target a buffer range to edit, not
-  -- a context block to prefix a prompt with, so they need line numbers
-  -- (`ai.context.assemble` only ever returns formatted text). Valid at this
-  -- point because leaving Visual mode (which is how a Visual-mode keymap's
-  -- Lua callback ever runs) is exactly what sets those marks.
+  -- a context block to prefix a prompt with (`ai.context.assemble` only ever
+  -- returns formatted text). A Lua callback of a Visual-mode mapping runs
+  -- while Visual mode is still active, when `'<`/`'>` still hold the PREVIOUS
+  -- selection, so the range is read from the live selection
+  -- (`ai.capture.visual_range`).
   ---@return {line1: integer, line2: integer}
   local function visual_range()
+    local visual_mode = vim.fn.mode()
     -- rewrite/append/prepend only ever operate on whole lines (there is no
     -- column-aware nvim_buf_set_text path here) -- for a linewise ("V")
     -- selection that is exactly what the user asked for, but a charwise
@@ -42,19 +44,30 @@ function M.setup(cfg)
     -- case would mean unrelated text on the same line (a trailing comment,
     -- a second statement) gets discarded without the user ever being told
     -- why -- warn instead of guessing at a narrower edit.
-    if vim.fn.visualmode() ~= "V" then
+    if visual_mode ~= "V" then
       require("lib.nvim.notify").create("[ai]").warn(
         "rewrite/append/prepend act on whole lines -- the full line(s) your selection touches will be affected, not just the selected characters"
       )
     end
-    return { line1 = vim.fn.getpos("'<")[2], line2 = vim.fn.getpos("'>")[2] }
+    local line1, line2 = require("ai.capture").visual_range()
+    return { line1 = line1, line2 = line2 }
   end
 
   ---@type Lib.Keymap.Spec
   local spec = {
     prefix = prefix,
     which_key = cfg.which_key.enable and { group = "ai.nvim" } or nil,
-    order = { "ask", "quick", "explain", "rewrite", "append", "prepend", "agent", "stop" },
+    order = {
+      "ask",
+      "quick",
+      "capture",
+      "explain",
+      "rewrite",
+      "append",
+      "prepend",
+      "agent",
+      "stop",
+    },
     actions = {
       ask = {
         default = prefix .. "a",
@@ -69,6 +82,8 @@ function M.setup(cfg)
           {
             mode = "v",
             rhs = function()
+              -- leave Visual mode first: that is what sets '< and '> to this selection
+              require("ai.capture").visual_range()
               actions.ask_prompt("", vim.tbl_extend("force", cfg.context, { selection = true }))
             end,
             desc = "Ask about the selection",
@@ -90,9 +105,33 @@ function M.setup(cfg)
           {
             mode = "v",
             rhs = function()
+              -- leave Visual mode first: that is what sets '< and '> to this selection
+              require("ai.capture").visual_range()
               actions.quick_action(vim.tbl_extend("force", cfg.context, { selection = true }))
             end,
             desc = "Send selection + a typed task, stream the answer",
+          },
+        },
+      },
+      -- Context capture: the last message (normal) or the selection (visual),
+      -- redacted and shown for striking before anything is sent.
+      capture = {
+        default = prefix .. "c",
+        binds = {
+          {
+            mode = "n",
+            rhs = function()
+              actions.capture("messages")
+            end,
+            desc = "Ask about the last message (shown and editable first)",
+          },
+          {
+            mode = "v",
+            rhs = function()
+              local line1, line2 = require("ai.capture").visual_range()
+              actions.capture("selection", { line1 = line1, line2 = line2 })
+            end,
+            desc = "Ask about the selection (shown and editable first)",
           },
         },
       },
@@ -195,6 +234,8 @@ function M.setup(cfg)
           {
             mode = "v",
             rhs = function()
+              -- leave Visual mode first: that is what sets '< and '> to this selection
+              require("ai.capture").visual_range()
               actions.explain_badge(vim.tbl_extend("force", cfg.context, { selection = true }))
             end,
             desc = "Explain selection (badge, no panel)",
