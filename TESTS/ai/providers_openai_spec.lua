@@ -304,30 +304,26 @@ describe("ai.providers.openai", function()
       assert.are.equal("read this", content[2].text)
     end)
 
-    it(
-      "rejects a document attachment without calling curl -- Chat Completions has no document slot here",
-      function()
-        local called = false
-        package.loaded["lib.nvim.net.curl"] = {
-          fetch_json = function()
-            called = true
-          end,
-        }
-        local openai = require("ai.providers.openai")
-        local ok, err
-        openai.ask({ prompt = "hi", attachments = { pdf } }, function(a, b)
-          ok, err = a, b
-        end)
-        assert.is_false(ok)
-        assert.is_false(called)
-        assert.are.equal("invalid_request", err.kind)
-      end
-    )
+    it("rejects a document attachment without calling curl while documents = false", function()
+      local called = false
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function()
+          called = true
+        end,
+      }
+      local openai = require("ai.providers.openai")
+      local ok, err
+      openai.ask({ prompt = "hi", attachments = { pdf } }, function(a, b)
+        ok, err = a, b
+      end)
+      assert.is_false(ok)
+      assert.is_false(called)
+      assert.are.equal("invalid_request", err.kind)
+    end)
   end)
 
   describe("file part (documents)", function()
     local pdf = { kind = "document", media_type = "application/pdf", data = "BBB", name = "a.pdf" }
-    local openai
 
     ---Capture the JSON body the provider hands to curl.
     ---@return table
@@ -340,18 +336,11 @@ describe("ai.providers.openai", function()
         end,
       }
       package.loaded["ai.providers.openai"] = nil
-      openai = require("ai.providers.openai")
+      local openai = require("ai.providers.openai")
       openai.capabilities.documents = true
       openai.ask(req, function() end)
       return seen and vim.json.decode(seen) or nil
     end
-
-    before_each(function()
-      package.loaded["ai.providers.openai"] = nil
-    end)
-    after_each(function()
-      package.loaded["ai.providers.openai"] = nil
-    end)
 
     it("keeps documents = false until the live check has passed", function()
       assert.is_false(require("ai.providers.openai").capabilities.documents)
@@ -374,6 +363,54 @@ describe("ai.providers.openai", function()
         attachments = { { kind = "document", media_type = "application/pdf", data = "BBB" } },
       })
       assert.are.equal("document.pdf", body.messages[1].content[1].file.filename)
+    end)
+
+    for label, name in pairs({ empty = "", ["non-string"] = 42 }) do
+      it("falls back to document.pdf for an " .. label .. " name", function()
+        local body = sent_body({
+          prompt = "read",
+          attachments = {
+            { kind = "document", media_type = "application/pdf", data = "B", name = name },
+          },
+        })
+        assert.are.equal("document.pdf", body.messages[1].content[1].file.filename)
+      end)
+    end
+
+    it("sends the file part on the streaming path too", function()
+      local seen
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_stream = function(_, opts)
+          seen = vim.json.decode(opts.body)
+        end,
+      }
+      local m = require("ai.providers.openai")
+      m.capabilities.documents = true
+      m.stream({ prompt = "read", attachments = { pdf } }, {})
+      assert.are.equal("file", seen.messages[1].content[1].type)
+      assert.are.equal("a.pdf", seen.messages[1].content[1].file.filename)
+    end)
+
+    it("refuses a non-PDF document on the streaming path without calling curl", function()
+      local called = false
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_stream = function()
+          called = true
+        end,
+      }
+      local m = require("ai.providers.openai")
+      m.capabilities.documents = true
+      local err
+      m.stream({
+        prompt = "x",
+        attachments = { { kind = "document", media_type = "text/plain", data = "QQ==" } },
+      }, {
+        on_error = function(e)
+          err = e
+        end,
+      })
+      assert.is_false(called)
+      assert.are.equal("invalid_request", err.kind)
     end)
 
     it("keeps image and file parts together, in order", function()

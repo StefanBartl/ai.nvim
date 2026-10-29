@@ -187,6 +187,13 @@ end
 local DEFAULT_PDF_NAME = "document.pdf"
 
 ---@internal
+---@param att Ai.Attachment
+---@return string
+local function data_uri(att)
+  return string.format("data:%s;base64,%s", att.media_type, att.data)
+end
+
+---@internal
 ---The `file` content part for a document attachment. `filename` is always set: the attachment's own name
 ---when it has one, else `document.pdf`.
 ---@param att Ai.Attachment
@@ -200,7 +207,7 @@ local function file_part(att)
     type = "file",
     file = {
       filename = name,
-      file_data = string.format("data:%s;base64,%s", att.media_type, att.data),
+      file_data = data_uri(att),
     },
   }
 end
@@ -241,7 +248,7 @@ local function user_content(req)
     else
       content[#content + 1] = {
         type = "image_url",
-        image_url = { url = string.format("data:%s;base64,%s", att.media_type, att.data) },
+        image_url = { url = data_uri(att) },
       }
     end
   end
