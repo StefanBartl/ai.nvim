@@ -124,6 +124,13 @@ mapping another plugin sets *after* `setup()` replaces this one outright
 (buffer-local ones, such as a completion plugin's, always win) -- change
 `completion.keymap.accept` if that conflicts with an existing binding.
 
+An accepted suggestion is written into the buffer through the API, in one
+undo step with what you typed, and is therefore **not part of dot-repeat**:
+type `foo`, accept `bar`, type `baz`, press `<Esc>`, and `.` repeats `foobaz`
+(only what was typed). Typing the text instead would let autopairs and
+abbreviations rewrite it and would mangle the indentation of multi-line
+suggestions, so this is a known limit and not a bug.
+
 Set `completion.keymap.<name> = false` to drop just that one key, or
 `completion.enable = false` to disable the feature entirely.
 
