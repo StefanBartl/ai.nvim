@@ -254,14 +254,15 @@ describe("ai.ui.panel", function()
     local panel = panel_mod.open({})
     panel_mod.append(panel, "")
     assert.are.same({ "" }, panel.lines)
-    assert.are.equal(0, #progress_stub.updates)
+    assert.are.equal(1, #progress_stub.updates) -- only the "thinking..." from open()
+    assert.are.equal("thinking...", progress_stub.updates[1].text)
   end)
 
   it("append() marks the progress indicator as streaming", function()
     local panel_mod = require("ai.ui.panel")
     local panel = panel_mod.open({})
     panel_mod.append(panel, "x")
-    assert.are.equal("streaming...", progress_stub.updates[1].text)
+    assert.are.equal("streaming...", progress_stub.updates[2].text)
   end)
 
   it("append() sets the streaming status once per stream, not once per chunk", function()
@@ -270,8 +271,15 @@ describe("ai.ui.panel", function()
     for _, chunk in ipairs({ "a", "b\nc", "d", "e" }) do
       panel_mod.append(panel, chunk)
     end
-    assert.are.equal(1, #progress_stub.updates)
+    -- "thinking..." from open() + one "streaming..."; nothing per chunk.
+    assert.are.equal(2, #progress_stub.updates)
     assert.are.same({ "ab", "cde" }, panel.lines)
+  end)
+
+  it("open() shows 'thinking...' so the first notification is not blank", function()
+    local panel_mod = require("ai.ui.panel")
+    panel_mod.open({})
+    assert.are.equal("thinking...", progress_stub.updates[1].text)
   end)
 
   it("finish() stops the progress indicator and clears the process handle", function()

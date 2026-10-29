@@ -112,6 +112,8 @@ function M.open(opts)
   panel.progress:on_cancel(function()
     M.cancel(panel)
   end)
+  -- Without a text the first notification of a stream is a blank "[AI ]".
+  panel.progress:update({ text = "thinking..." })
 
   if panel.surface then
     panel.surface:on_close(function()
@@ -144,8 +146,8 @@ function M.append(panel, delta)
   if delta == "" then
     return
   end
-  -- Once per stream: the text never changes, and a progress style that writes a message per update (the echo
-  -- style) would put one line per chunk into the message history.
+  -- Once per stream: the text never changes, and a progress style that writes a message per update (the notify
+  -- style, also the `auto` fallback without fidget) would put one entry per chunk into the message history.
   if panel.progress and not panel.streaming_shown then
     panel.streaming_shown = true
     panel.progress:update({ text = "streaming..." })
