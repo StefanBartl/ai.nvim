@@ -31,7 +31,7 @@ end)
 ---@field kind "image"|"document"
 ---@field media_type string   -- "image/png", "application/pdf", ...
 ---@field data string         -- base64, no `data:` prefix, no line breaks
----@field name? string        -- optional, used only in error messages
+---@field name? string        -- optional, error messages; OpenAI file part filename
 ```
 
 Three things: bytes, what they are, what they are for. Every provider's wire

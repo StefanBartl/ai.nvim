@@ -126,7 +126,7 @@
 ---@field kind "image"|"document" What the payload is *for*. Not derivable from `media_type` alone in general, and it is what decides whether a provider can carry it at all (see `Ai.Provider.capabilities`).
 ---@field media_type string IANA media type, e.g. `"image/png"`, `"application/pdf"`
 ---@field data string Base64-encoded bytes, unwrapped
----@field name? string Optional display name (a file name), used only in error messages -- no provider sends it
+---@field name? string Optional display name (a file name), used in error messages; OpenAI sends it as the file part's `filename`
 
 ---@class Ai.Request
 ---@field prompt string

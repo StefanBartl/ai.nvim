@@ -703,7 +703,8 @@ page, a whole PDF -- through `req.attachments`, a list of `Ai.Attachment`: >lua
 <
 `Ai.Attachment` is three fields -- `kind` (`"image"` or `"document"`),
 `media_type` (an IANA type) and `data` (base64, unwrapped) -- plus an
-optional `name` used only in error messages. That is the intersection of
+optional `name` (used in error messages; OpenAI sends it as the file
+part filename). That is the intersection of
 what every provider's wire format actually carries; each backend spells it
 its own way.
 
