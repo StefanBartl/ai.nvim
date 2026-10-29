@@ -283,8 +283,8 @@ request. A `.cmd`/`.bat` is refused on Windows (libuv cannot run it, and
 a whole number of milliseconds, 1 to 3600000 (default 10000). The first
 non-empty line of stdout is the key, kept in memory only
 (`cache_ms`, at least one second, default the whole session; a failed run is
-not cached and not started again for 4 s; `:Ai key` and a success end the
-wait). stderr is discarded. Errors name the profile and a reason (exit
+not cached and not started again for 4 s; `:Ai key {profile}` and
+`:Ai key reset` end the wait). stderr is discarded. Errors name the profile and a reason (exit
 code, timeout, no output), never output or an argument; `:Ai info` shows
 `command {executable}` and "key present", "key not fetched yet" or "KEY
 MISSING: reason".
