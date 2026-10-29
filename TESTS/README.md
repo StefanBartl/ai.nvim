@@ -263,7 +263,12 @@ Covered: `attachments.lua`, `completion/context.lua`, `completion/init.lua`,
 `context/diagnostics.lua`, `providers/init.lua` (registry), all five
 built-in providers (`claude`, `gemini`, `ai_desktop`, `ollama`, `openai`),
 `providers/transport.lua`, `providers/util.lua`, `providers/sse.lua`,
-`ui/panel.lua`, `ui/ghost.lua`.
+`ui/panel.lua`, `ui/ghost.lua`, and `bindings/keymaps.lua`'s completion keys
+(`setup_completion`): `completion_keys_spec.lua` presses the default `<Tab>`/`<C-]>`
+in Insert mode via `nvim_feedkeys` against a real ghost suggestion (accept,
+dismiss, and `<Tab>`'s fall-through without or with a stale suggestion). It found
+that `accept`, an `expr` mapping, ran `accept()` under textlock (E565) and so
+always inserted a tab; the mapping now decides in the expr and writes from a `<Cmd>`.
 
 Skipped, with reasons:
 - `@types/init.lua` -- `---@meta` type annotations, no runtime code.
@@ -279,7 +284,7 @@ Skipped, with reasons:
   ...})` call (default `title`/`timeout_ms`, nothing else); testing it would
   mean either a live `ui.kit` popup or asserting on a stub that mirrors the
   function's own three lines back at it.
-- `bindings/actions.lua`, `bindings/keymaps.lua`, `bindings/usrcmds.lua` --
+- `bindings/actions.lua`, `bindings/keymaps.lua` (except `setup_completion`, above), `bindings/usrcmds.lua` --
   wiring code whose real behavior is "call `ui.kit.popup`/`ai.ui.panel`/
   `ai.ui.badge` with these arguments" or "register this route/keymap with
   `lib.nvim.bindings.usercmd.composer`/`lib.nvim.bindings.keymap`"; the interesting

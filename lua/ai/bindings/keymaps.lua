@@ -293,8 +293,11 @@ function M.setup_completion(cfg)
           if accept_key and vim.fn.pumvisible() ~= 0 then
             return vim.keycode(accept_key)
           end
-          if completion.accept() then
-            return ""
+          -- An expr mapping runs under textlock (E565): `accept()` cannot
+          -- write the buffer from here and would always fall through. Decide
+          -- here, write from a <Cmd> that runs right after, outside the lock.
+          if completion.acceptable() then
+            return "<Cmd>lua require('ai.completion').accept()<CR>"
           end
           return accept_key and vim.keycode(accept_key) or ""
         end,

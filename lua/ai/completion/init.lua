@@ -131,6 +131,17 @@ function M.trigger()
   end)
 end
 
+---Whether `accept()` would write the shown suggestion: one is shown, its
+---buffer is valid and unchanged since it was rendered. Pure (no edit), so an
+---`expr` keymap can ask it under textlock and fall through when it is `false`.
+---@return boolean
+function M.acceptable()
+  local suggestion = ghost.current()
+  return suggestion ~= nil
+    and vim.api.nvim_buf_is_valid(suggestion.bufnr)
+    and vim.api.nvim_buf_get_changedtick(suggestion.bufnr) == suggestion.changedtick
+end
+
 ---Insert the currently shown suggestion at the cursor and clear it.
 ---@return boolean accepted `false` if nothing was shown, or the shown
 ---suggestion no longer matches the buffer's current text -- the caller
