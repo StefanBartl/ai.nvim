@@ -363,6 +363,10 @@ MISSING: reason".
 :Ai info                                                          *:Ai-info*
   Show the active provider and agent, resolution order, the provider policy, and
   per-provider availability (providers outside the allow-list are marked).
+  With `provider = "auto"` the first line names the provider it resolves to
+  right now, `auto (-> claude)`, or why none does (`none available`,
+  `key missing`, `blocked by policy`); an active agent's own provider wins,
+  as it does for a request.
   While `ANTHROPIC_BASE_URL` is set, a line under `claude-cli` names the host
   the CLI will talk to (the host only; it can be a company gateway).
 

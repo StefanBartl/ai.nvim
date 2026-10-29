@@ -405,6 +405,26 @@ function M.next_agent()
   M.set_agent(names[at % #names + 1])
 end
 
+---@param def table|nil the active agent's definition
+---@return string|nil
+local function agent_provider(def)
+  return type(def) == "table" and type(def.provider) == "string" and def.provider or nil
+end
+
+---Short reason `providers.resolve("auto", ...)` found nothing, for `:Ai info`.
+---@param err table|nil
+---@return string
+local function unresolved_reason(err)
+  if type(err) == "table" then
+    if err.kind == "missing_api_key" then
+      return "key missing"
+    elseif type(err.data) == "table" and err.data.reason == "policy" then
+      return "blocked by policy"
+    end
+  end
+  return "none available"
+end
+
 ---Show the active provider, the auto-resolution order, and per-provider
 ---availability -- never a key's actual value.
 ---@return nil
@@ -414,11 +434,15 @@ function M.info()
   local policy = require("ai.policy")
 
   local active, def = require("ai.config").agent()
-  -- `auto` alone does not say where a request goes: name the provider it resolves to right now
-  local shown = cfg.provider
+  -- Same precedence as the request path (`ai.resolve`): the active agent's
+  -- provider wins over the config's. `auto` alone does not say where a request
+  -- goes, so name the provider it resolves to right now -- or why none does.
+  local shown = agent_provider(def) or cfg.provider
   if shown == "auto" then
-    local ok, chosen = pcall(providers.resolve, "auto", cfg.provider_order, {})
-    shown = ("auto (-> %s)"):format(ok and chosen and chosen.id or "none available")
+    local ok, chosen, err = pcall(providers.resolve, "auto", cfg.provider_order, {})
+    shown = ("auto (-> %s)"):format(
+      ok and chosen and chosen.id or unresolved_reason(ok and err or nil)
+    )
   end
   local lines = {
     "provider: " .. shown,
