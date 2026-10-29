@@ -195,6 +195,88 @@ describe("doc/ai.txt (:help ai) --", function()
     return tags
   end
 
+  ---@return string code of the config block (the one calling setup())
+  local function config_block()
+    local blocks, current = {}, nil
+    for _, line in ipairs(section("ai-config")) do
+      if line:match(">lua%s*$") then
+        current = {}
+      elseif current and line:match("^<%s*$") then
+        blocks[#blocks + 1] = table.concat(current, "\n")
+        current = nil
+      elseif current then
+        current[#current + 1] = (line:gsub("^  ", ""))
+      end
+    end
+    local hits = {}
+    for _, code in ipairs(blocks) do
+      if code:find('require("ai").setup(', 1, true) then
+        hits[#hits + 1] = code
+      end
+    end
+    assert.are.equal(1, #hits, "expected exactly one setup() block in the configuration section")
+    return hits[1]
+  end
+
+  ---The config block of doc/ai.txt, compared with DEFAULTS (raises on a diff).
+  local function check_config_is_defaults()
+    local captured
+    S.run_chunk(config_block(), "doc/ai.txt#config", {
+      setup = function(opts)
+        captured = opts
+      end,
+    })
+    assert.is_table(captured)
+    assert.are.same(require("ai.config.DEFAULTS"), captured)
+  end
+
+  ---The |:Ai-<sub>| tags against the registered subcommands (raises on a diff).
+  local function check_subcommand_tags()
+    require("ai").setup()
+    local real = {}
+    for _, sub in ipairs(vim.fn.getcompletion("Ai ", "cmdline")) do
+      real[sub] = true
+    end
+    local documented = {}
+    for tag in pairs(help_tags()) do
+      local sub = tag:match("^:Ai%-(.+)$")
+      if sub then
+        documented[sub] = true
+      end
+    end
+    assert_same_set(real, documented, ":Ai subcommands")
+  end
+
+  ---The keymap tables of the help against BINDINGS.md (raises on a diff).
+  local function check_keymap_tables()
+    ---@param modes string e.g. "n, v"
+    ---@return string
+    local function mode_key(modes)
+      local letters = {}
+      for letter in modes:gmatch("%a") do
+        letters[#letters + 1] = letter
+      end
+      table.sort(letters)
+      return table.concat(letters)
+    end
+
+    local documented = {}
+    for _, line in ipairs(lines) do
+      local modes, lhs, id = line:match("^  (%a[%a, ]-)  +(<%S+)  +([%w_%-]+) ")
+      if modes then
+        documented[mode_key(modes) .. " " .. lhs .. " " .. id] = true
+      end
+    end
+
+    local expected = {}
+    for _, row in ipairs(S.table_rows("BINDINGS.md", { "Mode", "Default", "Action id" })) do
+      local lhs = assert(row[2]:match("^`(.+)`$"), "BINDINGS.md: default not in backticks")
+      local id = assert(row[3]:match("^`(.+)`$"), "BINDINGS.md: action id not in backticks")
+      expected[mode_key(row[1]) .. " " .. lhs .. " " .. id] = true
+    end
+    assert_same_set(expected, documented, "keymap tables")
+  end
+
   describe("structure", function()
     it("is a well-formed help file: first-line tag, modeline, `:helptags` accepts it", function()
       assert.is_truthy(lines[1]:find("*ai.txt*", 1, true), "first line lost its *ai.txt* tag")
@@ -261,39 +343,7 @@ describe("doc/ai.txt (:help ai) --", function()
   end)
 
   describe("configuration", function()
-    ---@return string code of the config block (the one calling setup())
-    local function config_block()
-      local blocks, current = {}, nil
-      for _, line in ipairs(section("ai-config")) do
-        if line:match(">lua%s*$") then
-          current = {}
-        elseif current and line:match("^<%s*$") then
-          blocks[#blocks + 1] = table.concat(current, "\n")
-          current = nil
-        elseif current then
-          current[#current + 1] = (line:gsub("^  ", ""))
-        end
-      end
-      local hits = {}
-      for _, code in ipairs(blocks) do
-        if code:find('require("ai").setup(', 1, true) then
-          hits[#hits + 1] = code
-        end
-      end
-      assert.are.equal(1, #hits, "expected exactly one setup() block in the configuration section")
-      return hits[1]
-    end
-
-    it("the config block is exactly DEFAULTS", function()
-      local captured
-      S.run_chunk(config_block(), "doc/ai.txt#config", {
-        setup = function(opts)
-          captured = opts
-        end,
-      })
-      assert.is_table(captured)
-      assert.are.same(require("ai.config.DEFAULTS"), captured)
-    end)
+    it("the config block is exactly DEFAULTS", check_config_is_defaults)
 
     it("the provider-id comment of the config block lists the built-in providers", function()
       local comment = assert(
@@ -333,50 +383,15 @@ describe("doc/ai.txt (:help ai) --", function()
   end)
 
   describe("commands and bindings", function()
-    it("every :Ai subcommand has its |:Ai-<sub>| tag, and no tag names a missing one", function()
-      require("ai").setup()
-      local real = {}
-      for _, sub in ipairs(vim.fn.getcompletion("Ai ", "cmdline")) do
-        real[sub] = true
-      end
-      local documented = {}
-      for tag in pairs(help_tags()) do
-        local sub = tag:match("^:Ai%-(.+)$")
-        if sub then
-          documented[sub] = true
-        end
-      end
-      assert_same_set(real, documented, ":Ai subcommands")
-    end)
+    it(
+      "every :Ai subcommand has its |:Ai-<sub>| tag, and no tag names a missing one",
+      check_subcommand_tags
+    )
 
-    it("the keymap tables equal the BINDINGS.md tables (mode, lhs and action id)", function()
-      ---@param modes string e.g. "n, v"
-      ---@return string
-      local function mode_key(modes)
-        local letters = {}
-        for letter in modes:gmatch("%a") do
-          letters[#letters + 1] = letter
-        end
-        table.sort(letters)
-        return table.concat(letters)
-      end
-
-      local documented = {}
-      for _, line in ipairs(lines) do
-        local modes, lhs, id = line:match("^  (%a[%a, ]-)  +(<%S+)  +([%w_%-]+) ")
-        if modes then
-          documented[mode_key(modes) .. " " .. lhs .. " " .. id] = true
-        end
-      end
-
-      local expected = {}
-      for _, row in ipairs(S.table_rows("BINDINGS.md", { "Mode", "Default", "Action id" })) do
-        local lhs = assert(row[2]:match("^`(.+)`$"), "BINDINGS.md: default not in backticks")
-        local id = assert(row[3]:match("^`(.+)`$"), "BINDINGS.md: action id not in backticks")
-        expected[mode_key(row[1]) .. " " .. lhs .. " " .. id] = true
-      end
-      assert_same_set(expected, documented, "keymap tables")
-    end)
+    it(
+      "the keymap tables equal the BINDINGS.md tables (mode, lhs and action id)",
+      check_keymap_tables
+    )
   end)
 
   describe("providers", function()
@@ -604,5 +619,64 @@ describe("doc/ai.txt (:help ai) --", function()
         assert.are.equal(major .. "." .. minor, from_vimdoc)
       end
     )
+  end)
+
+  -- The checks above are only worth anything if they go red on real drift. Each
+  -- case below plants one drift in the in-memory copy of the help and expects
+  -- the matching check to fail with a message that names the stray item.
+  describe("planted drift is detected", function()
+    ---Replaces the first line equal to or containing `needle` using `fn`.
+    ---@param needle string
+    ---@param fn fun(line: string): string?  nil deletes the line
+    local function mutate(needle, fn)
+      for i, line in ipairs(lines) do
+        if line:find(needle, 1, true) then
+          local new = fn(line)
+          if new == nil then
+            table.remove(lines, i)
+          else
+            lines[i] = new
+          end
+          tags = nil
+          return
+        end
+      end
+      error("drift fixture: no line contains " .. needle)
+    end
+
+    ---@param check fun()
+    ---@return string message
+    local function failure_of(check)
+      local ok, err = pcall(check)
+      assert.is_false(ok, "the check stayed green on planted drift")
+      return tostring(err)
+    end
+
+    it("a changed default in the config block", function()
+      mutate("idle_ms", function(line)
+        return (line:gsub("%d+", "9999", 1))
+      end)
+      assert.is_truthy(failure_of(check_config_is_defaults))
+    end)
+
+    it("an :Ai subcommand tag that no longer exists", function()
+      mutate("*:Ai-info*", function(line)
+        return (line:gsub(":Ai%-info", ":Ai-infoo"))
+      end)
+      assert.is_truthy(failure_of(check_subcommand_tags):find('"info"', 1, true))
+    end)
+
+    it("a keymap row that was dropped from the help", function()
+      local row
+      for i, line in ipairs(lines) do
+        if line:match("^  (%a[%a, ]-)  +(<%S+)  +([%w_%-]+) ") then
+          row = i
+          break
+        end
+      end
+      assert(row, "drift fixture: no keymap row found")
+      table.remove(lines, row)
+      assert.is_truthy(failure_of(check_keymap_tables):find("doc/ai.txt", 1, true))
+    end)
   end)
 end)
