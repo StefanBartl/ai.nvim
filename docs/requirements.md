@@ -82,6 +82,12 @@ No provider is required at install time -- `:checkhealth ai` reports which
 ones are usable on this machine, and `provider = "auto"` (the default) picks
 the first available one in `provider_order`.
 
+On a machine where none of them is available (for example a managed work
+machine where the local ai-desktop server is not installed), ai.nvim stays
+loaded and simply reports that no provider is available (`:Ai info` shows
+`provider: auto (-> none available)`); nothing is sent anywhere. Use the
+tools your organisation approved there instead.
+
 ## Optional
 
 - [`data.nvim`](https://github.com/WKDSteve/data.nvim) -- backs

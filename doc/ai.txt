@@ -101,6 +101,11 @@ No provider is required at install time -- |:checkhealth| ai reports which
 ones are usable on this machine, and `provider = "auto"` (the default) picks
 the first available one in `provider_order`.
 
+On a machine where none of them is available (for example a managed work
+machine without the local ai-desktop server), ai.nvim stays loaded and
+reports that no provider is available (|:Ai-info| shows `auto (-> none
+available)`); nothing is sent anywhere.
+
 Optional soft dependencies (loaded via `pcall(require, ...)`; absent, the
 matching |ai-context| flag is a silent no-op):
 - data.nvim -- backs `context.structured_data`.
