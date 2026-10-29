@@ -13,6 +13,11 @@
 package.path = vim.fn.getcwd() .. "/TESTS/?.lua;" .. package.path
 local S = require("docs_support")
 
+-- The fallback of the accept key runs Neovim's own insert <Tab>, which loads `vim.snippet`; that module
+-- creates its augroup at load, and `S.isolate_install()` removes groups a case created, leaving the
+-- loaded module with a dead group id ("Invalid 'group'"). Load it before the first case.
+local _ = vim.snippet
+
 describe("ai completion keys", function()
   local keys = require("ai.config.DEFAULTS").completion.keymap
   local bufnr
@@ -89,6 +94,44 @@ describe("ai completion keys", function()
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "local x = " })
     feed("A" .. keys.accept .. "<Esc>")
     assert.are.equal("local x = \t", line())
+  end)
+
+  -- Without a suggestion the key must still do what it did before we took it. Neovim's own insert
+  -- <Tab> jumps to the next snippet placeholder; a bare tab here was the bug.
+  -- One feed for the whole sequence: with the `x` flag Insert mode ends when the typeahead does (as
+  -- with :normal), which would move the cursor off the end of the line between two feeds.
+  local expand = "<Cmd>lua vim.snippet.expand('${1:a} ${2:b}')<CR>"
+
+  -- A bare tab in the text is what the old fallback produced; the jump leaves the snippet text alone.
+  --
+  -- The snippet session is stopped before the assertion: its autocmds would otherwise make
+  -- `S.isolate_install()` delete the augroup of the loaded `vim.snippet` module after the case.
+  it("<Tab> without a ghost still jumps to the next snippet placeholder", function()
+    feed("A" .. expand .. keys.accept .. "<Esc>")
+    local text = line()
+    pcall(vim.snippet.stop)
+    assert.are.equal("local x = a b", text)
+  end)
+
+  it("a second setup keeps that fallback instead of falling back to itself", function()
+    require("ai.bindings.keymaps").setup_completion({
+      completion = { enable = true, keymap = keys },
+    })
+    feed("A" .. expand .. keys.accept .. "<Esc>")
+    local text = line()
+    pcall(vim.snippet.stop)
+    assert.are.equal("local x = a b", text)
+  end)
+
+  it("<Tab> without a ghost runs another plugin's global imap that was there first", function()
+    require("lib.nvim.bindings.keymap").forget("Ai")
+    vim.keymap.set("i", keys.accept, "FOREIGN", { desc = "foreign plugin" })
+    package.loaded["ai.bindings.keymaps"] = nil
+    require("ai.bindings.keymaps").setup_completion({
+      completion = { enable = true, keymap = keys },
+    })
+    feed("A" .. keys.accept .. "<Esc>")
+    assert.are.equal("local x = FOREIGN", line())
   end)
 
   it("<C-]> with a ghost shown dismisses it without touching the text", function()

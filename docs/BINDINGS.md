@@ -28,7 +28,7 @@ see [configuration.md](configuration.md)). They follow the master switch:
 | Mode | Default | Action id | Does |
 | ---- | ------- | --------- | ---- |
 | i | `<C-\><C-a>` | `trigger` | Request a completion suggestion at the cursor (manual mode only) |
-| i | `<Tab>` | `accept` | Insert the shown suggestion; falls through to normal `<Tab>` when nothing is shown or a completion-menu popup is open |
+| i | `<Tab>` | `accept` | Insert the shown suggestion; falls through to what the key did before (Neovim's snippet jump, or another plugin's global `imap`) when nothing is shown, and to a plain `<Tab>` while a completion-menu popup is open |
 | i | `<C-]>` | `dismiss` | Clear the shown suggestion without inserting it |
 
 ## Usercmds

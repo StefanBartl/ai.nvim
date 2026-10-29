@@ -117,10 +117,12 @@ completion = { provider = "ollama", model = "qwen2.5-coder:7b-q5_K_M" }
 
 The `accept` keymap (`<Tab>` by default) is an `expr` mapping: it steps
 aside while a completion-menu plugin's own popup is open (`pumvisible()`),
-and falls through to that key's normal behavior when no suggestion is
-shown. It cannot know whether another plugin *also* claims the same key
-when no popup is open -- change `completion.keymap.accept` if that
-conflicts with an existing binding.
+and falls through to what that key did before when no suggestion is
+shown: Neovim's own insert `<Tab>` (the snippet jump) or another plugin's
+global insert-mode mapping that was already there when `setup()` ran. A
+mapping another plugin sets *after* `setup()` replaces this one outright
+(buffer-local ones, such as a completion plugin's, always win) -- change
+`completion.keymap.accept` if that conflicts with an existing binding.
 
 Set `completion.keymap.<name> = false` to drop just that one key, or
 `completion.enable = false` to disable the feature entirely.

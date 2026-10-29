@@ -256,6 +256,68 @@ end
 ---plugin's own key for menu navigation, though it cannot know whether that
 ---plugin *also* claims the same key when no popup is open; changing
 ---`cfg.completion.keymap.accept` away from the default resolves that case.
+---The insert-mode mapping `key` has right now, or nil when there is none. When that mapping is
+---this plugin's own accept mapping (a second `setup()`), it is not returned -- the key would
+---fall back to itself -- and the second result is `true`, so the caller keeps what it found the
+---first time.
+---@param key string
+---@return table|nil previous
+---@return boolean? own
+function M.previous_insert_mapping(key)
+  local map = vim.fn.maparg(key, "i", false, true)
+  if type(map) ~= "table" or next(map) == nil then
+    return nil
+  end
+  local desc = map.desc
+  if type(desc) == "string" and desc:find("Accept the shown completion suggestion", 1, true) then
+    return nil, true
+  end
+  return map
+end
+
+---What `key` should do when there is nothing to accept: whatever it did before (`previous`, from
+---`previous_insert_mapping`), as keys for the expr mapping to return; the key itself when there
+---was nothing. An expr mapping (Neovim's snippet jump) is evaluated here and its result returned;
+---a plain `rhs` is returned as typed; a Lua callback that is not an expr mapping cannot be turned
+---into keys, so it is called through a `<Cmd>` right after.
+---@param previous table|nil
+---@param key string
+---@return string
+function M.previous_keys(previous, key)
+  local own = vim.keycode(key)
+  if not previous then
+    return own
+  end
+  if previous.expr == 1 then
+    local ok, res
+    if previous.callback then
+      ok, res = pcall(previous.callback)
+    else
+      ok, res = pcall(vim.api.nvim_eval, previous.rhs or "")
+    end
+    if ok and type(res) == "string" then
+      return res
+    end
+    return own
+  end
+  if previous.callback then
+    return "<Cmd>lua require('ai.bindings.keymaps').call_previous()<CR>"
+  end
+  if type(previous.rhs) == "string" and previous.rhs ~= "" then
+    return previous.rhs
+  end
+  return own
+end
+
+---Runs the Lua callback of the mapping the accept key replaced (see `previous_keys`).
+---@return nil
+function M.call_previous()
+  local previous = M._previous
+  if previous and previous.callback then
+    pcall(previous.callback)
+  end
+end
+
 ---@param cfg Ai.Config
 ---@return Lib.Keymap.Registered[]|nil
 function M.setup_completion(cfg)
@@ -270,6 +332,18 @@ function M.setup_completion(cfg)
   -- nil` normalizes that to the same "no default key" the registry itself
   -- expects (its own doc: "Absent = no key by default").
   local accept_key = km.accept or nil
+
+  -- What the accept key did before we took it: Neovim's own insert <Tab> (the snippet jump, an
+  -- expr mapping) or another plugin's global `imap`. With nothing to accept the key must still
+  -- do that, not insert a bare tab. Read now, because once registered the key is ours.
+  local previous, own
+  if accept_key then
+    previous, own = M.previous_insert_mapping(accept_key)
+  end
+  if own then
+    previous = M._previous
+  end
+  M._previous = previous
 
   ---@type Lib.Keymap.Spec
   local spec = {
@@ -299,7 +373,7 @@ function M.setup_completion(cfg)
           if completion.acceptable() then
             return "<Cmd>lua require('ai.completion').accept()<CR>"
           end
-          return accept_key and vim.keycode(accept_key) or ""
+          return M.previous_keys(previous, accept_key)
         end,
       },
       dismiss = {
