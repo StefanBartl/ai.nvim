@@ -106,12 +106,15 @@ code (28 cases: 26 must turn red, and inserting a numbered section or switching 
 file to CRLF must stay green); the first version missed an error kind that only a
 *comment* still mentioned, per-provider swaps of keys and ports, and a
 suffix-dependent environment-variable check, which an independent review found and
-the cases above now pin. The same drift is now also planted in the spec itself (`planted drift is
-detected`: a changed config default, a renamed `:Ai` tag, a dropped keymap row
-must each fail their check), so a check that goes toothless turns red. `doc/tags`
-is generated and git-ignored, so there is nothing to check in the repo; the spec
-runs `:helptags` on a scratch copy instead. A load error in a spec or in `docs_support.lua` makes
-`scripts/test.sh <file>` exit with 2 immediately instead of idling.
+the cases above now pin. The same drift is now also planted in the in-memory
+copy of `doc/ai.txt` that the spec mutates (`planted drift is detected`: a
+changed config default, a renamed `:Ai` tag, a dropped keymap row, and an extra
+tag and an extra keymap row that the code never had). Each must fail its check
+with a message naming the stray item, so a check that goes toothless turns red.
+`doc/tags` is generated and git-ignored, so there is nothing to check in the
+repo; the spec runs `:helptags` on a scratch copy instead. A load error in a
+spec or in `docs_support.lua` makes `scripts/test.sh <file>` exit with 2
+immediately instead of idling.
 
 ## Round 1 (2026-09-18): first full audit
 

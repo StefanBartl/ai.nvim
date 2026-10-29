@@ -656,7 +656,7 @@ describe("doc/ai.txt (:help ai) --", function()
       mutate("idle_ms", function(line)
         return (line:gsub("%d+", "9999", 1))
       end)
-      assert.is_truthy(failure_of(check_config_is_defaults))
+      assert.is_truthy(failure_of(check_config_is_defaults):find("9999", 1, true))
     end)
 
     it("an :Ai subcommand tag that no longer exists", function()
@@ -666,17 +666,40 @@ describe("doc/ai.txt (:help ai) --", function()
       assert.is_truthy(failure_of(check_subcommand_tags):find('"info"', 1, true))
     end)
 
-    it("a keymap row that was dropped from the help", function()
-      local row
+    it("an :Ai subcommand tag the code never had", function()
+      lines[#lines + 1] = "*:Ai-bogus*"
+      tags = nil
+      local msg = failure_of(check_subcommand_tags)
+      assert.is_truthy(msg:find('documents "bogus"', 1, true), msg)
+    end)
+
+    ---The first keymap row of the help.
+    ---@return integer index into `lines`
+    local function first_keymap_row()
       for i, line in ipairs(lines) do
         if line:match("^  (%a[%a, ]-)  +(<%S+)  +([%w_%-]+) ") then
-          row = i
-          break
+          return i
         end
       end
-      assert(row, "drift fixture: no keymap row found")
+      error("drift fixture: no keymap row found")
+    end
+
+    it("a keymap row that was dropped from the help", function()
+      local row = first_keymap_row()
+      local lhs = lines[row]:match("(<%S+)")
       table.remove(lines, row)
-      assert.is_truthy(failure_of(check_keymap_tables):find("doc/ai.txt", 1, true))
+      local msg = failure_of(check_keymap_tables)
+      assert.is_truthy(msg:find(lhs, 1, true), msg)
+      assert.is_truthy(msg:find("is missing from doc/ai.txt", 1, true), msg)
+    end)
+
+    it("a keymap row the code never had", function()
+      local row = first_keymap_row()
+      local head, lhs = lines[row]:match("^(  %a[%a, ]-  +)(<%S+  +)")
+      table.insert(lines, row + 1, head .. lhs .. "bogus      Planted row.")
+      local msg = failure_of(check_keymap_tables)
+      assert.is_truthy(msg:find('documents "', 1, true), msg)
+      assert.is_truthy(msg:find("bogus", 1, true), msg)
     end)
   end)
 end)
