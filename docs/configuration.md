@@ -95,10 +95,11 @@ configured model against `lua/ai/providers/models.lua`'s per-provider
 registry (Claude, Gemini, OpenAI) and warns about one it doesn't recognize.
 `ollama`/`ai_desktop` are deliberately exempt -- both run whatever local model
 the user has pulled or loaded, so there is no fixed catalogue to check
-against; any model id is accepted for them. ai-desktop picks its backend by the
-model name: `claude-`, `gpt-` and `gemini-` go to that cloud, everything else
-(and no model) to Ollama. A refused connection for such a request says so
-("ai-desktop sends this to Ollama - is it running?"). See
+against; any model id is accepted for them. ai-desktop decides by the model
+name where a request goes (cloud backend or Ollama); when it reports that Ollama
+cannot be reached ("ollama: Could not establish connection ..."), the error
+adds "is Ollama running?". An unreachable ai-desktop itself is a plain network
+error. See
 [health.md](health.md#configuration).
 
 ## Inline completion

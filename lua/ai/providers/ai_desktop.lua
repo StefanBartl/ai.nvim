@@ -84,42 +84,17 @@ local function error_message(err)
   return tostring(err)
 end
 
----Model-name prefixes ai-desktop sends to a cloud backend; anything else (and no model at all) goes to Ollama.
-local CLOUD_PREFIXES = { "claude-", "gpt-", "gemini-" }
-
----Which backend ai-desktop picks for `model`: `"ollama"` for no model or a name without a cloud prefix, else the prefix.
----@param model any
----@return string backend
-function M.backend_of(model)
-  if type(model) == "string" then
-    for _, prefix in ipairs(CLOUD_PREFIXES) do
-      if vim.startswith(model, prefix) then
-        return prefix:sub(1, -2)
-      end
-    end
+---ai-desktop reports an Ollama that is not running as an HTTP error body (`/ask`) or an SSE error event
+---(`/ask/stream`), e.g. "ollama: Could not establish connection (http://127.0.0.1:11434)". A curl-level failure
+---(`network_error`) means ai-desktop itself is unreachable and says nothing about Ollama, so only this server
+---message gets the hint -- no model-name routing table is duplicated here.
+---@param message string
+---@return string
+local function with_ollama_hint(message)
+  if message:lower():find("^ollama: could not establish connection") then
+    return message .. " - is Ollama running?"
   end
-  return "ollama"
-end
-
----A connection failure of a request that ai-desktop would have sent to Ollama says so: an Ollama that is not running is
----the likely cause, and the plain "could not connect" never names it.
----@param err LibErrorValue
----@param req Ai.Request
----@return LibErrorValue
-local function with_backend(err, req)
-  if type(err) ~= "table" or err.kind ~= "network_error" or M.backend_of(req.model) ~= "ollama" then
-    return err
-  end
-  local model = type(req.model) == "string" and req.model ~= "" and ("model '%s'"):format(req.model)
-    or "no model"
-  return lib_error.new(
-    "network_error",
-    ("%s (%s: ai-desktop sends this to Ollama - is it running? A claude-, gpt- or gemini- model in config.model.ai_desktop goes to that cloud backend)"):format(
-      err.message,
-      model
-    ),
-    err.data
-  )
+  return message
 end
 
 ---@internal
@@ -151,7 +126,7 @@ function M.ask(req, cb)
     timeout_ms = timeout_ms,
   }, function(ok, data, obj)
     if not ok then
-      cb(false, with_backend(util.fetch_error("ai_desktop", data, obj, timeout_ms), req))
+      cb(false, util.fetch_error("ai_desktop", data, obj, timeout_ms))
       return
     end
     -- curl exits 0 regardless of HTTP status (see fetch_json's own doc), so
@@ -165,7 +140,11 @@ function M.ask(req, cb)
     if data.error ~= nil then
       cb(
         false,
-        lib_error.new("api_error", "ai_desktop error: " .. error_message(data.error), data.error)
+        lib_error.new(
+          "api_error",
+          "ai_desktop error: " .. with_ollama_hint(error_message(data.error)),
+          data.error
+        )
       )
       return
     end
@@ -177,7 +156,7 @@ function M.ask(req, cb)
     })
   end)
   if prepare_err then
-    cb(false, with_backend(lib_error.new("network_error", "ai_desktop: " .. prepare_err), req))
+    cb(false, lib_error.new("network_error", "ai_desktop: " .. prepare_err))
   end
 end
 
@@ -221,7 +200,7 @@ function M.stream(req, handlers)
           handlers.on_error(
             lib_error.new(
               "api_error",
-              "ai_desktop error: " .. error_message(decoded.error),
+              "ai_desktop error: " .. with_ollama_hint(error_message(decoded.error)),
               decoded.error
             )
           )
@@ -242,7 +221,7 @@ function M.stream(req, handlers)
       end
       if obj.code ~= 0 then
         if handlers.on_error then
-          handlers.on_error(with_backend(util.curl_exit_error("ai_desktop", obj, timeout_ms), req))
+          handlers.on_error(util.curl_exit_error("ai_desktop", obj, timeout_ms))
         end
         return
       end
@@ -263,7 +242,7 @@ function M.stream(req, handlers)
     on_error = function(err)
       failed = true
       if handlers.on_error then
-        handlers.on_error(with_backend(lib_error.new("network_error", err), req))
+        handlers.on_error(lib_error.new("network_error", err))
       end
     end,
   })
@@ -271,9 +250,7 @@ function M.stream(req, handlers)
   -- See claude.lua: a body that never reached curl fires none of the
   -- handlers above, so it has to be reported here.
   if prepare_err and handlers.on_error then
-    handlers.on_error(
-      with_backend(lib_error.new("network_error", "ai_desktop: " .. prepare_err), req)
-    )
+    handlers.on_error(lib_error.new("network_error", "ai_desktop: " .. prepare_err))
   end
   return process
 end

@@ -60,6 +60,30 @@ describe("ai.providers.ai_desktop", function()
       assert.is_true(err.message:find("queue full", 1, true) ~= nil)
     end)
 
+    it("an Ollama-down /ask error carries the hint, other errors do not", function()
+      local body
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function(_, _, cb)
+          cb(true, body)
+        end,
+      }
+      local ai_desktop = require("ai.providers.ai_desktop")
+      local err
+      local function run()
+        ai_desktop.ask({ prompt = "hi" }, function(_, e)
+          err = e
+        end)
+      end
+      body =
+        { error = { message = "ollama: Could not establish connection (http://127.0.0.1:11434)" } }
+      run()
+      assert.are.equal("api_error", err.kind)
+      assert.is_truthy(err.message:find("is Ollama running?", 1, true))
+      body = { error = { message = "anthropic: overloaded" } }
+      run()
+      assert.is_nil(err.message:find("Ollama", 1, true))
+    end)
+
     it("reports a bare string error as a failure too", function()
       -- ai_desktop.lua's own `data.error` check accepts either shape -- see the
       -- `type(data.error) == "table" and data.error.message or data.error`
@@ -178,7 +202,28 @@ describe("ai.providers.ai_desktop", function()
       assert.are.equal("network_error", err.kind)
     end)
 
-    it("a refused connection for a request that goes to Ollama says so", function()
+    it("an Ollama-down SSE error event carries the hint", function()
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_stream = function(_, _, handlers)
+          handlers.on_chunk(
+            'data: {"error":{"message":"ollama: Could not establish connection (http://127.0.0.1:11434)"}}'
+          )
+          handlers.on_done({ code = 0, signal = 0, stdout = "", stderr = "" })
+        end,
+      }
+      local ai_desktop = require("ai.providers.ai_desktop")
+      local err
+      ai_desktop.stream({ prompt = "hi" }, {
+        on_error = function(e)
+          err = e
+        end,
+      })
+      assert.are.equal("api_error", err.kind)
+      assert.is_truthy(err.message:find("Could not establish connection", 1, true))
+      assert.is_truthy(err.message:find("is Ollama running?", 1, true))
+    end)
+
+    it("other SSE errors and an unreachable ai-desktop do not blame Ollama", function()
       package.loaded["lib.nvim.net.curl"] = {
         fetch_stream = function(_, _, handlers)
           handlers.on_done({ code = 7, signal = 0, stdout = "", stderr = "connection refused" })
@@ -191,40 +236,8 @@ describe("ai.providers.ai_desktop", function()
           err = e
         end,
       })
-      assert.is_truthy(err.message:find("sends this to Ollama", 1, true))
-      assert.is_truthy(err.message:find("no model", 1, true))
-      ai_desktop.stream({ prompt = "hi", model = "llama3" }, {
-        on_error = function(e)
-          err = e
-        end,
-      })
-      assert.is_truthy(err.message:find("model 'llama3'", 1, true))
-    end)
-
-    it("a refused connection for a cloud model does not blame Ollama", function()
-      package.loaded["lib.nvim.net.curl"] = {
-        fetch_stream = function(_, _, handlers)
-          handlers.on_done({ code = 7, signal = 0, stdout = "", stderr = "connection refused" })
-        end,
-      }
-      local ai_desktop = require("ai.providers.ai_desktop")
-      local err
-      ai_desktop.stream({ prompt = "hi", model = "claude-sonnet-5-5" }, {
-        on_error = function(e)
-          err = e
-        end,
-      })
       assert.are.equal("network_error", err.kind)
       assert.is_nil(err.message:find("Ollama", 1, true))
-    end)
-
-    it("backend_of() follows ai-desktop's routing by model prefix", function()
-      local ai_desktop = require("ai.providers.ai_desktop")
-      assert.are.equal("ollama", ai_desktop.backend_of(nil))
-      assert.are.equal("ollama", ai_desktop.backend_of("llama3"))
-      assert.are.equal("claude", ai_desktop.backend_of("claude-opus-5-5"))
-      assert.are.equal("gpt", ai_desktop.backend_of("gpt-5"))
-      assert.are.equal("gemini", ai_desktop.backend_of("gemini-2"))
     end)
 
     it("does not also call on_done after a transport-level on_error fires", function()
