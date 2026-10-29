@@ -7,10 +7,19 @@
 --- Attachments: an image becomes an `image_url` content part whose `url` is
 --- a `data:` URI rather than an actual URL -- the same field carries both,
 --- which is why `Ai.Attachment.media_type` has to be spliced back into the
---- string here instead of travelling in a field of its own. Documents are
---- refused: Chat Completions grew a separate `file` part for them later and
---- with different constraints, and claiming support that has never been
---- exercised against the live API would be worse than saying no.
+--- string here instead of travelling in a field of its own.
+---
+--- A document (PDF) becomes a `file` content part,
+--- `{ type = "file", file = { filename = ..., file_data = "data:application/pdf;base64,..." } }`.
+--- Source: OpenAI's PDF guide (https://developers.openai.com/api/docs/guides/pdf-files, checked 2026-10-29:
+--- Chat Completions accepts only PDFs as `file` parts, via base64 `file_data` as a data URI or an uploaded
+--- `file_id`, no `file_url`, no `detail`, 50 MB per file and per request, vision-capable models such as
+--- `gpt-4o` and later) and the Chat Completions reference (`file` object: `file_data`, `file_id`, `filename`,
+--- all optional there). UNSURE: the reference calls `file_data` just "base64 encoded"; the guide's examples
+--- use the data URI, which is what is built here. `filename` is always sent (the guide's Responses example
+--- carries one). Capability `documents` stays `false` until
+--- `ai.nvim/openai-documents-live-check` has run against the live API; the part is built but unreachable
+--- through `attachments.unsupported` until then.
 
 require("ai.@types")
 
@@ -175,6 +184,46 @@ local function target(req)
   return endpoint(base), key, nil
 end
 
+local DEFAULT_PDF_NAME = "document.pdf"
+
+---@internal
+---The `file` content part for a document attachment. `filename` is always set: the attachment's own name
+---when it has one, else `document.pdf`.
+---@param att Ai.Attachment
+---@return table part
+local function file_part(att)
+  local name = att.name
+  if type(name) ~= "string" or name == "" then
+    name = DEFAULT_PDF_NAME
+  end
+  return {
+    type = "file",
+    file = {
+      filename = name,
+      file_data = string.format("data:%s;base64,%s", att.media_type, att.data),
+    },
+  }
+end
+
+---@internal
+---Chat Completions takes only PDFs as `file` parts: any other document type is refused here rather than sent.
+---@param list Ai.Attachment[]|nil
+---@return LibErrorValue|nil
+local function document_error(list)
+  for _, att in ipairs(list or {}) do
+    if att.kind == "document" and att.media_type ~= "application/pdf" then
+      return lib_error.new(
+        "invalid_request",
+        ("openai: Chat Completions takes only PDF documents, not %s"):format(
+          tostring(att.media_type)
+        ),
+        { provider = "openai", kind = att.kind, media_type = att.media_type }
+      )
+    end
+  end
+  return nil
+end
+
 ---@internal
 ---See `claude.lua`'s `user_content`: a plain string without attachments, a
 ---content-part array with them, attachments before the prompt.
@@ -187,10 +236,14 @@ local function user_content(req)
   end
   local content = {}
   for _, att in ipairs(list) do
-    content[#content + 1] = {
-      type = "image_url",
-      image_url = { url = string.format("data:%s;base64,%s", att.media_type, att.data) },
-    }
+    if att.kind == "document" then
+      content[#content + 1] = file_part(att)
+    else
+      content[#content + 1] = {
+        type = "image_url",
+        image_url = { url = string.format("data:%s;base64,%s", att.media_type, att.data) },
+      }
+    end
   end
   content[#content + 1] = { type = "text", text = req.prompt }
   return content
@@ -246,6 +299,7 @@ function M.ask(req, cb)
   end
 
   local rejected = attachments.unsupported("openai", M.capabilities, req.attachments)
+    or document_error(req.attachments)
   if rejected then
     cb(false, rejected)
     return
@@ -313,6 +367,7 @@ function M.stream(req, handlers)
   end
 
   local rejected = attachments.unsupported("openai", M.capabilities, req.attachments)
+    or document_error(req.attachments)
   if rejected then
     if handlers.on_error then
       handlers.on_error(rejected)

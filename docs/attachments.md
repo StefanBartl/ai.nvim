@@ -69,6 +69,10 @@ message rather than as an editor that stops responding.
 | `claude-cli` | no | no | — |
 | `copilot` | no | no | — |
 
+The `openai` provider already builds the `file` part for PDFs (`filename` plus a base64
+`data:` URI in `file_data`), but keeps `document: no` until it has been checked against
+the live API.
+
 `:checkhealth ai` prints the same table for the providers available on this
 machine.
 

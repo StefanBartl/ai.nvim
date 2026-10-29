@@ -325,6 +325,88 @@ describe("ai.providers.openai", function()
     )
   end)
 
+  describe("file part (documents)", function()
+    local pdf = { kind = "document", media_type = "application/pdf", data = "BBB", name = "a.pdf" }
+    local openai
+
+    ---Capture the JSON body the provider hands to curl.
+    ---@return table
+    local function sent_body(req)
+      local seen
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function(_, opts, cb)
+          seen = opts.body
+          cb(true, { choices = {} }, { code = 0 })
+        end,
+      }
+      package.loaded["ai.providers.openai"] = nil
+      openai = require("ai.providers.openai")
+      openai.capabilities.documents = true
+      openai.ask(req, function() end)
+      return seen and vim.json.decode(seen) or nil
+    end
+
+    before_each(function()
+      package.loaded["ai.providers.openai"] = nil
+    end)
+    after_each(function()
+      package.loaded["ai.providers.openai"] = nil
+    end)
+
+    it("keeps documents = false until the live check has passed", function()
+      assert.is_false(require("ai.providers.openai").capabilities.documents)
+    end)
+
+    it("builds a file part with filename and a data: URI file_data", function()
+      local body = sent_body({ prompt = "read", attachments = { pdf } })
+      local content = body.messages[1].content
+      assert.are.equal(2, #content)
+      assert.are.same({
+        type = "file",
+        file = { filename = "a.pdf", file_data = "data:application/pdf;base64,BBB" },
+      }, content[1])
+      assert.are.equal("text", content[2].type)
+    end)
+
+    it("falls back to document.pdf when the attachment has no name", function()
+      local body = sent_body({
+        prompt = "read",
+        attachments = { { kind = "document", media_type = "application/pdf", data = "BBB" } },
+      })
+      assert.are.equal("document.pdf", body.messages[1].content[1].file.filename)
+    end)
+
+    it("keeps image and file parts together, in order", function()
+      local pic = { kind = "image", media_type = "image/png", data = "AAA" }
+      local body = sent_body({ prompt = "x", attachments = { pic, pdf } })
+      local content = body.messages[1].content
+      assert.are.equal("image_url", content[1].type)
+      assert.are.equal("file", content[2].type)
+    end)
+
+    it("refuses a non-PDF document without calling curl", function()
+      local called = false
+      package.loaded["lib.nvim.net.curl"] = {
+        fetch_json = function()
+          called = true
+        end,
+      }
+      local ok, err
+      package.loaded["ai.providers.openai"] = nil
+      local m = require("ai.providers.openai")
+      m.capabilities.documents = true
+      m.ask({
+        prompt = "x",
+        attachments = { { kind = "document", media_type = "text/plain", data = "QQ==" } },
+      }, function(a, b)
+        ok, err = a, b
+      end)
+      assert.is_false(ok)
+      assert.is_false(called)
+      assert.are.equal("invalid_request", err.kind)
+    end)
+  end)
+
   describe("api_key override", function()
     it("uses req.api_key in place of the environment variable", function()
       local seen
