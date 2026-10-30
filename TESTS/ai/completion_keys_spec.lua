@@ -134,6 +134,37 @@ describe("ai completion keys", function()
     assert.are.equal("local x = FOREIGN", line())
   end)
 
+  it("<Tab> without a ghost runs a recursive imap that was there first, mapped again", function()
+    require("lib.nvim.bindings.keymap").forget("Ai")
+    vim.keymap.set("i", "<M-F7>", "PLUGGED")
+    vim.keymap.set("i", keys.accept, "<M-F7>", { remap = true, desc = "foreign plugin" })
+    package.loaded["ai.bindings.keymaps"] = nil
+    require("ai.bindings.keymaps").setup_completion({
+      completion = { enable = true, keymap = keys },
+    })
+    feed("A" .. keys.accept .. "<Esc>")
+    pcall(vim.keymap.del, "i", "<M-F7>")
+    assert.are.equal("local x = PLUGGED", line())
+  end)
+
+  it("a buffer-local imap of the buffer current at setup is not taken for the fallback", function()
+    require("lib.nvim.bindings.keymap").forget("Ai")
+    vim.keymap.set("i", keys.accept, "GLOBAL", { desc = "foreign plugin" })
+    vim.keymap.set("i", keys.accept, "LOCAL", { buffer = bufnr, desc = "buffer-local" })
+    package.loaded["ai.bindings.keymaps"] = nil
+    require("ai.bindings.keymaps").setup_completion({
+      completion = { enable = true, keymap = keys },
+    })
+    local other = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(other)
+    vim.bo[other].expandtab = false
+    vim.api.nvim_buf_set_lines(other, 0, -1, false, { "local x = " })
+    feed("A" .. keys.accept .. "<Esc>")
+    local text = vim.api.nvim_buf_get_lines(other, 0, 1, false)[1]
+    vim.api.nvim_buf_delete(other, { force = true })
+    assert.are.equal("local x = GLOBAL", text)
+  end)
+
   it("<C-]> with a ghost shown dismisses it without touching the text", function()
     show_ghost()
     feed("A" .. keys.dismiss .. "<Esc>")

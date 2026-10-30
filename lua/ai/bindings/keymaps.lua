@@ -248,24 +248,24 @@ function M.setup(cfg)
   return keymap.register("Ai", spec, cfg.keymaps)
 end
 
----Install the completion insert-mode keymaps (trigger/accept/dismiss) as
----their own keymap surface, if `cfg.completion.enable` is true. `accept` is
----an `expr` mapping so it can fall through to that key's normal behavior
----when nothing is shown, and steps aside entirely while a completion-menu
----plugin's own popup is open (`pumvisible()`) -- it never fights that
----plugin's own key for menu navigation, though it cannot know whether that
----plugin *also* claims the same key when no popup is open; changing
----`cfg.completion.keymap.accept` away from the default resolves that case.
----The insert-mode mapping `key` has right now, or nil when there is none. When that mapping is
----this plugin's own accept mapping (a second `setup()`), it is not returned -- the key would
----fall back to itself -- and the second result is `true`, so the caller keeps what it found the
----first time.
+---The global insert-mode mapping `key` has right now, or nil when there is none. A buffer-local
+---one of the buffer that happens to be current at setup is not it: the fallback serves every
+---buffer. When the mapping is this plugin's own accept mapping (a second `setup()`), it is not
+---returned -- the key would fall back to itself -- and the second result is `true`, so the
+---caller keeps what it found the first time.
 ---@param key string
 ---@return table|nil previous
 ---@return boolean? own
 function M.previous_insert_mapping(key)
-  local map = vim.fn.maparg(key, "i", false, true)
-  if type(map) ~= "table" or next(map) == nil then
+  local raw = vim.keycode(key)
+  local map
+  for _, m in ipairs(vim.api.nvim_get_keymap("i")) do
+    if m.lhsraw == raw or vim.keycode(m.lhs) == raw then
+      map = m
+      break
+    end
+  end
+  if not map then
     return nil
   end
   local desc = map.desc
@@ -279,7 +279,9 @@ end
 ---`previous_insert_mapping`), as keys for the expr mapping to return; the key itself when there
 ---was nothing. An expr mapping (Neovim's snippet jump) is evaluated here and its result returned;
 ---a plain `rhs` is returned as typed; a Lua callback that is not an expr mapping cannot be turned
----into keys, so it is called through a `<Cmd>` right after.
+---into keys, so it is called through a `<Cmd>` right after. The accept mapping is `noremap`, so
+---keys of a recursive mapping (`remap = true`, `imap`) would be taken literally; those are fed
+---back as typeahead with remapping on and nothing is returned.
 ---@param previous table|nil
 ---@param key string
 ---@return string
@@ -287,6 +289,15 @@ function M.previous_keys(previous, key)
   local own = vim.keycode(key)
   if not previous then
     return own
+  end
+  ---@param keys string
+  ---@return string
+  local function as_previous(keys)
+    if previous.noremap == 0 then
+      vim.api.nvim_feedkeys(vim.keycode(keys), "im", false)
+      return ""
+    end
+    return keys
   end
   if previous.expr == 1 then
     local ok, res
@@ -296,7 +307,7 @@ function M.previous_keys(previous, key)
       ok, res = pcall(vim.api.nvim_eval, previous.rhs or "")
     end
     if ok and type(res) == "string" then
-      return res
+      return as_previous(res)
     end
     return own
   end
@@ -304,7 +315,7 @@ function M.previous_keys(previous, key)
     return "<Cmd>lua require('ai.bindings.keymaps').call_previous()<CR>"
   end
   if type(previous.rhs) == "string" and previous.rhs ~= "" then
-    return previous.rhs
+    return as_previous(previous.rhs)
   end
   return own
 end
@@ -318,6 +329,14 @@ function M.call_previous()
   end
 end
 
+---Install the completion insert-mode keymaps (trigger/accept/dismiss) as
+---their own keymap surface, if `cfg.completion.enable` is true. `accept` is
+---an `expr` mapping so it can fall through to that key's normal behavior
+---when nothing is shown, and steps aside entirely while a completion-menu
+---plugin's own popup is open (`pumvisible()`) -- it never fights that
+---plugin's own key for menu navigation, though it cannot know whether that
+---plugin *also* claims the same key when no popup is open; changing
+---`cfg.completion.keymap.accept` away from the default resolves that case.
 ---@param cfg Ai.Config
 ---@return Lib.Keymap.Registered[]|nil
 function M.setup_completion(cfg)

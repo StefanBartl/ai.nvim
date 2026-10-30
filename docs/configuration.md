@@ -119,7 +119,10 @@ The `accept` keymap (`<Tab>` by default) is an `expr` mapping: it steps
 aside while a completion-menu plugin's own popup is open (`pumvisible()`),
 and falls through to what that key did before when no suggestion is
 shown: Neovim's own insert `<Tab>` (the snippet jump) or another plugin's
-global insert-mode mapping that was already there when `setup()` ran. A
+global insert-mode mapping that was already there when `setup()` ran
+(a recursive one, `imap` or `remap = true`, is mapped again as it would
+have been; a buffer-local one of the buffer current at that moment is not
+taken for every buffer). A
 mapping another plugin sets *after* `setup()` replaces this one outright
 (buffer-local ones, such as a completion plugin's, always win) -- change
 `completion.keymap.accept` if that conflicts with an existing binding.
