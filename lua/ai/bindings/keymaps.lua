@@ -294,7 +294,15 @@ function M.previous_keys(previous, key)
   ---@return string
   local function as_previous(keys)
     if previous.noremap == 0 then
-      vim.api.nvim_feedkeys(vim.keycode(keys), "im", false)
+      -- Like Vim for a recursive rhs that starts with its own lhs (`imap <expr> <Tab> ... :
+      -- '<Tab>'`, the vsnip/luasnip recipe): that first key is not remapped, or it would reach
+      -- this mapping again without end. `i` puts keys in front, so the rest goes in first.
+      local raw = vim.keycode(keys)
+      local head = raw:sub(1, #own) == own and own or ""
+      vim.api.nvim_feedkeys(raw:sub(#head + 1), "im", false)
+      if head ~= "" then
+        vim.api.nvim_feedkeys(head, "in", false)
+      end
       return ""
     end
     return keys

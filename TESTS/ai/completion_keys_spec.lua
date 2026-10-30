@@ -147,6 +147,25 @@ describe("ai completion keys", function()
     assert.are.equal("local x = PLUGGED", line())
   end)
 
+  -- The snippet recipes of vsnip/luasnip: `imap <expr> <Tab> jumpable ? '<Plug>(jump)' : '<Tab>'`.
+  -- Vim does not remap the first key of a recursive rhs that starts with its own lhs; fed back
+  -- with remapping as a whole, that `<Tab>` reached the accept mapping again, without end.
+  it("<Tab> without a ghost: a recursive expr imap returning <Tab> inserts one tab", function()
+    require("lib.nvim.bindings.keymap").forget("Ai")
+    local calls = 0
+    vim.keymap.set("i", keys.accept, function()
+      calls = calls + 1
+      return calls > 5 and "" or "<Tab>"
+    end, { expr = true, remap = true, desc = "snippet recipe" })
+    package.loaded["ai.bindings.keymaps"] = nil
+    require("ai.bindings.keymaps").setup_completion({
+      completion = { enable = true, keymap = keys },
+    })
+    feed("A" .. keys.accept .. "<Esc>")
+    assert.are.equal(1, calls, "the previous mapping runs once")
+    assert.are.equal("local x = \t", line())
+  end)
+
   it("a buffer-local imap of the buffer current at setup is not taken for the fallback", function()
     require("lib.nvim.bindings.keymap").forget("Ai")
     vim.keymap.set("i", keys.accept, "GLOBAL", { desc = "foreign plugin" })
