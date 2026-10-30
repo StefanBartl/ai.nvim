@@ -61,6 +61,7 @@ each page answers.
 - [Commands](docs/commands.md) / [Bindings cheatsheet](docs/BINDINGS.md)
 - [Attachments](docs/attachments.md) -- sending an image or a PDF with a prompt.
 - [Bulk requests](docs/bulk.md) -- the guard rails for plugins that send a whole document in many requests.
+- Usage reporting (`:help ai-usage`) -- opt-in: `usage = { report = true }` sends one metadata event per request (provider, model, tokens, duration, outcome -- never any text) to a local ai-desktop server (see [scope](docs/scope.md)), which keeps the usage log and shows it on its dashboard.
 
 ### The Rest
 

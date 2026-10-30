@@ -15,7 +15,8 @@ CONTENTS                                                        *ai-contents*
  10. Attachments .......................... |ai-attachments|
  11. Context .............................. |ai-context|
  12. Scope ................................ |ai-scope|
- 13. Health check ........................ |ai-health|
+ 13. Usage reporting ...................... |ai-usage|
+ 14. Health check ........................ |ai-health|
 
 ==============================================================================
 1. INTRODUCTION                                                    *ai-intro*
@@ -152,6 +153,11 @@ DEFAULTS.lua` is the source of truth. >lua
 
     bulk = {
       max_session_chars = false,              -- cap on the characters of all bulk requests of a session; false = none
+    },
+
+    usage = {
+      report = false,                         -- report request metadata to ai-desktop, see |ai-usage|; opt-in
+      host = false,                           -- ai-desktop base URL; false = the ai_desktop provider's own
     },
 
     ui = {
@@ -803,7 +809,41 @@ not yet added to `provider_order` -- stays reachable only by naming it
 explicitly (`provider = "<name>"`), never through `"auto"` by accident.
 
 ==============================================================================
-13. HEALTH CHECK                                                   *ai-health*
+13. USAGE REPORTING                                                 *ai-usage*
+
+ai-desktop keeps a usage log (`usage.jsonl` next to its `config.json`) and
+shows it on its dashboard. With `usage.report = true` ai.nvim adds its own
+requests to it: after every |ai.ask()| and |ai.stream()| call that reached a
+provider -- the quick actions, `:Ai`, inline completion and bulk requests
+(|ai-bulk|) all go through the same path -- one event goes to
+`POST {host}/usage/events`: >
+  { "provider": "claude", "model": "claude-opus-4-5", "stream": false,
+    "ok": true, "prompt_tokens": 37, "completion_tokens": 3,
+    "duration_ms": 812 }
+<
+and on failure `"ok": false` with `"error_kind"`, the error's kind (|ai-api|),
+never its message. The body is built from this allow-list and nothing else:
+no prompt, no system prompt, no answer text (ai-desktop refuses a body
+that carries such a field). The token counts are read where each provider's
+API puts them (`claude`/`claude-cli`: input_tokens/output_tokens,
+`openai`: prompt_tokens/completion_tokens, `gemini`:
+promptTokenCount/candidatesTokenCount); another provider reports 0 (`copilot`
+among them: its CLI counts premium requests, not tokens).
+
+Off by default: on, it is one extra network request per AI request, to a
+server the user runs themselves. Sending is asynchronous and fire-and-forget
+(curl through `ai.providers.transport`, a timeout of a few seconds); a server
+that is not running costs nothing but one DEBUG notification per session.
+Requests to the `ai_desktop` provider are never reported -- that server
+records its own `/ask` traffic, a second event would count them twice.
+
+`usage.host` names the ai-desktop base URL; `false` (the default) is the one
+the `ai_desktop` provider uses: `AI_DESKTOP_HOST`, else `LOOMAI_HOST`, else
+http://127.0.0.1:8080. A `report` that is not a boolean or a `host` that is
+not a string is dropped to its default and reported by |:checkhealth|.
+
+==============================================================================
+14. HEALTH CHECK                                                   *ai-health*
 
 :checkhealth ai
 
@@ -829,7 +869,8 @@ Reports:
     started, so it is not removed from the child, and it may override the
     login in the same way. Only whether the keys exist is looked up; no
     value and nothing else of the files is ever read out or shown.
-  - configuration -- the active `provider` and `provider_order`, and a
+  - configuration -- the active `provider` and `provider_order`, whether
+    usage reporting (|ai-usage|) is on and where it reports to, and a
     warning for every value that was dropped to its default, for a malformed
     `policy.allowed`, for an unknown key under `policy` and for a misspelt
     `policy`.

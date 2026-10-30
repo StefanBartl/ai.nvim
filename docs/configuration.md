@@ -20,6 +20,11 @@ require("ai").setup({
     max_session_chars = false,                -- cap on the characters of all bulk requests of a session; false = none, see bulk.md
   },
 
+  usage = {
+    report = false,                           -- report request metadata (never text) to a local ai-desktop server; opt-in, see `:help ai-usage`
+    host = false,                             -- ai-desktop base URL; false = the one the ai_desktop provider uses (AI_DESKTOP_HOST, LOOMAI_HOST, http://127.0.0.1:8080)
+  },
+
   ui = {
     enable = true,
     progress_style = "auto",                  -- "auto" | "notify" | "statusline" | "echo" | "fidget" | "float" | "kit"

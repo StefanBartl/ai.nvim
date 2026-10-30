@@ -206,12 +206,15 @@ end
 
 ---@internal
 ---Send a resolved request: fetch a command-sourced key first when needed,
----then hand it to the provider.
+---then hand it to the provider. The outcome is reported to `ai.usage` once
+---(metadata only, and only when `config.usage.report` is on) -- here, so a
+---bulk request (`ai.bulk`, which calls this too) is counted like a plain one.
 ---@param provider Ai.Provider
 ---@param resolved Ai.Request
 ---@param cb fun(ok: boolean, res_or_err: Ai.Response|LibErrorValue)
 ---@param alive? fun(): boolean asked when the key has arrived: `false` means the caller has given up meanwhile (a bulk request that was cancelled or timed out), and the request, which is not sent yet, is then not sent at all
 local function dispatch(provider, resolved, cb, alive)
+  cb = require("ai.usage").wrap_callback(provider, resolved, cb)
   if needs_key_fetch(provider, resolved) then
     -- A command key source (ai.keys): run it off the UI thread, then go on.
     require("ai.keys").fetch(provider.id, function(ok, kerr)
@@ -278,6 +281,9 @@ function M.stream(req, handlers)
     return nil
   end
   warn_context_errors(context_errors)
+  -- The first terminal event (`on_done` or `on_error`) is reported to
+  -- `ai.usage`, once; see `dispatch` for the non-streaming side.
+  handlers = require("ai.usage").wrap_handlers(provider, resolved, handlers)
   if needs_key_fetch(provider, resolved) then
     -- The caller gets a handle at once; `kill()` cancels the wait for the key
     -- or, later, the stream itself.

@@ -157,6 +157,11 @@ local VALUE_SCHEMA = {
   timeout_ms = "number",
   bulk = "table",
   ["bulk.max_session_chars"] = "number>=0|false",
+  -- `report` reaches a plain `== true` check: a string "true" would silently
+  -- mean off, so it is reported here instead. `host` is concatenated into a URL.
+  usage = "table",
+  ["usage.report"] = "boolean",
+  ["usage.host"] = "string|false",
   log_level = "number",
   ["ui.progress_style"] = { "auto", "notify", "statusline", "echo", "fidget", "float", "kit" },
   ["ui.badge_timeout_ms"] = "number",

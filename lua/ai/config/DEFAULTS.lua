@@ -63,6 +63,19 @@ local DEFAULTS = {
     max_session_chars = false,
   },
 
+  -- Usage reporting (see lua/ai/usage.lua): after every request, one event with
+  -- metadata only (provider, model, tokens, duration, outcome -- never any
+  -- text) goes to a local ai-desktop server, which keeps the usage log and
+  -- shows it on its dashboard. Opt-in: on, it is one extra network request per
+  -- AI request, to a server the user runs themselves, so the default is off.
+  -- `host` is the ai-desktop base URL; `false` (not `nil`, which would drop
+  -- the key, see `completion.provider`) = the one the ai_desktop provider
+  -- uses: AI_DESKTOP_HOST, else LOOMAI_HOST, else http://127.0.0.1:8080.
+  usage = {
+    report = false,
+    host = false,
+  },
+
   ui = {
     enable = true,
     progress_style = "auto",

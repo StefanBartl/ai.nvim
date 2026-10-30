@@ -42,14 +42,22 @@ local M = {
 
 local DEFAULT_HOST = "http://127.0.0.1:8080"
 
+---The ai-desktop base URL when no request names one: `AI_DESKTOP_HOST`, else
+---the old variable (the program was called loomAI), else the built-in default.
+---Exported so `ai.usage` reports to the same server this provider talks to,
+---without a second copy of the lookup.
+---@return string
+function M.default_host()
+  return util.env_value("AI_DESKTOP_HOST", util.env_value("LOOMAI_HOST", DEFAULT_HOST))
+end
+
 ---@param req? Ai.Request
 ---@return string
 local function host(req)
   if req and req.host then
     return req.host
   end
-  -- The old variable (the program was called loomAI) still counts when the new one is not set.
-  return util.env_value("AI_DESKTOP_HOST", util.env_value("LOOMAI_HOST", DEFAULT_HOST))
+  return M.default_host()
 end
 
 ---ai-desktop is a locally-run server process, not a CLI binary on PATH -- there

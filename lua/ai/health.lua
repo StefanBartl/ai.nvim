@@ -212,6 +212,14 @@ function M.check()
     vim.health.warn(issue)
   end
   vim.health.info("bulk: " .. require("ai.bulk").describe())
+  -- Where request metadata goes when reporting is on -- the one thing worth
+  -- knowing before switching it on (lua/ai/usage.lua); off is the default.
+  local usage = require("ai.usage")
+  if usage.enabled() then
+    vim.health.info("usage: reporting request metadata to " .. usage.host() .. "/usage/events")
+  else
+    vim.health.info("usage: reporting off (config.usage.report = false)")
+  end
   -- A model id is never rejected at request time (see
   -- `ai.providers.models`'s module doc) -- this is the surface the roadmap
   -- item asked for: report it here instead, against each provider's own

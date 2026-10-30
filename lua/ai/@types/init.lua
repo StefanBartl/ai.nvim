@@ -19,6 +19,7 @@
 ---@field agent? string|false Name of the active agent from `agents`, `false` (default) = none; changed for the session by `:Ai agent`
 ---@field timeout_ms? integer Request timeout in ms, passed through to lib.nvim.net.curl (default 60000)
 ---@field bulk? Ai.BulkConfig Guard rails for unattended bulk requests (`lua/ai/bulk.lua`)
+---@field usage? Ai.UsageOptions Usage reporting to a local ai-desktop server (`lua/ai/usage.lua`)
 ---@field ui? Ai.UiOptions
 ---@field keymaps? Ai.KeymapOptions
 ---@field which_key? Ai.WhichKeyOptions
@@ -32,6 +33,10 @@
 
 ---@class Ai.BulkConfig
 ---@field max_session_chars? integer|false Cap on the characters of all bulk requests (`Ai.Request.bulk`) of one Neovim session; past it a bulk request fails with `bulk_limit`. `false` (default) = no cap.
+
+---@class Ai.UsageOptions
+---@field report? boolean Report one metadata event per request (`POST /usage/events` of ai-desktop: provider, model, stream, outcome, error kind, token counts, duration -- never prompt, system or answer text). `false` (default) = off; it is one extra network request per AI request. Requests to the `ai_desktop` provider are never reported (the server records those itself).
+---@field host? string|false ai-desktop base URL the events go to; `false` (default) = the one the `ai_desktop` provider uses (`AI_DESKTOP_HOST`, else `LOOMAI_HOST`, else `http://127.0.0.1:8080`)
 
 ---Guard rails of an unattended bulk request, `Ai.Request.bulk` (`lua/ai/bulk.lua`).
 ---ai.nvim enforces them and does nothing else: the prompt, the splitting of the
