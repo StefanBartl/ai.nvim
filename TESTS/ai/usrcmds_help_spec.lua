@@ -30,11 +30,12 @@ describe("ai.bindings.usrcmds option float", function()
   it("describes every flag, key=value pair and positional argument of :Ai", function()
     local composer = require("lib.nvim.bindings.usercmd.composer")
 
-    -- A lib.nvim older than `help.undocumented` cannot answer the question; that is a missing
-    -- feature of the dependency, not a defect of this plugin.
-    if type(composer.help.undocumented) ~= "function" then
-      return
-    end
+    -- The case needs `help.undocumented` from lib.nvim: an older checkout fails here by name
+    -- instead of skipping the case silently (NEW-43).
+    assert(
+      type(composer.help.undocumented) == "function",
+      "lib.nvim lacks composer.help.undocumented: update lib.nvim, this case cannot run without it"
+    )
 
     assert.is_not_nil(composer.registry().Ai, ":Ai is registered through the composer")
 
